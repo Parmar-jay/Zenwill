@@ -1,0 +1,55 @@
+# Dependencies & Package Managers
+node_modules/
+.pnpm-store/
+.yarn/
+package-lock.json.log
+
+# Expo & Web Builds
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.tsbuildinfo
+
+# Native Android Build Artifacts & Caches
+android/.gradle/
+android/build/
+android/app/build/
+android/.cxx/
+android/app/.cxx/
+android/captures/
+*.apk
+*.aab
+
+# Native iOS Build Artifacts & Pods
+ios/Pods/
+ios/build/
+ios/DerivedData/
+
+# Native Keys & Certificates
+*.jks
+*.p8
+*.p12
+*.key
+*.keystore
+*.mobileprovision
+*.pem
+
+# Metro & Debug Logs
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# OS & Temp Files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+inst_user_settings.tmp
+
+# Environment Variables & Secrets
+.env
+.env*.local
+!.env.example
