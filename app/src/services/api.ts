@@ -5,7 +5,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
+// ============================================================================
+// BACKEND SERVER URL CONFIGURATION
+// Switch between Render Production Server and Localhost Development Server:
+// - To use Render Server: Keep 1st active, comment 2nd.
+// - To use Localhost: Comment 1st, uncomment 2nd.
+// ============================================================================
+
+// ── 1st: RENDER PRODUCTION CLOUD SERVER ─────────────────────────────────────
+const RENDER_BACKEND_URL: string | null = 'https://zenwill.onrender.com/api/v1';
+
+// ── 2nd: LOCALHOST DEVELOPMENT SERVER (Uncomment line below & comment 1st to use Localhost) ──
+// const RENDER_BACKEND_URL: string | null = null;
+
 const getBaseUrl = (): string => {
+  if (RENDER_BACKEND_URL) {
+    return RENDER_BACKEND_URL.replace(/\/$/, '');
+  }
+
   if (Platform.OS === 'web') {
     return process.env.EXPO_PUBLIC_API_URL_WEB || 'http://localhost:8000/api/v1';
   }
