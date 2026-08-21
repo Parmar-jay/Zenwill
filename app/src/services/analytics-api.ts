@@ -63,6 +63,33 @@ export interface TriggerIntelligence {
   primary_vulnerability: string;
   tactical_defense: string;
   vitality_boost_quote: string;
+  purpose_alignment_quote?: string;
+  risk_level?: string;
+  risk_score?: number;
+  active_triggers?: string[];
+  first_sign_action?: string;
+  environmental_rule?: string;
+  highest_risk_day?: string;
+  effectiveness_rate?: number;
+  total_urges_defeated?: number;
+  today_urges_count?: number;
+  triggers?: Array<{
+    id: string;
+    name: string;
+    category: 'Circadian' | 'Emotional' | 'Environmental' | 'Physical' | string;
+    frequency: number;
+    riskScore: number;
+    color: string;
+    peakTime: string;
+    recommendation: string;
+  }>;
+  timeline_events?: Array<{
+    id: string;
+    time: string;
+    triggerName: string;
+    status: 'Resolved' | 'Interrupted' | 'Flagged';
+    resolutionAction: string;
+  }>;
 }
 
 export const analyticsApi = {

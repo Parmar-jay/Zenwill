@@ -212,7 +212,7 @@ export const useAuthStore = create<AuthState>()(
         } catch (e) {}
 
         try {
-          useHabitStore.getState().resetChallenge();
+          useHabitStore.getState().clearState();
         } catch (e) {}
 
         try {

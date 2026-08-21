@@ -79,41 +79,89 @@ async def run_mindset_evaluation(
     current_user: User = Depends(get_current_user),
 ):
     """Triggers 1-day multi-variable Gemini AI Mindset Evaluation."""
-    from datetime import date
+    from datetime import date, datetime
     from app.database import motor_client
     from app.config import settings
     from app.services.gemini_service import evaluate_daily_mindset
+    from app.models.daily_checkin import DailyCheckin
+    from app.models.journal import JournalEntry
+    from app.models.emergency_session import EmergencySession
+    from app.models.behavioral_event import BehavioralEvent
+    from app.models.onboarding import Onboarding
     
     db = motor_client[settings.MONGODB_DB_NAME]
     user_id = str(current_user.id)
-    today_str = date.today().isoformat()
+    today = date.today()
+    today_str = today.isoformat()
 
-    # 1. Fetch 1-day Check-in
-    checkin_doc = await db["checkins"].find_one({"user_id": user_id, "date": today_str})
+    # 1. Fetch Today's or Latest Check-in
+    checkin_record = await DailyCheckin.find_one(
+        {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]},
+        DailyCheckin.date == today
+    )
+    if not checkin_record:
+        checkin_record = await DailyCheckin.find(
+            {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]}
+        ).sort("-date").first_or_none()
+
+    checkin_dict = checkin_record.model_dump() if checkin_record else {}
     
     # 2. Fetch Recent 3 Journals
-    journal_cursor = db["journal_entries"].find({"user_id": user_id}).sort("created_at", -1).limit(3)
-    journals = await journal_cursor.to_list(length=3)
-    journal_texts = [{"title": j.get("title", ""), "content": j.get("content", ""), "date": str(j.get("created_at", ""))} for j in journals]
+    journals = await JournalEntry.find(
+        {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]}
+    ).sort("-created_at").limit(3).to_list()
+    journal_texts = [
+        {
+            "title": j.title or "Self Reflection",
+            "content": j.content,
+            "mood_tag": j.mood_tag or "Reflective",
+            "date": j.created_at.strftime("%b %d, %Y") if j.created_at else today_str
+        }
+        for j in journals
+    ]
 
     # 3. Fetch Emergency Urges Today & Total
-    urge_cursor = db["emergency_sessions"].find({"user_id": user_id}).sort("created_at", -1)
-    urge_sessions = await urge_cursor.to_list(length=100)
-    today_urges = [s for s in urge_sessions if str(s.get("created_at", "")).startswith(today_str)]
+    urge_sessions = await EmergencySession.find(
+        {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]}
+    ).sort("-started_at").limit(100).to_list()
+
+    today_urges = [
+        s for s in urge_sessions
+        if (s.started_at and s.started_at.strftime("%Y-%m-%d") == today_str) or
+           (s.completed_at and s.completed_at.strftime("%Y-%m-%d") == today_str)
+    ]
     
     # 4. Fetch Meditation Sessions Today
-    med_doc = await db["behavioral_events"].find_one({"user_id": user_id, "event_type": "meditation_session", "created_at": {"$gte": today_str}})
+    med_events = await BehavioralEvent.find(
+        {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]},
+        BehavioralEvent.event_type.in_(["meditation_session", "meditation_completed", "afternoon_meditation"])
+    ).to_list()
+    has_meditated_today = any(
+        (e.created_at and e.created_at.strftime("%Y-%m-%d") == today_str) for e in med_events
+    )
+
+    # 5. Fetch Onboarding Intake
+    onboarding_record = await Onboarding.find_one(
+        {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]}
+    )
+    user_purpose = getattr(onboarding_record, "personal_statement", None) or getattr(onboarding_record, "primary_outcome", None) or "Mastery over mind & vital energy transmutation"
 
     user_payload = {
-        "username": current_user.name or "Warrior",
-        "onboarding_purpose": getattr(current_user, "primary_goal", "Sexual Energy Transmutation & Mind Control"),
-        "streak": getattr(current_user, "streak", 0),
-        "today_checkin": checkin_doc or {},
+        "username": current_user.name or (onboarding_record.first_name if onboarding_record else "Operative"),
+        "onboarding_purpose": user_purpose,
+        "streak": getattr(current_user, "streak", 0) or 0,
+        "today_checkin": checkin_dict,
         "today_urges_count": len(today_urges),
         "total_urges_count": len(urge_sessions),
-        "meditation_log": med_doc or {},
+        "has_meditated_today": has_meditated_today,
         "recent_journals": journal_texts,
-        "today_urge_sessions": [{"trigger": s.get("trigger_reason"), "effective": s.get("was_effective")} for s in today_urges]
+        "today_urge_sessions": [
+            {
+                "trigger": getattr(s, "trigger_reason", "") or getattr(s, "main_influence", ""),
+                "effective": getattr(s, "was_effective", True)
+            }
+            for s in today_urges
+        ]
     }
 
     eval_result = await evaluate_daily_mindset(user_payload)
@@ -130,7 +178,7 @@ async def run_mindset_evaluation(
         "journal_score": eval_result.get("journal_score", 20),
         "meditation_urge_score": eval_result.get("meditation_urge_score", 35),
         "details_json": user_payload,
-        "created_at": date.today().isoformat()
+        "created_at": today_str
     }
     
     await db["mindset_evaluations"].update_one(
@@ -174,26 +222,8 @@ async def get_today_mindset_evaluation(
 async def get_trigger_intelligence(
     current_user: User = Depends(get_current_user),
 ):
-    """Generates AI Trigger Intelligence report."""
-    from app.database import motor_client
-    from app.config import settings
-    from app.services.gemini_service import generate_trigger_intelligence_report
+    """Generates comprehensive AI Trigger Intelligence report fusing Onboarding, Daily Check-ins, and Urge logs."""
+    from app.services.trigger_intelligence_service import compute_deep_trigger_intelligence
+    return await compute_deep_trigger_intelligence(current_user)
 
-    db = motor_client[settings.MONGODB_DB_NAME]
-    user_id = str(current_user.id)
-
-    urge_cursor = db["emergency_sessions"].find({"user_id": user_id})
-    sessions = await urge_cursor.to_list(length=100)
-
-    triggers = [s.get("trigger_reason") for s in sessions if s.get("trigger_reason")]
-    effective = [s for s in sessions if s.get("was_effective")]
-    rate = int((len(effective) / len(sessions)) * 100) if sessions else 90
-
-    trigger_payload = {
-        "total_urges_count": len(sessions),
-        "top_triggers": triggers[:5] if triggers else ["Stress", "Late Night", "Boredom"],
-        "effectiveness_rate": rate
-    }
-
-    return await generate_trigger_intelligence_report(trigger_payload)
 

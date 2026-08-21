@@ -297,8 +297,8 @@ export default function AuthOnboardingTriggersScreen() {
                         style={[styles.signCard, active && styles.signCardActive]}
                         onPress={() => setFirstWarningSign(o.id)}
                       >
-                        <Ionicons name={o.icon as any} size={20} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
-                        <ThemedText style={[styles.signLabel, active && styles.signLabelActive]}>{o.label}</ThemedText>
+                        <Ionicons name={o.icon as any} size={20} color={active ? '#00F0FF' : 'rgba(255,255,255,0.5)'} />
+                        <ThemedText style={[styles.signLabel, active && styles.signLabelActive]} numberOfLines={2}>{o.label}</ThemedText>
                       </TouchableOpacity>
                     );
                   })}
@@ -492,12 +492,12 @@ const styles = StyleSheet.create({
   chipTextActive: { color: '#00F0FF', fontWeight: '700' },
   signGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   signCard: {
-    flex: 1, minWidth: 90, paddingVertical: 14, alignItems: 'center', gap: 6,
+    flex: 1, minWidth: 95, maxWidth: 170, paddingVertical: 14, paddingHorizontal: 8, alignItems: 'center', gap: 6,
     backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', borderRadius: 14,
   },
   signCardActive: { borderColor: '#00F0FF', backgroundColor: 'rgba(0,240,255,0.1)' },
-  signLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '500', textAlign: 'center' },
-  signLabelActive: { color: '#00F0FF', fontWeight: '700' },
+  signLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 16 },
+  signLabelActive: { color: '#00F0FF', fontWeight: '800' },
   aftermathGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   aftermathCard: {
     flex: 1, minWidth: 70, paddingVertical: 12, alignItems: 'center', gap: 5,

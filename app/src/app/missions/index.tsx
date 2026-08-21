@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,6 +74,13 @@ export default function DailyMissionsScreen() {
     checkAndResetMidnight();
     syncWithBackend().catch(() => {});
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      checkAndResetMidnight();
+      syncWithBackend().catch(() => {});
+    }, [])
+  );
 
   const completedCount = useMemo(() => {
     let c = 0;

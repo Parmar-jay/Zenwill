@@ -201,11 +201,14 @@ export default function HomeScreen() {
   useEffect(() => {
     checkAndResetMidnight();
     useHabitStore.getState().syncFromDatabase();
+    useDailyMissionStore.getState().syncWithBackend().catch(() => {});
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
+      checkAndResetMidnight();
       useHabitStore.getState().syncFromDatabase();
+      useDailyMissionStore.getState().syncWithBackend().catch(() => {});
     }, [])
   );
 

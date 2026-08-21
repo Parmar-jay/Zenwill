@@ -102,6 +102,40 @@ async def submit_checkin(
     current_user.last_checkin_date = checkin_date.isoformat()
     await current_user.save()
 
+    # Mark or insert completed check-in mission in MongoDB
+    try:
+        from app.models.mission import Mission
+        today_start = datetime(checkin_date.year, checkin_date.month, checkin_date.day)
+        checkin_mission = await Mission.find_one(
+            Mission.user_id == str(current_user.id),
+            Mission.date_assigned >= today_start,
+            Mission.category.in_(["checkin", "morning"])
+        )
+        if checkin_mission:
+            checkin_mission.is_completed = True
+            checkin_mission.date_completed = datetime.utcnow()
+            await checkin_mission.save()
+        else:
+            checkin_mission = Mission(
+                user_id=str(current_user.id),
+                title="Complete Daily Check-in",
+                description="Log mood, energy, and urge discipline in daily check-in.",
+                category="checkin",
+                difficulty="easy",
+                duration_minutes=5,
+                xp_reward=20,
+                mind_strength_reward=5,
+                is_completed=True,
+                is_ai_generated=False,
+                date_assigned=today_start,
+                date_completed=datetime.utcnow(),
+                why_assigned="Daily check-in completed.",
+                tags=["checkin", "daily_ritual"],
+            )
+            await checkin_mission.insert()
+    except Exception as e:
+        pass
+
     return DailyCheckinResponse(
         id=str(checkin.id),
         date=checkin.date,

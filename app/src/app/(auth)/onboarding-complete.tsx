@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Svg, { Path } from 'react-native-svg';
 import {
   StyleSheet, TouchableOpacity, ScrollView, View,
-  Platform, ActivityIndicator,
+  Platform, ActivityIndicator, PanResponder,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -26,39 +26,126 @@ export default function AuthOnboardingCompleteScreen() {
   const [paths, setPaths] = useState<string[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [isSigned, setIsSigned] = useState<boolean>(alreadySigned);
+  const [scrollEnabled, setScrollEnabled] = useState<boolean>(true);
 
-  const onTouchStart = (event: any) => {
-    const { locationX, locationY } = event.nativeEvent;
-    const path = `M ${locationX.toFixed(1)} ${locationY.toFixed(1)}`;
-    setCurrentPath(path);
-    setIsSigned(true);
-  };
+  const canvasRef = useRef<View>(null);
 
-  const onTouchMove = (event: any) => {
-    const { locationX, locationY } = event.nativeEvent;
-    setCurrentPath((prev) => `${prev} L ${locationX.toFixed(1)} ${locationY.toFixed(1)}`);
-  };
-
-  const onTouchEnd = () => {
-    if (currentPath) {
-      setPaths((prev) => [...prev, currentPath]);
-      setCurrentPath('');
+  // Prevent web touch scrolling specifically while touching the scratch pad canvas
+  useEffect(() => {
+    if (Platform.OS === 'web' && canvasRef.current) {
+      const el = canvasRef.current as unknown as HTMLElement;
+      const preventDefaultTouch = (e: TouchEvent) => {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+      };
+      el.addEventListener('touchstart', preventDefaultTouch, { passive: false });
+      el.addEventListener('touchmove', preventDefaultTouch, { passive: false });
+      return () => {
+        el.removeEventListener('touchstart', preventDefaultTouch);
+        el.removeEventListener('touchmove', preventDefaultTouch);
+      };
     }
-  };
+  }, []);
+
+  const pointsRef = useRef<{ x: number; y: number }[]>([]);
+  const currentPathStrRef = useRef<string>('');
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: (evt) => {
+        setScrollEnabled(false);
+        const { locationX, locationY } = evt.nativeEvent;
+        if (locationX !== undefined && locationY !== undefined) {
+          const pt = { x: locationX, y: locationY };
+          pointsRef.current = [pt];
+          const initialStr = `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+          currentPathStrRef.current = initialStr;
+          setCurrentPath(initialStr);
+          setIsSigned(true);
+        }
+      },
+      onPanResponderMove: (evt) => {
+        const { locationX, locationY } = evt.nativeEvent;
+        if (locationX === undefined || locationY === undefined) return;
+        const pts = pointsRef.current;
+        if (pts.length === 0) {
+          const pt = { x: locationX, y: locationY };
+          pointsRef.current = [pt];
+          currentPathStrRef.current = `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`;
+          setCurrentPath(currentPathStrRef.current);
+          return;
+        }
+
+        const lastPt = pts[pts.length - 1];
+        const dist = Math.hypot(locationX - lastPt.x, locationY - lastPt.y);
+        // Distance throttling: skip micro-jitter points closer than 2.5px
+        if (dist < 2.5) return;
+
+        const newPt = { x: locationX, y: locationY };
+        pts.push(newPt);
+
+        // Smooth midpoint quadratic curve algorithm
+        const midX = (lastPt.x + newPt.x) / 2;
+        const midY = (lastPt.y + newPt.y) / 2;
+        const curveSegment = ` Q ${lastPt.x.toFixed(1)} ${lastPt.y.toFixed(1)}, ${midX.toFixed(1)} ${midY.toFixed(1)}`;
+        
+        currentPathStrRef.current += curveSegment;
+        setCurrentPath(currentPathStrRef.current);
+      },
+      onPanResponderRelease: () => {
+        setScrollEnabled(true);
+        const finalizedStr = currentPathStrRef.current;
+        const pts = pointsRef.current;
+        if (finalizedStr) {
+          // If tap single dot without move, append small line so dot is visible
+          const strokePath = pts.length === 1 
+            ? `${finalizedStr} L ${(pts[0].x + 0.5).toFixed(1)} ${(pts[0].y + 0.5).toFixed(1)}` 
+            : finalizedStr;
+          setPaths((prev) => [...prev, strokePath]);
+        }
+        pointsRef.current = [];
+        currentPathStrRef.current = '';
+        setCurrentPath('');
+      },
+      onPanResponderTerminate: () => {
+        setScrollEnabled(true);
+        const finalizedStr = currentPathStrRef.current;
+        const pts = pointsRef.current;
+        if (finalizedStr) {
+          const strokePath = pts.length === 1 
+            ? `${finalizedStr} L ${(pts[0].x + 0.5).toFixed(1)} ${(pts[0].y + 0.5).toFixed(1)}` 
+            : finalizedStr;
+          setPaths((prev) => [...prev, strokePath]);
+        }
+        pointsRef.current = [];
+        currentPathStrRef.current = '';
+        setCurrentPath('');
+      },
+    })
+  ).current;
 
   const handleEnterApp = async () => {
     if (!isSigned || isSubmitting) return;
 
     setIsSubmitting(true);
 
-    const signatureString = paths.length > 0 ? paths.join(' ') : (profile.signature || 'SIGNED_PLEDGE');
+    const generatedSig = `UNIQUE_PLEDGE_SIG_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const signatureString = paths.length > 0 ? paths.join(' ') : (profile.signature || generatedSig);
+
     updateProfile({
       signature: signatureString,
       isPledgeSigned: true,
     });
 
     try {
-      const { updateProfile: _, resetProfile: __, ...onboardingData } = useOnboardingStore.getState();
+      const currentState = useOnboardingStore.getState();
+      const { updateProfile: _, resetProfile: __, ...onboardingData } = currentState;
       await profileApi.submitOnboarding({
         ...onboardingData,
         signature: signatureString,
@@ -86,152 +173,156 @@ export default function AuthOnboardingCompleteScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
         <Animated.View entering={FadeIn.duration(500)} style={styles.mainWrapper}>
           <ScrollView
+            scrollEnabled={scrollEnabled}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* ── HERO HEADER ────────────────────────────────────────── */}
-            <Animated.View entering={FadeInUp.duration(600)} style={styles.heroSection}>
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroBadge}>
-                  <Ionicons name="checkmark-done" size={14} color="#00C851" style={{ marginRight: 4 }} />
-                  <ThemedText style={styles.heroBadgeText}>READY TO START</ThemedText>
-                </View>
-              </View>
-
-              <ThemedText style={styles.heroGreeting}>
-                {profile.firstName ? `Welcome, ${profile.firstName}` : 'Welcome'}
-              </ThemedText>
-              <ThemedText style={styles.heroTitle}>
-                Your Promise to{'\n'}
-                <ThemedText style={styles.heroTitleAccent}>Build Self-Control.</ThemedText>
-              </ThemedText>
-              <ThemedText style={styles.heroSubtitle}>
-                Your setup is complete! Read your simple promise below and sign your name to enter ZenWill.
-              </ThemedText>
-            </Animated.View>
-
-            {/* ── COVENANT OF SELF-HONESTY CARD ─────────────────────── */}
-            <Animated.View entering={FadeInDown.duration(400).delay(150)}>
-              <View style={styles.oathCard}>
-                <View style={styles.oathHeaderRow}>
-                  <Ionicons name="shield-outline" size={20} color="#00A8FF" />
-                  <ThemedText style={styles.oathHeaderTitle}>Promise of Self-Honesty</ThemedText>
+            <View style={styles.responsiveContainer}>
+              {/* ── HERO HEADER ────────────────────────────────────────── */}
+              <Animated.View entering={FadeInUp.duration(600)} style={styles.heroSection}>
+                <View style={styles.heroTopRow}>
+                  <View style={styles.heroBadge}>
+                    <Ionicons name="checkmark-done" size={14} color="#00C851" style={{ marginRight: 4 }} />
+                    <ThemedText style={styles.heroBadgeText}>READY TO START</ThemedText>
+                  </View>
                 </View>
 
-                <View style={styles.oathDivider} />
-
-                <ThemedText style={styles.oathBodyText}>
-                  The streak days and numbers in this app are here to guide you, but what really matters is your <ThemedText style={styles.oathHighlight}>real mental strength</ThemedText> and daily self-control.
+                <ThemedText style={styles.heroGreeting}>
+                  {profile.firstName ? `Welcome, ${profile.firstName}` : 'Welcome'}
                 </ThemedText>
-
-                <ThemedText style={styles.oathBodyText}>
-                  Be completely honest with yourself every day. Fake check-ins or false tracking will not help you grow — <ThemedText style={styles.oathWarning}>they only hide weaknesses from yourself</ThemedText>.
+                <ThemedText style={styles.heroTitle}>
+                  Your Promise to{'\n'}
+                  <ThemedText style={styles.heroTitleAccent}>Build Self-Control.</ThemedText>
                 </ThemedText>
-
-                <ThemedText style={styles.oathBodyText}>
-                  Real freedom from unwanted habits comes from being honest, facing reality, and building your self-control step by step.
+                <ThemedText style={styles.heroSubtitle}>
+                  Your setup is complete! Read your simple promise below and sign your name to enter ZenWill.
                 </ThemedText>
-              </View>
-            </Animated.View>
+              </Animated.View>
 
-            {/* ── COMPACT SQUARE SIGNATURE PAD ───────────────────────── */}
-            <Animated.View entering={FadeInDown.duration(400).delay(250)}>
-              <View style={styles.signatureSquareCard}>
-                <View style={styles.sigCardHeader}>
-                  <ThemedText style={styles.signatureTitle}>Sign Your Promise</ThemedText>
-                  {isSigned && (
-                    <View style={styles.signedBadge}>
-                      <Ionicons name="checkmark-circle" size={13} color="#00C851" />
-                      <ThemedText style={styles.signedBadgeText}>Signed</ThemedText>
-                    </View>
-                  )}
+              {/* ── COVENANT OF SELF-HONESTY CARD ─────────────────────── */}
+              <Animated.View entering={FadeInDown.duration(400).delay(150)}>
+                <View style={styles.oathCard}>
+                  <View style={styles.oathHeaderRow}>
+                    <Ionicons name="shield-outline" size={20} color="#00A8FF" />
+                    <ThemedText style={styles.oathHeaderTitle}>Promise of Self-Honesty</ThemedText>
+                  </View>
+
+                  <View style={styles.oathDivider} />
+
+                  <ThemedText style={styles.oathBodyText}>
+                    The streak days and numbers in this app are here to guide you, but what really matters is your <ThemedText style={styles.oathHighlight}>real mental strength</ThemedText> and daily self-control.
+                  </ThemedText>
+
+                  <ThemedText style={styles.oathBodyText}>
+                    Be completely honest with yourself every day. Fake check-ins or false tracking will not help you grow — <ThemedText style={styles.oathWarning}>they only hide weaknesses from yourself</ThemedText>.
+                  </ThemedText>
+
+                  <ThemedText style={styles.oathBodyText}>
+                    Real freedom from unwanted habits comes from being honest, facing reality, and building your self-control step by step.
+                  </ThemedText>
                 </View>
-                <ThemedText style={styles.signatureDesc}>
-                  Sign inside the box below with your finger to confirm your promise to yourself.
-                </ThemedText>
+              </Animated.View>
 
-                {/* Compact Square Canvas */}
-                <View
-                  style={styles.canvasSquareWrapper}
-                  onStartShouldSetResponder={() => true}
-                  onMoveShouldSetResponder={() => true}
-                  onResponderGrant={onTouchStart}
-                  onResponderMove={onTouchMove}
-                  onResponderRelease={onTouchEnd}
-                >
-                  {paths.length === 0 && !currentPath && (
-                    <View style={styles.canvasPlaceholder}>
-                      <Ionicons
-                        name={alreadySigned ? 'checkmark-circle-outline' : 'create-outline'}
-                        size={22}
-                        color={alreadySigned ? '#00C851' : 'rgba(255,255,255,0.2)'}
-                      />
-                      <ThemedText style={[styles.canvasPlaceholderText, alreadySigned && { color: '#00C851', fontWeight: '700' }]}>
-                        {alreadySigned ? '✓ Promise Already Signed (Tap Clear to Re-sign)' : 'Sign your name here with your finger'}
-                      </ThemedText>
-                    </View>
-                  )}
+              {/* ── COMPACT SQUARE SIGNATURE PAD ───────────────────────── */}
+              <Animated.View entering={FadeInDown.duration(400).delay(250)}>
+                <View style={styles.signatureSquareCard}>
+                  <View style={styles.sigCardHeader}>
+                    <ThemedText style={styles.signatureTitle}>Sign Your Promise</ThemedText>
+                    {isSigned && (
+                      <View style={styles.signedBadge}>
+                        <Ionicons name="checkmark-circle" size={13} color="#00C851" />
+                        <ThemedText style={styles.signedBadgeText}>Signed</ThemedText>
+                      </View>
+                    )}
+                  </View>
+                  <ThemedText style={styles.signatureDesc}>
+                    Sign inside the box below with your finger to confirm your promise to yourself.
+                  </ThemedText>
 
-                  <Svg style={StyleSheet.absoluteFill}>
-                    {paths.map((p, i) => (
-                      <Path key={i} d={p} stroke="#00A8FF" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                    ))}
-                    {currentPath ? (
-                      <Path d={currentPath} stroke="#00A8FF" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                    ) : null}
-                  </Svg>
-                </View>
-
-                <View style={styles.sigFooterActions}>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={styles.clearBtn}
-                    onPress={() => {
-                      setPaths([]);
-                      setCurrentPath('');
-                      setIsSigned(false);
-                    }}
+                  {/* Compact Canvas - Scroll locking gesture responder */}
+                  <View
+                    ref={canvasRef}
+                    style={[styles.canvasSquareWrapper, { touchAction: 'none' } as any]}
+                    {...panResponder.panHandlers}
                   >
-                    <Ionicons name="refresh-outline" size={14} color="rgba(255,255,255,0.6)" />
-                    <ThemedText style={styles.clearBtnText}>Clear Signature</ThemedText>
-                  </TouchableOpacity>
+                    {paths.length === 0 && !currentPath && (
+                      <View style={styles.canvasPlaceholder} pointerEvents="none">
+                        <Ionicons
+                          name={alreadySigned ? 'checkmark-circle-outline' : 'create-outline'}
+                          size={22}
+                          color={alreadySigned ? '#00C851' : 'rgba(255,255,255,0.2)'}
+                        />
+                        <ThemedText style={[styles.canvasPlaceholderText, alreadySigned && { color: '#00C851', fontWeight: '700' }]}>
+                          {alreadySigned ? '✓ Promise Already Signed (Tap Clear to Re-sign)' : 'Sign your name here with your finger'}
+                        </ThemedText>
+                      </View>
+                    )}
 
-                  {isSigned && (
-                    <ThemedText style={styles.sealConfirmationText}>✓ Promise Signed</ThemedText>
-                  )}
+                    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+                      {paths.map((p, i) => (
+                        <Path key={i} d={p} stroke="#00A8FF" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      ))}
+                      {currentPath ? (
+                        <Path d={currentPath} stroke="#00A8FF" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      ) : null}
+                    </Svg>
+                  </View>
+
+                  <View style={styles.sigFooterActions}>
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      style={styles.clearBtn}
+                      onPress={() => {
+                        setPaths([]);
+                        setCurrentPath('');
+                        setIsSigned(false);
+                        pointsRef.current = [];
+                        currentPathStrRef.current = '';
+                      }}
+                    >
+                      <Ionicons name="refresh-outline" size={14} color="rgba(255,255,255,0.6)" />
+                      <ThemedText style={styles.clearBtnText}>Clear Signature</ThemedText>
+                    </TouchableOpacity>
+
+                    {isSigned && (
+                      <ThemedText style={styles.sealConfirmationText}>✓ Promise Signed</ThemedText>
+                    )}
+                  </View>
                 </View>
-              </View>
-            </Animated.View>
+              </Animated.View>
 
-            {/* ── SUBMIT CTA ─────────────────────────────────────────── */}
-            <Animated.View entering={FadeInUp.duration(400).delay(350)} style={styles.ctaSection}>
-              <TouchableOpacity
-                activeOpacity={0.88}
-                style={[styles.btnContainer, (!isSigned || isSubmitting) && styles.btnDisabled]}
-                onPress={handleEnterApp}
-                disabled={!isSigned || isSubmitting}
-              >
-                <LinearGradient
-                  colors={['#000000', '#000000', '#000000']}
-                  style={styles.btnGradient}
+              {/* ── SUBMIT CTA ─────────────────────────────────────────── */}
+              <Animated.View entering={FadeInUp.duration(400).delay(350)} style={styles.ctaSection}>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  style={[styles.btnContainer, (!isSigned || isSubmitting) && styles.btnDisabled]}
+                  onPress={handleEnterApp}
+                  disabled={!isSigned || isSubmitting}
                 >
-                  {isSubmitting ? (
-                    <ActivityIndicator color="#ffffff" size="small" />
-                  ) : (
-                    <>
-                      <ThemedText style={[styles.btnText, !isSigned && styles.btnTextDisabled]}>
-                        {isSigned ? 'Confirm Promise & Start' : 'Sign Above to Start'}
-                      </ThemedText>
-                      <ThemedText style={[styles.btnArrow, !isSigned && styles.btnTextDisabled]}>➔</ThemedText>
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-              <ThemedText style={styles.ctaNote}>
-                Your journey to strong self-control starts today.
-              </ThemedText>
-            </Animated.View>
+                  <LinearGradient
+                    colors={['#00A8FF', '#0052D4']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.btnGradient}
+                  >
+                    {isSubmitting ? (
+                      <ActivityIndicator color="#ffffff" size="small" />
+                    ) : (
+                      <>
+                        <ThemedText style={[styles.btnText, !isSigned && styles.btnTextDisabled]}>
+                          {isSigned ? 'Confirm Promise & Start' : 'Sign Above to Start'}
+                        </ThemedText>
+                        <ThemedText style={[styles.btnArrow, !isSigned && styles.btnTextDisabled]}>➔</ThemedText>
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+                <ThemedText style={styles.ctaNote}>
+                  Your journey to strong self-control starts today.
+                </ThemedText>
+              </Animated.View>
+            </View>
           </ScrollView>
         </Animated.View>
       </SafeAreaView>
@@ -271,7 +362,8 @@ const styles = StyleSheet.create({
   },
   safeArea: { flex: 1 },
   mainWrapper: { flex: 1 },
-  scrollContent: { paddingBottom: 50 },
+  scrollContent: { flexGrow: 1, paddingBottom: 50 },
+  responsiveContainer: { width: '100%', maxWidth: 600, alignSelf: 'center' },
 
   // Hero Section
   heroSection: {

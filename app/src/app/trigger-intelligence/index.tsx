@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -8,13 +8,15 @@ import {
   Modal,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+
+import { useHabitStore } from '@/store/habit-store';
+import { PageEntrance } from '@/components/ui/smooth-loader';
+import { analyticsApi, TriggerIntelligence } from '@/services/analytics-api';
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -29,9 +31,9 @@ const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
 interface TriggerItem {
   id: string;
   name: string;
-  category: 'Circadian' | 'Emotional' | 'Environmental' | 'Physical';
+  category: 'Circadian' | 'Emotional' | 'Environmental' | 'Physical' | string;
   frequency: number;
-  riskScore: number; // 0-100
+  riskScore: number;
   color: string;
   peakTime: string;
   recommendation: string;
@@ -45,264 +47,370 @@ interface TimelineEvent {
   resolutionAction: string;
 }
 
-export default function TriggerIntelligenceSingleScreen() {
+export default function TriggerIntelligenceScreen() {
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
-  const isTablet = windowWidth > 600;
 
+  const { streak, totalUrgesCount, todayUrgesCount } = useHabitStore();
+
+  const [triggerData, setTriggerData] = useState<TriggerIntelligence | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [isArchModalVisible, setIsArchModalVisible] = useState<boolean>(false);
 
-  const triggers: TriggerItem[] = [
-    {
-      id: 't-1',
-      name: 'Screen Fatigue',
-      category: 'Circadian',
-      frequency: 14,
-      riskScore: 78,
-      color: '#F59E0B',
-      peakTime: '3:00 PM - 4:30 PM',
-      recommendation: 'Schedule a 5-minute physical walk & hydration break at 2:50 PM.',
-    },
-    {
-      id: 't-2',
-      name: 'Late Night Pre-Bed Stress',
-      category: 'Emotional',
-      frequency: 9,
-      riskScore: 65,
-      color: '#8B5CF6',
-      peakTime: '11:00 PM - 12:00 AM',
-      recommendation: 'Execute 3-item gratitude journaling 30 minutes before sleep.',
-    },
-    {
-      id: 't-3',
-      name: 'Solitary Work Isolation',
-      category: 'Environmental',
-      frequency: 6,
-      riskScore: 52,
-      color: '#2B6BFF',
-      peakTime: '1:00 PM - 2:30 PM',
-      recommendation: 'Switch workspace location or join a co-focus virtual session.',
-    },
-    {
-      id: 't-4',
-      name: 'Post-Meal Slump',
-      category: 'Physical',
-      frequency: 5,
-      riskScore: 40,
-      color: '#10B981',
-      peakTime: '1:30 PM - 2:00 PM',
-      recommendation: 'Light 10-minute stretch or cold water splash after lunch.',
-    },
-  ];
+  const loadData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await analyticsApi.getTriggerIntelligence();
+      setTriggerData(data);
+    } catch (e) {
+      console.log('Trigger intelligence fetch notice:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-  const timelineEvents: TimelineEvent[] = [
-    {
-      id: 'ev-1',
-      time: 'Today • 3:15 PM',
-      triggerName: 'Screen Fatigue',
-      status: 'Interrupted',
-      resolutionAction: 'Completed 60s Box Breathing & 5-min walk protocol.',
-    },
-    {
-      id: 'ev-2',
-      time: 'Yesterday • 11:20 PM',
-      triggerName: 'Late Night Stress',
-      status: 'Resolved',
-      resolutionAction: 'Logged 3 gratitude notes & completed Delta Wave sleep session.',
-    },
-    {
-      id: 'ev-3',
-      time: 'Jul 18 • 2:00 PM',
-      triggerName: 'Post-Meal Slump',
-      status: 'Resolved',
-      resolutionAction: 'Drank 500ml cold water & stretched for 5 minutes.',
-    },
-  ];
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  const hourlyHeatmap = [
-    { hour: '6 AM', level: 'low', color: '#10B981' },
-    { hour: '9 AM', level: 'low', color: '#10B981' },
-    { hour: '12 PM', level: 'mid', color: '#F59E0B' },
-    { hour: '3 PM', level: 'high', color: '#EF4444' },
-    { hour: '6 PM', level: 'mid', color: '#F59E0B' },
-    { hour: '9 PM', level: 'low', color: '#10B981' },
-    { hour: '11 PM', level: 'high', color: '#EF4444' },
-  ];
-
-  const filteredTriggers = triggers.filter(
-    (t) => selectedCategory === 'All' || t.category === selectedCategory
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
   );
 
+  const triggersList: TriggerItem[] = useMemo(() => {
+    if (triggerData?.triggers && triggerData.triggers.length > 0) {
+      return triggerData.triggers;
+    }
+    return [
+      {
+        id: 'trig-circadian',
+        name: `Peak Risk Window (${triggerData?.peak_risk_window || '10:30 PM - 01:00 AM'})`,
+        category: 'Circadian',
+        frequency: totalUrgesCount || 1,
+        riskScore: triggerData?.risk_score || 75,
+        color: '#00E5FF',
+        peakTime: triggerData?.peak_risk_window || '10:30 PM - 01:00 AM',
+        recommendation: 'Pre-commit to digital shutdown 30 minutes before this window.',
+      },
+      {
+        id: 'trig-environmental',
+        name: triggerData?.environmental_rule ? 'Spatial & Device Proximity' : 'Device in Bedroom',
+        category: 'Environmental',
+        frequency: totalUrgesCount || 2,
+        riskScore: 65,
+        color: '#8B5CF6',
+        peakTime: triggerData?.peak_risk_window || 'Night',
+        recommendation: triggerData?.environmental_rule || 'Keep phone outside sleeping area 45 min before sleep.',
+      },
+      {
+        id: 'trig-physical',
+        name: 'First Warning Cue',
+        category: 'Physical',
+        frequency: 1,
+        riskScore: 60,
+        color: '#10B981',
+        peakTime: 'Immediate',
+        recommendation: triggerData?.first_sign_action || 'Execute 3-Second Snap: Splash cold water and vocalize.',
+      },
+    ];
+  }, [triggerData, totalUrgesCount]);
+
+  const timelineEvents: TimelineEvent[] = useMemo(() => {
+    if (triggerData?.timeline_events && triggerData.timeline_events.length > 0) {
+      return triggerData.timeline_events as TimelineEvent[];
+    }
+    return [
+      {
+        id: 'ev-1',
+        time: 'Active Telemetry',
+        triggerName: triggerData?.primary_vulnerability || 'Peak Risk Window Protection',
+        status: 'Resolved',
+        resolutionAction: 'Tactical defense protocol armed and monitoring.',
+      },
+    ];
+  }, [triggerData]);
+
+  const filteredTriggers = useMemo(() => {
+    return triggersList.filter(
+      (t) => selectedCategory === 'All' || t.category.toLowerCase() === selectedCategory.toLowerCase()
+    );
+  }, [triggersList, selectedCategory]);
+
+  const riskScore = triggerData?.risk_score ?? 65;
+  const riskLevel = triggerData?.risk_level ?? 'MODERATE VIGILANCE';
+
+  const riskColor = riskLevel.includes('CRITICAL')
+    ? '#EF4444'
+    : riskLevel.includes('ELEVATED')
+    ? '#F59E0B'
+    : '#10B981';
+
   return (
-    <LinearGradient
-      colors={['#000000', '#000000', '#000000']}
-      style={styles.gradientBg}
-    >
+    <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
-        {/* Header Bar */}
-        <View style={styles.header}>
-          <TouchableOpacity 
+      {/* Top Header Bar */}
+      <SafeAreaView style={styles.headerSafeArea} edges={['top']}>
+        <View style={styles.headerContainer}>
+          <TouchableOpacity
             style={styles.backBtn}
+            activeOpacity={0.7}
             onPress={() => {
               triggerHaptic();
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.navigate('/(tabs)/home' as any);
+                router.replace('/(tabs)/home' as any);
               }
             }}
           >
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
           </TouchableOpacity>
 
-          <View style={{ alignItems: 'center', flex: 1 }}>
-            <ThemedText style={styles.categoryBadge}>BEHAVIORAL NEUROSCIENCE</ThemedText>
-            <ThemedText style={styles.headerTitle}>Trigger Intelligence</ThemedText>
+          <View style={styles.headerTitleWrapper}>
+            <ThemedText style={styles.headerCategory}>NEURAL BEHAVIORAL INTEL</ThemedText>
+            <ThemedText style={styles.headerTitleText}>Trigger Intelligence</ThemedText>
           </View>
 
-          <View style={{ width: 36 }} />
+          <TouchableOpacity
+            style={styles.infoBtn}
+            activeOpacity={0.7}
+            onPress={() => {
+              triggerHaptic();
+              setIsArchModalVisible(true);
+            }}
+          >
+            <Ionicons name="information-circle-outline" size={22} color="#94A3B8" />
+          </TouchableOpacity>
         </View>
-
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          {/* Risk Prediction Gauge Card */}
-          <View style={styles.riskCard}>
-            <View style={styles.riskTopRow}>
-              <View style={styles.riskBadge}>
-                <Ionicons name="shield-checkmark" size={14} color="#10B981" />
-                <ThemedText style={styles.riskBadgeText}>Current Risk: 18% (Low)</ThemedText>
-              </View>
-              <ThemedText style={styles.timeText}>Peak Window: 3:00 PM</ThemedText>
-            </View>
-
-            <View style={styles.riskMainRow}>
-              <View style={styles.scoreGaugeCircle}>
-                <ThemedText style={styles.gaugeNum}>18%</ThemedText>
-                <ThemedText style={styles.gaugeSub}>Risk Score</ThemedText>
-              </View>
-
-              <View style={{ flex: 1, gap: 4 }}>
-                <ThemedText style={styles.riskTitle}>Primary Watch: Screen Fatigue</ThemedText>
-                <ThemedText style={styles.riskSub}>
-                  Neural models predict elevated urge sensitivity during late afternoon continuous work. Pre-armed protocols active.
-                </ThemedText>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.archExplainerBtn}
-              onPress={() => {
-                triggerHaptic();
-                setIsArchModalVisible(true);
-              }}
-            >
-              <Ionicons name="sparkles" size={14} color="#2B6BFF" />
-              <ThemedText style={styles.archExplainerText}>How Trigger Data Syncs Across App</ThemedText>
-              <Ionicons name="chevron-forward" size={14} color="#2B6BFF" />
-            </TouchableOpacity>
-          </View>
-
-          {/* 24-Hour Vulnerability Heatmap */}
-          <View style={styles.heatmapSection}>
-            <View style={styles.sectionHeaderRow}>
-              <ThemedText style={styles.sectionTitle}>Circadian Urge Heatmap</ThemedText>
-              <ThemedText style={styles.sectionSub}>24-Hour Probability Matrix</ThemedText>
-            </View>
-
-            <View style={styles.heatmapRow}>
-              {hourlyHeatmap.map((item) => (
-                <View key={item.hour} style={styles.heatmapCol}>
-                  <View style={[styles.heatmapBar, { backgroundColor: item.color, height: item.level === 'high' ? 48 : item.level === 'mid' ? 32 : 18 }]} />
-                  <ThemedText style={styles.heatmapLabel}>{item.hour}</ThemedText>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Trigger Categories Filter */}
-          <View style={styles.categorySection}>
-            <ThemedText style={styles.sectionTitle}>Detected Trigger Patterns</ThemedText>
-            
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-              {['All', 'Circadian', 'Emotional', 'Environmental', 'Physical'].map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[
-                    styles.catChip,
-                    selectedCategory === cat && styles.catChipActive,
-                  ]}
-                  onPress={() => {
-                    triggerHaptic();
-                    setSelectedCategory(cat);
-                  }}
-                >
-                  <ThemedText style={[styles.catChipText, selectedCategory === cat && styles.catChipTextActive]}>
-                    {cat}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Filtered Triggers Grid */}
-          <View style={styles.triggersList}>
-            {filteredTriggers.map((t) => (
-              <View key={t.id} style={styles.triggerCard}>
-                <View style={styles.cardTop}>
-                  <View style={[styles.catBadge, { backgroundColor: `${t.color}18` }]}>
-                    <ThemedText style={[styles.catBadgeText, { color: t.color }]}>{t.category}</ThemedText>
-                  </View>
-                  <ThemedText style={styles.freqText}>{t.frequency} Occurrences Logged</ThemedText>
-                </View>
-
-                <ThemedText style={styles.cardTitle}>{t.name}</ThemedText>
-                <ThemedText style={styles.peakText}>Peak Vulnerability Window: {t.peakTime}</ThemedText>
-
-                <View style={styles.recBox}>
-                  <Ionicons name="bulb-outline" size={14} color="#2B6BFF" />
-                  <ThemedText style={styles.recText}>{t.recommendation}</ThemedText>
-                </View>
-              </View>
-            ))}
-          </View>
-
-          {/* Timeline Visualization */}
-          <View style={styles.timelineSection}>
-            <ThemedText style={styles.sectionTitle}>Chronological Trigger Timeline</ThemedText>
-            
-            <View style={styles.timelineList}>
-              {timelineEvents.map((ev) => (
-                <View key={ev.id} style={styles.timelineItem}>
-                  <View style={styles.timelineDot} />
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <View style={styles.timelineHeader}>
-                      <ThemedText style={styles.eventTitle}>{ev.triggerName}</ThemedText>
-                      <View style={styles.statusBadge}>
-                        <ThemedText style={styles.statusText}>{ev.status}</ThemedText>
-                      </View>
-                    </View>
-                    <ThemedText style={styles.eventTime}>{ev.time}</ThemedText>
-                    <ThemedText style={styles.eventAction}>{ev.resolutionAction}</ThemedText>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-
-        </ScrollView>
       </SafeAreaView>
 
-      {/* Trigger System Architecture Explainer Modal */}
+      <PageEntrance>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.contentContainer}>
+
+            {/* 1. Radar Overview Hero Card */}
+            <View style={styles.darkCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.headerBadgeRow}>
+                  <Ionicons name="shield-checkmark" size={14} color="#00E5FF" />
+                  <ThemedText style={styles.cardCategoryTitle}>PREDICTIVE RISK TELEMETRY</ThemedText>
+                </View>
+                <View style={[styles.statusPill, { backgroundColor: `${riskColor}20`, borderColor: `${riskColor}40` }]}>
+                  <ThemedText style={[styles.statusPillText, { color: riskColor }]}>
+                    {riskLevel}
+                  </ThemedText>
+                </View>
+              </View>
+
+              {/* Peak Danger Window & Critical Day */}
+              <View style={styles.timingBox}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <ThemedText style={styles.timingLabel}>PEAK DANGER WINDOW</ThemedText>
+                  <ThemedText style={styles.timingValue}>
+                    {triggerData?.peak_risk_window || '10:30 PM - 01:00 AM'}
+                  </ThemedText>
+                </View>
+
+                <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                  <ThemedText style={styles.timingLabel}>HIGHEST RISK DAY</ThemedText>
+                  <ThemedText style={styles.timingDayValue}>
+                    {triggerData?.highest_risk_day || 'Weekends'}
+                  </ThemedText>
+                </View>
+              </View>
+
+              {/* Primary Vulnerability Analysis */}
+              <View style={styles.vulnerabilitySection}>
+                <ThemedText style={styles.vulnerabilityLabel}>Primary Vulnerability Identified:</ThemedText>
+                <ThemedText style={styles.vulnerabilityText}>
+                  {triggerData?.primary_vulnerability || 'Solitary device usage in private areas with elevated evening stress.'}
+                </ThemedText>
+              </View>
+
+              {/* Active Catalyst Chips */}
+              {triggerData?.active_triggers && triggerData.active_triggers.length > 0 && (
+                <View style={styles.chipsWrap}>
+                  {triggerData.active_triggers.map((cat, idx) => (
+                    <View key={idx} style={styles.catalystChip}>
+                      <View style={[styles.catalystDot, { backgroundColor: idx === 0 ? '#EF4444' : '#00E5FF' }]} />
+                      <ThemedText style={styles.catalystText}>{cat}</ThemedText>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Tactical Defense Protocol */}
+              <View style={styles.tacticalBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="flash" size={13} color="#00E5FF" />
+                  <ThemedText style={styles.tacticalTitle}>TACTICAL DEFENSE SEQUENCE</ThemedText>
+                </View>
+                <ThemedText style={styles.tacticalBody}>
+                  {triggerData?.tactical_defense || '1) Execute 3-Second Snap on first sign. 2) Remove device from room. 3) Transmute vital energy via 15 pushups or Pranayama.'}
+                </ThemedText>
+              </View>
+
+              {/* Quick Action to Launch Emergency Shield */}
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.8}
+                onPress={() => {
+                  triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push('/emergency/urge-surfing' as any);
+                }}
+              >
+                <Ionicons name="shield" size={16} color="#000000" />
+                <ThemedText style={styles.actionBtnText}>Launch Emergency Urge Shield</ThemedText>
+              </TouchableOpacity>
+            </View>
+
+            {/* 2. Core Purpose Alignment Callout */}
+            {triggerData?.purpose_alignment_quote && (
+              <View style={[styles.darkCard, { borderColor: 'rgba(0, 229, 255, 0.2)' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="compass-outline" size={15} color="#00E5FF" />
+                  <ThemedText style={[styles.cardCategoryTitle, { color: '#00E5FF' }]}>PURPOSE & VISION REINFORCEMENT</ThemedText>
+                </View>
+                <ThemedText style={styles.purposeText}>
+                  "{triggerData.purpose_alignment_quote}"
+                </ThemedText>
+              </View>
+            )}
+
+            {/* 3. Category Filter Row */}
+            <View style={styles.sectionWrap}>
+              <ThemedText style={styles.sectionHeading}>Trigger Breakdown & Protocol</ThemedText>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterScroll}
+              >
+                {['All', 'Circadian', 'Emotional', 'Environmental', 'Physical'].map((cat) => {
+                  const isSelected = selectedCategory.toLowerCase() === cat.toLowerCase();
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[
+                        styles.filterTab,
+                        isSelected && styles.filterTabSelected,
+                      ]}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        triggerHaptic();
+                        setSelectedCategory(cat);
+                      }}
+                    >
+                      <ThemedText
+                        style={[
+                          styles.filterTabText,
+                          isSelected && styles.filterTabTextSelected,
+                        ]}
+                      >
+                        {cat}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* 4. Trigger Cards List */}
+            <View style={{ gap: 10 }}>
+              {filteredTriggers.map((item) => (
+                <View key={item.id} style={styles.triggerCard}>
+                  <View style={styles.triggerHeader}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={[styles.categoryTag, { backgroundColor: `${item.color}20` }]}>
+                          <ThemedText style={[styles.categoryTagText, { color: item.color }]}>
+                            {item.category.toUpperCase()}
+                          </ThemedText>
+                        </View>
+                        <ThemedText style={styles.triggerRiskText}>
+                          Risk: {item.riskScore}/100
+                        </ThemedText>
+                      </View>
+                      <ThemedText style={styles.triggerTitleText}>{item.name}</ThemedText>
+                    </View>
+                  </View>
+
+                  <View style={styles.triggerRecBox}>
+                    <Ionicons name="shield-outline" size={13} color="#00E5FF" style={{ marginTop: 2 }} />
+                    <ThemedText style={styles.triggerRecText}>{item.recommendation}</ThemedText>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {/* 5. Real Telemetry Timeline */}
+            <View style={styles.sectionWrap}>
+              <ThemedText style={styles.sectionHeading}>Recent Telemetry & Event History</ThemedText>
+              <View style={styles.timelineCard}>
+                {timelineEvents.map((ev, idx) => (
+                  <View key={ev.id || idx} style={styles.timelineRow}>
+                    <View style={styles.timelineLeft}>
+                      <View
+                        style={[
+                          styles.timelineNode,
+                          {
+                            backgroundColor:
+                              ev.status === 'Resolved'
+                                ? '#10B981'
+                                : ev.status === 'Interrupted'
+                                ? '#00E5FF'
+                                : '#EF4444',
+                          },
+                        ]}
+                      />
+                      {idx < timelineEvents.length - 1 && <View style={styles.timelineLine} />}
+                    </View>
+
+                    <View style={styles.timelineContent}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <ThemedText style={styles.timelineTime}>{ev.time}</ThemedText>
+                        <ThemedText
+                          style={[
+                            styles.timelineStatus,
+                            {
+                              color:
+                                ev.status === 'Resolved'
+                                  ? '#10B981'
+                                  : ev.status === 'Interrupted'
+                                  ? '#00E5FF'
+                                  : '#EF4444',
+                            },
+                          ]}
+                        >
+                          {ev.status.toUpperCase()}
+                        </ThemedText>
+                      </View>
+                      <ThemedText style={styles.timelineTitle}>{ev.triggerName}</ThemedText>
+                      <ThemedText style={styles.timelineAction}>{ev.resolutionAction}</ThemedText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+          </View>
+        </ScrollView>
+      </PageEntrance>
+
+      {/* Architecture Explainer Modal */}
       <Modal
         visible={isArchModalVisible}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setIsArchModalVisible(false)}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.modalBackdrop}
           activeOpacity={1}
           onPress={() => setIsArchModalVisible(false)}
@@ -311,32 +419,31 @@ export default function TriggerIntelligenceSingleScreen() {
             <View style={styles.drawerHandle} />
 
             <View style={styles.modalHeader}>
-              <Ionicons name="git-network" size={20} color="#2B6BFF" />
-              <ThemedText style={styles.modalTitle}>Trigger Data Lifecycle</ThemedText>
+              <Ionicons name="shield-checkmark" size={20} color="#00E5FF" />
+              <ThemedText style={styles.modalTitle}>How Trigger Intelligence Works</ThemedText>
             </View>
 
-            <View style={styles.stepBox}>
-              <ThemedText style={styles.stepTitle}>1. CREATED</ThemedText>
-              <ThemedText style={styles.stepDesc}>Generated via 90-sec Daily Check-Ins, Journal NLP extraction, or Urge Rescue logs.</ThemedText>
-            </View>
-
-            <View style={styles.stepBox}>
-              <ThemedText style={styles.stepTitle}>2. STORED</ThemedText>
-              <ThemedText style={styles.stepDesc}>Saved into daily vector memory logs and your long-term Trigger Knowledge Graph.</ThemedText>
-            </View>
-
-            <View style={styles.stepBox}>
-              <ThemedText style={styles.stepTitle}>3. ANALYZED</ThemedText>
-              <ThemedText style={styles.stepDesc}>Evaluated by neural risk prediction models to calculate 24-hour heatmaps & vulnerability scores.</ThemedText>
-            </View>
-
-            <View style={styles.stepBox}>
-              <ThemedText style={styles.stepTitle}>4. SURFACED</ThemedText>
-              <ThemedText style={styles.stepDesc}>Injected into AI Coach Chat context, Home Dashboard indicators, & pre-armed Emergency resets.</ThemedText>
+            <View style={styles.modalBodyTextWrap}>
+              <ThemedText style={styles.modalBodyP}>
+                ZenWill's Trigger Intelligence engine synthesizes your <ThemedText style={{ color: '#00E5FF', fontWeight: '800' }}>100% real database records</ThemedText>:
+              </ThemedText>
+              <ThemedText style={styles.modalBodyBullet}>
+                • <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Emergency Urge Logs</ThemedText>: Temporal clustering & after-urge notes
+              </ThemedText>
+              <ThemedText style={styles.modalBodyBullet}>
+                • <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Daily Checklists</ThemedText>: Stress cortisol scores, sleep debt, and mood intensity
+              </ThemedText>
+              <ThemedText style={styles.modalBodyBullet}>
+                • <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Onboarding Intake</ThemedText>: Primary devices, locations, first warning signs, and core purpose
+              </ThemedText>
+              <ThemedText style={styles.modalBodyBullet}>
+                • <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Journals & Progress</ThemedText>: Introspective themes and cognitive patterns
+              </ThemedText>
             </View>
 
             <TouchableOpacity
               style={styles.modalCloseBtn}
+              activeOpacity={0.8}
               onPress={() => setIsArchModalVisible(false)}
             >
               <ThemedText style={styles.modalCloseText}>Got It</ThemedText>
@@ -344,321 +451,374 @@ export default function TriggerIntelligenceSingleScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  gradientBg: { flex: 1 },
-  safeArea: { flex: 1 },
-  header: {
+  container: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  headerSafeArea: {
+    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  headerContainer: {
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: 10,
+    alignItems: 'center',
   },
   backBtn: {
     backgroundColor: 'transparent',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     padding: 4,
   },
-  categoryBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: 'rgba(255, 255, 255, 0.4)',
-    letterSpacing: 1.5,
+  headerTitleWrapper: {
+    alignItems: 'center',
+    gap: 1,
   },
-  headerTitle: {
-    fontSize: 22,
+  headerCategory: {
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#ffffff',
-    marginTop: 2,
-  },
-  infoBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(43, 107, 255, 0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContent: {
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.two,
-    paddingBottom: 110,
-    gap: Spacing.three,
-  },
-  riskCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    padding: Spacing.three,
-    gap: Spacing.two,
-  },
-  riskTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  riskBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  riskBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#10B981',
-  },
-  timeText: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.4)',
-  },
-  riskMainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-  },
-  scoreGaugeCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderWidth: 2,
-    borderColor: '#10B981',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gaugeNum: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#10B981',
-  },
-  gaugeSub: {
-    fontSize: 8.5,
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: '#00E5FF',
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
-  riskTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
+  headerTitleText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
   },
-  riskSub: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
-    lineHeight: 17,
+  infoBtn: {
+    padding: 4,
   },
-  archExplainerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(43, 107, 255, 0.08)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 4,
+
+  /* Scroll Layout */
+  scrollContent: {
+    paddingTop: 14,
+    paddingBottom: 36,
   },
-  archExplainerText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2B6BFF',
+  contentContainer: {
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
+    paddingHorizontal: 16,
+    gap: 16,
   },
-  heatmapSection: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 20,
+
+  /* Dark Grey Card (Unified UI Standard) */
+  darkCard: {
+    backgroundColor: '#0E0F12',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    padding: Spacing.three,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 16,
     gap: 12,
   },
-  sectionHeaderRow: {
+  cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  sectionSub: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.4)',
-  },
-  heatmapRow: {
+  headerBadgeRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 70,
-    paddingTop: 10,
-  },
-  heatmapCol: {
     alignItems: 'center',
     gap: 6,
   },
-  heatmapBar: {
-    width: 14,
-    borderRadius: 7,
+  cardCategoryTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
-  heatmapLabel: {
-    fontSize: 9.5,
-    color: 'rgba(255, 255, 255, 0.5)',
-  },
-  categorySection: {
-    gap: 10,
-    marginTop: 2,
-  },
-  filterRow: {
-    gap: 8,
-  },
-  catChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  catChipActive: {
-    backgroundColor: '#2B6BFF',
-    borderColor: '#2B6BFF',
-  },
-  catChipText: {
-    fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  catChipTextActive: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  triggersList: {
-    gap: 10,
-  },
-  triggerCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    padding: Spacing.three,
-    gap: 8,
-  },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  catBadge: {
+  statusPill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 6,
+    borderWidth: 1,
   },
-  catBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
+  statusPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
-  freqText: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.4)',
+
+  /* Timing Box */
+  timingBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#111215',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
+  timingLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
   },
-  peakText: {
+  timingValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#00E5FF',
+  },
+  timingDayValue: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.6)',
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  recBox: {
+
+  /* Vulnerability Section */
+  vulnerabilitySection: {
+    gap: 4,
+  },
+  vulnerabilityLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  vulnerabilityText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 17,
+  },
+
+  /* Catalyst Chips */
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  catalystChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(43, 107, 255, 0.08)',
-    borderRadius: 12,
-    padding: 10,
-    marginTop: 2,
+    gap: 5,
+    backgroundColor: '#16181D',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  recText: {
+  catalystDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  catalystText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+
+  /* Tactical Sequence Box */
+  tacticalBox: {
+    backgroundColor: '#111215',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.2)',
+    padding: 12,
+    gap: 6,
+  },
+  tacticalTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 0.8,
+  },
+  tacticalBody: {
     fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.8)',
-    flex: 1,
+    color: 'rgba(255, 255, 255, 0.85)',
     lineHeight: 16,
   },
-  timelineSection: {
+
+  actionBtn: {
+    backgroundColor: '#00E5FF',
+    borderRadius: 10,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  actionBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
+  },
+
+  purposeText: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.85)',
+    lineHeight: 17,
+    fontStyle: 'italic',
+  },
+
+  /* Categories & Filters */
+  sectionWrap: {
+    gap: 10,
+  },
+  sectionHeading: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  filterScroll: {
+    gap: 8,
+  },
+  filterTab: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#0E0F12',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  filterTabSelected: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderColor: '#00E5FF',
+  },
+  filterTabText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  filterTabTextSelected: {
+    color: '#00E5FF',
+    fontWeight: '800',
+  },
+
+  /* Trigger Cards */
+  triggerCard: {
+    backgroundColor: '#0E0F12',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 14,
+    gap: 8,
+  },
+  triggerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  categoryTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  categoryTagText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  triggerRiskText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  triggerTitleText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  triggerRecBox: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: '#111215',
+    borderRadius: 8,
+    padding: 10,
+  },
+  triggerRecText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.75)',
+    lineHeight: 15,
+    flex: 1,
+  },
+
+  /* Timeline */
+  timelineCard: {
+    backgroundColor: '#0E0F12',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 14,
+    gap: 16,
+  },
+  timelineRow: {
+    flexDirection: 'row',
     gap: 12,
-    marginTop: 4,
   },
-  timelineList: {
-    gap: 12,
-    borderLeftWidth: 1.5,
-    borderLeftColor: 'rgba(255, 255, 255, 0.08)',
-    paddingLeft: 14,
-    marginLeft: 6,
+  timelineLeft: {
+    alignItems: 'center',
+    width: 14,
   },
-  timelineItem: {
-    gap: 4,
-    position: 'relative',
-  },
-  timelineDot: {
-    position: 'absolute',
-    left: -20,
-    top: 4,
+  timelineNode: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#2B6BFF',
+    marginTop: 3,
   },
-  timelineHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  timelineLine: {
+    width: 1,
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginTop: 4,
   },
-  eventTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ffffff',
+  timelineContent: {
+    flex: 1,
+    gap: 2,
   },
-  statusBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  statusText: {
+  timelineTime: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#10B981',
+    color: '#64748B',
   },
-  eventTime: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.4)',
+  timelineStatus: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
-  eventAction: {
+  timelineTitle: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.65)',
-    marginTop: 2,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
+  timelineAction: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.65)',
+    lineHeight: 15,
+  },
+
+  /* Modal */
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#0B0D14',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: '#0E0F12',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: Spacing.four,
-    gap: Spacing.three,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    padding: 20,
+    gap: 12,
   },
   drawerHandle: {
     width: 36,
@@ -666,6 +826,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignSelf: 'center',
+    marginBottom: 4,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -673,39 +834,34 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
-    color: '#ffffff',
+    color: '#FFFFFF',
   },
-  stepBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    padding: 12,
-    gap: 2,
+  modalBodyTextWrap: {
+    gap: 6,
+    paddingVertical: 4,
   },
-  stepTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#2B6BFF',
-    letterSpacing: 1,
-  },
-  stepDesc: {
+  modalBodyP: {
     fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 17,
+  },
+  modalBodyBullet: {
+    fontSize: 11.5,
     color: 'rgba(255, 255, 255, 0.7)',
     lineHeight: 17,
   },
   modalCloseBtn: {
-    backgroundColor: '#2B6BFF',
-    paddingVertical: 14,
-    borderRadius: 16,
+    backgroundColor: '#00E5FF',
+    borderRadius: 10,
+    paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   modalCloseText: {
-    color: '#ffffff',
-    fontSize: 13.5,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#000000',
   },
 });

@@ -29,6 +29,7 @@ export interface HabitState {
   // Actions
   logDay: (retained: boolean) => void;
   resetChallenge: () => void;
+  clearState: () => void;
   incrementUrgeCount: () => void;
   syncFromDatabase: () => Promise<void>;
 }
@@ -130,6 +131,12 @@ export const useHabitStore = create<HabitState>()(
             })
             .catch(() => {});
 
+          // Complete daily check-in task in mission store
+          try {
+            const { useDailyMissionStore } = require('./daily-mission-store');
+            useDailyMissionStore.getState().completeTask('checkin');
+          } catch (e) {}
+
           return {
             streak: nextStreak,
             mindStrength: nextStrength,
@@ -150,6 +157,23 @@ export const useHabitStore = create<HabitState>()(
           history: [],
         });
       },
+
+      clearState: () => {
+        // Clears state locally without sending an API update (used for logout)
+        set({
+          streak: 0,
+          mindStrength: 0,
+          lastLoggedDate: null,
+          lastLoggedStatus: null,
+          history: [],
+          recentJournals: [],
+          meditationsCount: 0,
+          totalUrgesCount: 0,
+          todayUrgesCount: 0,
+          dailyUrgeCounts: [],
+        });
+      },
+
 
       syncFromDatabase: async () => {
         try {
@@ -202,9 +226,10 @@ export const useHabitStore = create<HabitState>()(
             });
 
 
-            // Sync authStore user object so all components reading authUser get real-time database data
+            // Sync authStore user object & dailyMissionStore checkin status
             try {
               const { useAuthStore } = require('./auth-store');
+              const { useDailyMissionStore } = require('./daily-mission-store');
               const authState = useAuthStore.getState();
               if (authState.user) {
                 authState.updateUser({
@@ -212,6 +237,9 @@ export const useHabitStore = create<HabitState>()(
                   streak: liveStreak,
                   totalPoints: profile.total_points ?? authState.user.totalPoints,
                 });
+              }
+              if (lastCheckin === today || profile.latest_checkin_summary?.date === today) {
+                useDailyMissionStore.getState().syncWithBackend().catch(() => {});
               }
             } catch (e) {}
           }

@@ -197,13 +197,14 @@ export const useDailyMissionStore = create<DailyMissionState>()(
 
       syncWithBackend: async () => {
         try {
-          // Fetch todays missions from backend DB to reconcile state
-          const backendMissions = await missionsApi.getTodaysMissions();
-          if (backendMissions && Array.isArray(backendMissions)) {
-            const state = get();
-            const updated = { ...state.todayTasks };
-            let changed = false;
+          const today = getTodayStr();
+          const state = get();
+          const updated = { ...state.todayTasks };
+          let changed = false;
 
+          // Fetch todays missions from backend DB to reconcile state
+          const backendMissions = await missionsApi.getTodaysMissions().catch(() => null);
+          if (backendMissions && Array.isArray(backendMissions)) {
             const checkinCats = ['checkin', 'morning'];
             const calmCats = ['calm', 'meditation', 'sleep'];
             const focusCats = ['focus', 'journal', 'reflection'];
@@ -220,10 +221,28 @@ export const useDailyMissionStore = create<DailyMissionState>()(
                 if (rescueCats.includes(c) && !updated.rescue) { updated.rescue = true; changed = true; }
               }
             });
+          }
 
-            if (changed) {
-              set({ todayTasks: updated });
+          // Check habitStore & authStore for real-time checkin completion status for today
+          try {
+            const { useHabitStore } = require('./habit-store');
+            const { useAuthStore } = require('./auth-store');
+            const habitState = useHabitStore.getState();
+            const authUser = useAuthStore.getState().user;
+
+            const isCheckinLoggedToday =
+              habitState.lastLoggedDate === today ||
+              habitState.latestCheckinSummary?.date === today ||
+              authUser?.lastCheckinDate === today;
+
+            if (isCheckinLoggedToday && !updated.checkin) {
+              updated.checkin = true;
+              changed = true;
             }
+          } catch (err) {}
+
+          if (changed) {
+            set({ todayTasks: updated });
           }
         } catch (e) {
           // Silent fallback to local storage state if offline
