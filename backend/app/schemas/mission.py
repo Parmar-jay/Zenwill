@@ -23,9 +23,14 @@ class MissionResponse(BaseModel):
         from_attributes = True
 
 
-class MissionCompleteRequest(BaseModel):
+class MissionCompleteCategoryRequest(BaseModel):
+    category: str
     duration_actual_minutes: Optional[int] = None
     feedback: Optional[str] = None
+
+
+class MissionSyncTasksRequest(BaseModel):
+    tasks: dict
 
 
 class MissionCompleteResponse(BaseModel):
@@ -34,3 +39,5 @@ class MissionCompleteResponse(BaseModel):
     mind_strength_gained: int
     new_mind_strength: int
     message: str
+    missions: Optional[List[MissionResponse]] = None
+

@@ -97,10 +97,7 @@ export const useDailyMissionStore = create<DailyMissionState>()(
         const today = getTodayStr();
 
         set((state) => {
-          if (state.todayTasks[taskKey]) {
-            return {}; // Already completed for today
-          }
-
+          const alreadyDone = state.todayTasks[taskKey];
           const updatedTasks = {
             ...state.todayTasks,
             [taskKey]: true,
@@ -114,7 +111,7 @@ export const useDailyMissionStore = create<DailyMissionState>()(
             (updatedTasks.rescue ? 1 : 0);
 
           const isNowAllCompleted = completedCount === 5;
-          const addedPoints = 20; // 5 tasks * 20 points = 100 max daily points
+          const addedPoints = alreadyDone ? 0 : 20;
 
           const nextTotalPoints = state.totalPoints + addedPoints;
 
@@ -136,9 +133,13 @@ export const useDailyMissionStore = create<DailyMissionState>()(
           };
         });
 
-        // Fire-and-forget backend sync attempt
-        get().syncWithBackend().catch(() => {});
+        // Persist to backend database atomically
+        missionsApi.completeCategory(taskKey).catch(() => {
+          // Fallback to sync
+          missionsApi.syncMissions({ ...get().todayTasks }).catch(() => {});
+        });
       },
+
 
       getWeeklyStats: () => {
         get().checkAndResetMidnight();
@@ -203,13 +204,20 @@ export const useDailyMissionStore = create<DailyMissionState>()(
             const updated = { ...state.todayTasks };
             let changed = false;
 
+            const checkinCats = ['checkin', 'morning'];
+            const calmCats = ['calm', 'meditation', 'sleep'];
+            const focusCats = ['focus', 'journal', 'reflection'];
+            const purposeCats = ['purpose', 'coach', 'connection'];
+            const rescueCats = ['exercise', 'rescue', 'emergency'];
+
             backendMissions.forEach((bm) => {
               if (bm.is_completed) {
-                if (bm.category === 'checkin' && !updated.checkin) { updated.checkin = true; changed = true; }
-                if (bm.category === 'calm' && !updated.meditation) { updated.meditation = true; changed = true; }
-                if (bm.category === 'focus' && !updated.journal) { updated.journal = true; changed = true; }
-                if (bm.category === 'purpose' && !updated.coach) { updated.coach = true; changed = true; }
-                if (bm.category === 'exercise' && !updated.rescue) { updated.rescue = true; changed = true; }
+                const c = (bm.category || '').toLowerCase();
+                if (checkinCats.includes(c) && !updated.checkin) { updated.checkin = true; changed = true; }
+                if (calmCats.includes(c) && !updated.meditation) { updated.meditation = true; changed = true; }
+                if (focusCats.includes(c) && !updated.journal) { updated.journal = true; changed = true; }
+                if (purposeCats.includes(c) && !updated.coach) { updated.coach = true; changed = true; }
+                if (rescueCats.includes(c) && !updated.rescue) { updated.rescue = true; changed = true; }
               }
             });
 
@@ -236,6 +244,7 @@ export const useDailyMissionStore = create<DailyMissionState>()(
           history: {},
         });
       },
+
     }),
     {
       name: 'zenwill-daily-missions-storage',

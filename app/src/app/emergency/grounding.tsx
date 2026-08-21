@@ -7,12 +7,17 @@ import {
   Platform,
   Animated,
   Text,
+  TextInput,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useDailyMissionStore } from '@/store/daily-mission-store';
+import { useHabitStore } from '@/store/habit-store';
+import { analyticsApi } from '@/services/analytics-api';
+
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -41,6 +46,7 @@ export default function EmergencyGroundingScreen() {
   };
 
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
+  const [sensoryInputs, setSensoryInputs] = useState<Record<string, string>>({});
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const steps = [
@@ -100,6 +106,18 @@ export default function EmergencyGroundingScreen() {
             <ThemedText style={styles.stepTitle}>{current.title}</ThemedText>
             <ThemedText style={styles.stepInstruction}>{current.instruction}</ThemedText>
 
+            {/* Individual Sensory Input Field */}
+            <TextInput
+              style={[styles.sensoryInput, { borderColor: `${current.color}50` }]}
+              placeholder={`Enter your ${current.sense.toLowerCase()} observation here...`}
+              placeholderTextColor="#64748B"
+              value={sensoryInputs[current.num] || ''}
+              onChangeText={(text) =>
+                setSensoryInputs((prev) => ({ ...prev, [current.num]: text }))
+              }
+              multiline={false}
+            />
+
             {/* Step Navigation Dots */}
             <View style={styles.dotsRow}>
               {steps.map((_, idx) => (
@@ -145,9 +163,21 @@ export default function EmergencyGroundingScreen() {
                 animateStepChange(activeStepIndex + 1);
               } else {
                 triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+                useDailyMissionStore.getState().completeTask('rescue');
+                analyticsApi.logEvent({
+                  event_type: 'emergency_exercise',
+                  screen_name: 'emergency_grounding',
+                  feature_name: 'sensory_grounding_54321',
+                  duration_seconds: 120,
+                  outcome: 'resisted',
+                  emotional_state: 'grounded',
+                  metadata: { inputs_provided: sensoryInputs },
+                }).catch(() => {});
+                useHabitStore.getState().syncFromDatabase().catch(() => {});
                 router.push('/emergency/urge-surfing' as any);
               }
             }}
+
           >
             <ThemedText style={styles.nextBtnText}>
               {activeStepIndex < steps.length - 1 ? `Next: ${steps[activeStepIndex + 1].sense}` : 'Continue to Urge Surfing'}
@@ -300,6 +330,17 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#94A3B8',
+  },
+  sensoryInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    color: '#FFFFFF',
+    marginTop: 6,
+    ...webNoOutline,
   },
   bottomDock: {
     paddingHorizontal: 16,

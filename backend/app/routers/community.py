@@ -332,6 +332,35 @@ def is_invalid_user_identifier(val: Optional[str]) -> bool:
     return False
 
 
+async def resolve_user_real_name(user_id_or_name: str, fallback: str = "Operative") -> str:
+    """Fetch exact user's real name directly from MongoDB User collection."""
+    if not user_id_or_name or not str(user_id_or_name).strip():
+        return fallback
+
+    uid = str(user_id_or_name).strip()
+    try:
+        u = await User.find_one({
+            "$or": [
+                {"_id": uid},
+                {"id": uid},
+                {"email": uid},
+                {"name": uid}
+            ]
+        })
+        if u and u.name and u.name.strip():
+            return u.name.strip().split(" ")[0]
+    except Exception as e:
+        print(f"[User Lookup Notice] {e}")
+
+    if fallback and fallback.strip() and fallback != "Operative" and not fallback.startswith("user_") and not fallback.startswith("usr_") and "@" not in fallback:
+        return fallback.strip().split(" ")[0]
+
+    if not uid.startswith("user_") and not uid.startswith("usr_") and "@" not in uid and len(uid) != 24 and not ("-" in uid and len(uid) >= 20):
+        return uid.split(" ")[0]
+
+    return fallback
+
+
 @router.get("/dm/conversations", response_model=List[ConversationSummary])
 async def get_dm_conversations(current_user: Optional[User] = Depends(get_optional_current_user)):
     """Fetch list of all active DM conversations for current user."""
@@ -367,27 +396,17 @@ async def get_dm_conversations(current_user: Optional[User] = Depends(get_option
 
             is_sender = dm.sender_id == user_id_str or dm.sender_name == user_name_str
             other_id = dm.receiver_id if is_sender else dm.sender_id
-            other_name = dm.receiver_name if is_sender else dm.sender_name
-            other_username = dm.receiver_username if is_sender else dm.sender_username
+            raw_other_name = dm.receiver_name if is_sender else dm.sender_name
 
-            # Sanitize other_name so raw database user IDs, UUIDs, or invalid test names never appear
-            if is_invalid_user_identifier(other_name):
-                try:
-                    u = await User.find_one({"$or": [{"_id": other_id}, {"id": other_id}, {"email": other_id}]})
-                    if u and u.name and not is_invalid_user_identifier(u.name):
-                        other_name = u.name.split(" ")[0]
-                    else:
-                        other_name = "Operative"
-                except Exception:
-                    other_name = "Operative"
-            else:
-                other_name = other_name.split(" ")[0]
+            # Resolve actual real user display name directly from MongoDB User collection
+            other_name = await resolve_user_real_name(other_id, fallback=raw_other_name)
+            other_username = other_name.lower().replace(" ", "_")
 
             if other_id not in conv_dict and other_name != user_name_str:
                 conv_dict[other_id] = ConversationSummary(
                     other_user_id=other_id,
                     other_user_name=other_name,
-                    other_user_username=other_username or other_name.lower().replace(" ", "_"),
+                    other_user_username=other_username,
                     last_message=dm.content,
                     last_message_at=format_ist_time(dm.created_at),
                     unread_count=1 if (not is_sender and not dm.is_read) else 0,
@@ -408,36 +427,19 @@ async def get_dm_chat_history(
 ):
     """Fetch DM chat history between current user and target user ID or username."""
     user_id_str = str(current_user.id) if current_user else "user_current"
+    user_name_str = (current_user.name if current_user and current_user.name else "Operative").split(" ")[0]
+    user_email_str = current_user.email if (current_user and current_user.email) else ""
     try:
         target_id = target_user_identifier
 
         # Resolve target user from DB if possible
-        if target_user_identifier and len(target_user_identifier) == 24:
-            try:
-                target_u = await User.get(target_user_identifier)
-                if target_u:
-                    target_id = str(target_u.id)
-            except Exception:
-                pass
-        else:
-            try:
-                target_u = await User.find_one({"name": target_user_identifier})
-                if target_u:
-                    target_id = str(target_u.id)
-            except Exception:
-                pass
-
-        user_name_str = current_user.name if (current_user and current_user.name) else "Operative"
-        user_email_str = current_user.email if (current_user and current_user.email) else ""
-
-        target_name_str = target_user_identifier
-        if 'target_u' in locals() and target_u and target_u.name:
-            target_name_str = target_u.name
+        target_name_str = await resolve_user_real_name(target_user_identifier, fallback=target_user_identifier)
 
         query_conditions = [
             {"sender_id": user_id_str, "receiver_id": target_id},
             {"sender_id": target_id, "receiver_id": user_id_str},
-            {"sender_id": user_id_str, "receiver_name": target_user_identifier},
+            {"sender_id": user_id_str, "receiver_name": target_name_str},
+            {"sender_name": target_name_str, "receiver_id": user_id_str},
             {"sender_id": target_id, "receiver_name": user_name_str},
             {"sender_name": user_name_str, "receiver_name": target_name_str},
             {"sender_name": target_name_str, "receiver_name": user_name_str},
@@ -486,34 +488,14 @@ async def send_direct_message(
 ):
     """Send a direct message to target user and save cleanly to MongoDB."""
     user_id_str = str(current_user.id) if current_user else "user_current"
-    sender_name = (current_user.name if current_user and current_user.name else "Operative")
+    sender_name = current_user.name.split(" ")[0] if (current_user and current_user.name) else await resolve_user_real_name(user_id_str, "Operative")
     sender_username = sender_name.lower().replace(" ", "_")
 
     target_id = payload.receiver_id or target_user_identifier
-    target_name = target_user_identifier
-    target_username = target_user_identifier.lower().replace(" ", "_")
-
-    # Try resolving target user details from DB
-    if target_id and len(target_id) == 24:
-        try:
-            target_u = await User.get(target_id)
-            if target_u and target_u.name:
-                target_name = target_u.name.split(" ")[0]
-                target_username = target_name.lower().replace(" ", "_")
-        except Exception:
-            pass
-
-    if target_name == target_user_identifier or len(target_name) == 24 or target_name.startswith("user_") or target_name.startswith("usr_"):
-        try:
-            target_u = await User.find_one({"name": target_user_identifier})
-            if target_u and target_u.name:
-                target_id = str(target_u.id)
-                target_name = target_u.name.split(" ")[0]
-                target_username = target_name.lower().replace(" ", "_")
-            else:
-                target_name = "Operative"
-        except Exception:
-            target_name = "Operative"
+    target_name = await resolve_user_real_name(target_id, fallback=target_user_identifier)
+    if target_name == "Operative" or target_name == target_user_identifier:
+        target_name = await resolve_user_real_name(target_user_identifier, fallback="Operative")
+    target_username = target_name.lower().replace(" ", "_")
 
     new_dm = DirectMessage(
         sender_id=user_id_str,

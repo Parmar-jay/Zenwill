@@ -65,10 +65,15 @@ const syncUserStats = (response: AuthResponse) => {
     if (response.name) {
       useOnboardingStore.setState({ firstName: response.name });
     }
+
+    // Immediately trigger full database sync for missions and habit history
+    useDailyMissionStore.getState().syncWithBackend().catch(() => {});
+    useHabitStore.getState().syncFromDatabase().catch(() => {});
   } catch (err) {
     // Fail-safe silent catch if stores are initializing
   }
 };
+
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -261,7 +266,12 @@ export const useAuthStore = create<AuthState>()(
       storage: createJSONStorage(() => AsyncStorage),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
+        if (state?.isAuthenticated) {
+          useDailyMissionStore.getState().syncWithBackend().catch(() => {});
+          useHabitStore.getState().syncFromDatabase().catch(() => {});
+        }
       },
     }
+
   )
 );

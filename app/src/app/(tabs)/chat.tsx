@@ -13,6 +13,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -247,78 +248,84 @@ export default function CoachChatScreen() {
           <View style={{ width: 36 }} />
         </View>
 
-        {/* Messages Stream */}
-        <PageEntrance style={{ flex: 1 }}>
-          <ScrollView
-            ref={scrollViewRef}
-            contentContainerStyle={styles.messagesContainer}
-            showsVerticalScrollIndicator={false}
-          >
-          {/* Continuous Message Stream */}
-          {messages.map((item) => (
-            <View
-              key={item.id}
-              style={[
-                styles.messageRow,
-                item.sender === 'user' ? styles.userRow : styles.aiRow,
-              ]}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          {/* Messages Stream */}
+          <PageEntrance style={{ flex: 1 }}>
+            <ScrollView
+              ref={scrollViewRef}
+              contentContainerStyle={styles.messagesContainer}
+              showsVerticalScrollIndicator={false}
             >
-              {item.sender === 'ai' && (
-                <View style={styles.aiAvatarCircle}>
-                  <Ionicons name="sparkles" size={13} color="#00E5FF" />
-                </View>
-              )}
-
-              <View style={{ flex: 1, alignItems: item.sender === 'user' ? 'flex-end' : 'flex-start' }}>
+              {/* Continuous Message Stream */}
+              {messages.map((item) => (
                 <View
+                  key={item.id}
                   style={[
-                    styles.messageBubble,
-                    item.sender === 'user' ? styles.userBubble : styles.aiBubble,
+                    styles.messageRow,
+                    item.sender === 'user' ? styles.userRow : styles.aiRow,
                   ]}
                 >
-                  <ThemedText style={styles.messageText}>{item.text}</ThemedText>
+                  {item.sender === 'ai' && (
+                    <View style={styles.aiAvatarCircle}>
+                      <Ionicons name="sparkles" size={13} color="#00E5FF" />
+                    </View>
+                  )}
+
+                  <View style={{ flex: 1, alignItems: item.sender === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <View
+                      style={[
+                        styles.messageBubble,
+                        item.sender === 'user' ? styles.userBubble : styles.aiBubble,
+                      ]}
+                    >
+                      <ThemedText style={styles.messageText}>{item.text}</ThemedText>
+                    </View>
+
+                    <ThemedText style={styles.timestampText}>{item.timestamp}</ThemedText>
+                  </View>
                 </View>
+              ))}
 
-                <ThemedText style={styles.timestampText}>{item.timestamp}</ThemedText>
-              </View>
+              {isStreaming && (
+                <View style={[styles.messageRow, styles.aiRow]}>
+                  <View style={styles.aiAvatarCircle}>
+                    <Ionicons name="sparkles" size={13} color="#00E5FF" />
+                  </View>
+                  <View style={[styles.messageBubble, styles.aiBubble, { paddingVertical: 10 }]}>
+                    <ThemedText style={styles.streamingText}>Synthesizing insight...</ThemedText>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </PageEntrance>
+
+          {/* Input Bar — Matching Community Floating Pill Bar */}
+          <View style={styles.inputArea}>
+            <View style={styles.inputWrapper}>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Type a message..."
+                placeholderTextColor="rgba(255, 255, 255, 0.45)"
+                value={inputMessage}
+                onChangeText={setInputMessage}
+                multiline={true}
+                maxLength={1500}
+                selectionColor="#00E5FF"
+              />
+              <TouchableOpacity
+                style={[styles.sendBtn, !inputMessage.trim() && styles.sendBtnDisabled]}
+                disabled={!inputMessage.trim() || isStreaming}
+                onPress={() => handleSendMessage()}
+              >
+                <Ionicons name="arrow-up" size={18} color="#000000" />
+              </TouchableOpacity>
             </View>
-          ))}
-
-          {isStreaming && (
-            <View style={[styles.messageRow, styles.aiRow]}>
-              <View style={styles.aiAvatarCircle}>
-                <Ionicons name="sparkles" size={13} color="#00E5FF" />
-              </View>
-              <View style={[styles.messageBubble, styles.aiBubble, { paddingVertical: 10 }]}>
-                <ThemedText style={styles.streamingText}>Synthesizing insight...</ThemedText>
-              </View>
-            </View>
-          )}
-        </ScrollView>
-      </PageEntrance>
-
-        {/* Input Bar — Matching Community Floating Pill Bar */}
-        <View style={styles.inputArea}>
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Type a message..."
-              placeholderTextColor="rgba(255, 255, 255, 0.45)"
-              value={inputMessage}
-              onChangeText={setInputMessage}
-              multiline={true}
-              maxLength={1500}
-              selectionColor="#00E5FF"
-            />
-            <TouchableOpacity
-              style={[styles.sendBtn, !inputMessage.trim() && styles.sendBtnDisabled]}
-              disabled={!inputMessage.trim() || isStreaming}
-              onPress={() => handleSendMessage()}
-            >
-              <Ionicons name="arrow-up" size={18} color="#000000" />
-            </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
 
       {/* AI Memory Bank & Context Modal */}
@@ -587,7 +594,7 @@ const styles = StyleSheet.create({
   },
   inputWrapper: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     backgroundColor: 'rgba(20, 24, 33, 0.92)',
     borderRadius: 24,
     borderWidth: 1.5,
@@ -614,8 +621,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
-    alignSelf: 'flex-end',
-    marginBottom: Platform.OS === 'web' ? 4 : 2,
+    alignSelf: 'center',
     ...webNoOutline,
   },
   sendBtnDisabled: {

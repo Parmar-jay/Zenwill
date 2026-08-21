@@ -30,7 +30,16 @@ export interface UserProfile {
   total_urges_count?: number;
   today_urges_count?: number;
   daily_urge_counts?: Array<{ date: string; dayLabel: string; count: number; isToday?: boolean }>;
+  checkin_history?: Array<{
+    date: string;
+    status: string;
+    streakAfter?: number;
+    strengthAfter?: number;
+    mood?: string;
+    urge_intensity?: number;
+  }>;
 }
+
 
 export const profileApi = {
   getMe(): Promise<UserProfile> {

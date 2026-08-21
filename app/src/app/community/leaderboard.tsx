@@ -190,7 +190,7 @@ export default function CommunityLeaderboardScreen() {
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
           </TouchableOpacity>
 
-          <View style={{ alignItems: 'center' }}>
+          <View style={{ alignItems: 'center', flex: 1 }}>
             <ThemedText style={styles.categoryBadge}>REAL DATABASE RANKINGS</ThemedText>
             <ThemedText style={styles.headerTitle}>Habit Streak Leaderboard</ThemedText>
           </View>

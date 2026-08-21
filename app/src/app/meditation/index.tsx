@@ -18,8 +18,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
+import { useHabitStore } from '@/store/habit-store';
+import { analyticsApi } from '@/services/analytics-api';
 import { YOGIC_PRACTICES, YogicTechnique, EMERGENCY_SOS_SEQUENCE } from '@/constants/practices';
 import { PageEntrance } from '@/components/ui/smooth-loader';
+
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -185,10 +188,30 @@ export default function MeditationScreen() {
 
   const handleFinishSession = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    const durationSec = activeTechnique ? Math.max(activeTechnique.durationMinutes * 60 - secondsRemaining, 30) : 300;
+    analyticsApi.logEvent({
+      event_type: 'meditation_session',
+      screen_name: 'meditation_screen',
+      feature_name: activeTechnique?.title || 'Meditation Practice',
+      duration_seconds: durationSec,
+      outcome: 'completed',
+      emotional_state: 'calm',
+      metadata: {
+        technique_id: activeTechnique?.id,
+        technique_title: activeTechnique?.title,
+        category: activeTechnique?.category,
+        duration_minutes: activeTechnique?.durationMinutes,
+        difficulty: activeTechnique?.difficulty,
+        completed: true,
+      },
+    }).catch(() => {});
+
     useDailyMissionStore.getState().completeTask('meditation');
+    useHabitStore.getState().syncFromDatabase().catch(() => {});
     setIsPlayerVisible(false);
     setIsCompletedModalVisible(true);
   };
+
 
   const renderStars = (rating: number) => {
     const stars = [];

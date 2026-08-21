@@ -41,10 +41,15 @@ export default function DirectMessageScreen() {
   const rawTargetName = (searchParams.user_name as string) || (searchParams.username as string) || '';
 
   const getCleanName = (raw: string) => {
-    if (!raw || raw.length === 24 || raw.startsWith('user_') || raw.startsWith('usr_')) {
+    if (!raw || !raw.trim()) return 'Operative';
+    const v = raw.trim();
+    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_')) {
       return 'Operative';
     }
-    return raw.split(' ')[0];
+    if (v.includes('@')) {
+      return v.split('@')[0];
+    }
+    return v.split(' ')[0];
   };
 
   const [targetDisplayName, setTargetDisplayName] = useState<string>(getCleanName(rawTargetName));
@@ -123,7 +128,7 @@ export default function DirectMessageScreen() {
 
   const handleSend = async () => {
     if (!inputText.trim() || isSending) return;
-    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
     const textToSend = inputText.trim();
     setInputText('');
@@ -143,11 +148,13 @@ export default function DirectMessageScreen() {
     };
 
     setMessages((prev) => [...prev, tempMsg]);
-    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    });
 
     try {
       await communityApi.sendDirectMessage(targetUserId, textToSend, 'text');
-      loadChatHistory(true);
+      await loadChatHistory(true);
     } catch (e) {
       console.log('Error sending DM:', e);
     } finally {
@@ -195,7 +202,7 @@ export default function DirectMessageScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           {/* Header Bar — Clean, displaying display name and online status */}
           <View style={styles.headerBar}>
@@ -394,9 +401,9 @@ const styles = StyleSheet.create({
   userInfoBox: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
     flex: 1,
-    marginLeft: 4,
   },
   avatarWrapper: {
     width: 32,
@@ -559,7 +566,7 @@ const styles = StyleSheet.create({
   },
   inputWrapper: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     backgroundColor: 'rgba(20, 24, 33, 0.92)',
     borderRadius: 24,
     borderWidth: 1.5,
@@ -585,8 +592,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
-    alignSelf: 'flex-end',
-    marginBottom: Platform.OS === 'web' ? 4 : 2,
+    alignSelf: 'center',
   },
   sendBtnDisabled: {
     opacity: 0.35,

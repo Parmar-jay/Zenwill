@@ -125,26 +125,27 @@ export default function ProgressTabScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
         {/* Top Header Bar */}
         <View style={styles.headerBar}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              activeOpacity={0.7}
-              onPress={() => {
-                triggerHaptic();
-                if (router.canGoBack()) {
-                  router.back();
-                } else {
-                  router.replace('/(tabs)/home' as any);
-                }
-              }}
-            >
-              <Ionicons name="chevron-back" size={24} color="#00E5FF" />
-            </TouchableOpacity>
-            <View>
-              <ThemedText style={styles.headerCategory}>AI MINDSET ANALYTICS</ThemedText>
-              <ThemedText style={styles.headerTitleText}>Progress Dashboard</ThemedText>
-            </View>
+          <TouchableOpacity
+            style={styles.backBtn}
+            activeOpacity={0.7}
+            onPress={() => {
+              triggerHaptic();
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)/home' as any);
+              }
+            }}
+          >
+            <Ionicons name="chevron-back" size={24} color="#00E5FF" />
+          </TouchableOpacity>
+
+          <View style={styles.headerTitleContainer}>
+            <ThemedText style={styles.headerCategory}>AI MINDSET ANALYTICS</ThemedText>
+            <ThemedText style={styles.headerTitleText}>Progress Dashboard</ThemedText>
           </View>
+
+          <View style={{ width: 36 }} />
         </View>
 
         <PageEntrance>
@@ -365,7 +366,7 @@ export default function ProgressTabScreen() {
 
               <View style={styles.metricsGrid}>
                 {/* 1. Current Streak */}
-                <View style={[styles.metricTile, { borderColor: 'rgba(0, 229, 255, 0.3)', backgroundColor: 'rgba(0, 229, 255, 0.05)' }]}>
+                <View style={[styles.metricTile, { borderColor: 'rgba(0, 229, 255, 0.3)', backgroundColor: 'rgba(11, 15, 25, 0.95)' }]}>
                   <View style={styles.tileHeader}>
                     <Ionicons name="flame" size={18} color="#00E5FF" />
                     <ThemedText style={[styles.tileMetricNum, { color: '#00E5FF' }]}>{streak}d</ThemedText>
@@ -375,7 +376,7 @@ export default function ProgressTabScreen() {
                 </View>
 
                 {/* 2. Highest Streak */}
-                <View style={[styles.metricTile, { borderColor: 'rgba(245, 158, 11, 0.3)', backgroundColor: 'rgba(245, 158, 11, 0.05)' }]}>
+                <View style={[styles.metricTile, { borderColor: 'rgba(245, 158, 11, 0.3)', backgroundColor: 'rgba(11, 15, 25, 0.95)' }]}>
                   <View style={styles.tileHeader}>
                     <Ionicons name="trophy" size={18} color="#F59E0B" />
                     <ThemedText style={[styles.tileMetricNum, { color: '#F59E0B' }]}>{highestStreak}d</ThemedText>
@@ -385,7 +386,7 @@ export default function ProgressTabScreen() {
                 </View>
 
                 {/* 3. Urge Counter (Red Card) */}
-                <View style={[styles.metricTile, { borderColor: 'rgba(239, 68, 68, 0.35)', backgroundColor: 'rgba(239, 68, 68, 0.08)' }]}>
+                <View style={[styles.metricTile, { borderColor: 'rgba(239, 68, 68, 0.35)', backgroundColor: 'rgba(11, 15, 25, 0.95)' }]}>
                   <View style={styles.tileHeader}>
                     <Ionicons name="flame-outline" size={18} color="#EF4444" />
                     <ThemedText style={[styles.tileMetricNum, { color: '#EF4444' }]}>{totalUrgesCount || 0}</ThemedText>
@@ -395,7 +396,7 @@ export default function ProgressTabScreen() {
                 </View>
 
                 {/* 4. Total Check-ins */}
-                <View style={[styles.metricTile, { borderColor: 'rgba(139, 92, 246, 0.3)', backgroundColor: 'rgba(139, 92, 246, 0.05)' }]}>
+                <View style={[styles.metricTile, { borderColor: 'rgba(139, 92, 246, 0.3)', backgroundColor: 'rgba(11, 15, 25, 0.95)' }]}>
                   <View style={styles.tileHeader}>
                     <Ionicons name="calendar-outline" size={18} color="#8B5CF6" />
                     <ThemedText style={[styles.tileMetricNum, { color: '#8B5CF6' }]}>{totalLogs}</ThemedText>
@@ -553,26 +554,25 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(0, 229, 255, 0.15)',
     backgroundColor: '#030712',
   },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
   backBtn: {
     backgroundColor: 'transparent',
     padding: 4,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerTitleContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
   headerCategory: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#00E5FF',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
   headerTitleText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
     color: '#ffffff',
     letterSpacing: -0.3,
@@ -590,7 +590,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.25)',
     overflow: 'hidden',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
   },
   heroCardGradient: {
     padding: 16,
@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   widgetCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
     borderRadius: 14,
     borderWidth: 1,
     padding: 12,
@@ -727,7 +727,7 @@ const styles = StyleSheet.create({
 
   /* Top 3 Journals */
   journalCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.2)',
@@ -768,7 +768,7 @@ const styles = StyleSheet.create({
 
   /* Visual Bar Chart Card */
   chartCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.2)',
@@ -893,7 +893,7 @@ const styles = StyleSheet.create({
   historyCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
@@ -930,7 +930,7 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
   },
   emptyCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(11, 15, 25, 0.95)',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.2)',

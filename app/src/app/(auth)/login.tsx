@@ -330,15 +330,11 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
   },
   scrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
+    paddingBottom: 40,
   },
   contentContainer: {
-    width: '100%',
-    maxWidth: 440,
     paddingHorizontal: 20,
-    paddingBottom: 40,
-    paddingTop: 10,
+    paddingTop: 12,
   },
   titleSection: {
     marginBottom: 24,

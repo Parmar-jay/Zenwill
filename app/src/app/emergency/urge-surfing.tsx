@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { analyticsApi } from '@/services/analytics-api';
 import { useHabitStore } from '@/store/habit-store';
+import { useDailyMissionStore } from '@/store/daily-mission-store';
+
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -168,13 +170,15 @@ export default function EmergencyUrgeSurfingScreen() {
       console.warn('Urge surfing logging warning (offline):', err);
     }
 
-    // 3. Sync database state
+    // 3. Mark rescue mission completed & sync database state
+    useDailyMissionStore.getState().completeTask('rescue');
     useHabitStore.getState().syncFromDatabase().catch(() => {});
 
     setIsSubmitting(false);
     setShowFeedbackModal(false);
     router.navigate('/(tabs)/progress' as any);
   };
+
 
   return (
     <View style={styles.blackBg}>

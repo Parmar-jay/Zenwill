@@ -160,20 +160,47 @@ export const useHabitStore = create<HabitState>()(
             const liveStreak = typeof profile.streak === 'number' ? profile.streak : 0;
             const liveStrength = typeof profile.ai_mindset_score === 'number' ? profile.ai_mindset_score : (typeof profile.mind_strength === 'number' ? profile.mind_strength : 50);
 
-            set((state) => ({
-              streak: liveStreak,
-              mindStrength: liveStrength,
-              lastLoggedDate: lastCheckin,
-              lastLoggedStatus: lastCheckin === today ? 'retained' : null,
-              aiMindsetAnalysis: profile.ai_mindset_analysis || '',
-              recentJournals: profile.recent_journals || [],
-              meditationsCount: profile.meditations_count || 0,
-              afternoonMeditationDone: profile.afternoon_meditation_done || false,
-              latestCheckinSummary: profile.latest_checkin_summary,
-              totalUrgesCount: typeof profile.total_urges_count === 'number' ? profile.total_urges_count : state.totalUrgesCount,
-              todayUrgesCount: typeof profile.today_urges_count === 'number' ? profile.today_urges_count : state.todayUrgesCount,
-              dailyUrgeCounts: profile.daily_urge_counts && profile.daily_urge_counts.length > 0 ? profile.daily_urge_counts : state.dailyUrgeCounts,
-            }));
+            set((state) => {
+              const todayHistory = state.history.find((h) => h.date === today);
+              const currentStatus = state.lastLoggedDate === today ? state.lastLoggedStatus : null;
+
+              let statusToKeep: 'retained' | 'relapsed' | null = null;
+              if (lastCheckin === today) {
+                if (liveStreak === 0) {
+                  statusToKeep = 'relapsed';
+                } else {
+                  statusToKeep = currentStatus || (todayHistory ? (todayHistory.status as 'retained' | 'relapsed') : 'retained');
+                }
+              }
+
+              // Hydrate history from database checkin_history if available
+              let hydratedHistory = state.history;
+              if (profile.checkin_history && Array.isArray(profile.checkin_history) && profile.checkin_history.length > 0) {
+                hydratedHistory = profile.checkin_history.map((c: any) => ({
+                  date: c.date,
+                  status: (c.status === 'relapsed' ? 'relapsed' : 'retained') as 'retained' | 'relapsed',
+                  streakAfter: typeof c.streakAfter === 'number' ? c.streakAfter : (c.status === 'relapsed' ? 0 : 1),
+                  strengthAfter: typeof c.strengthAfter === 'number' ? c.strengthAfter : 50,
+                }));
+              }
+
+              return {
+                streak: liveStreak,
+                mindStrength: liveStrength,
+                lastLoggedDate: lastCheckin,
+                lastLoggedStatus: statusToKeep,
+                history: hydratedHistory,
+                aiMindsetAnalysis: profile.ai_mindset_analysis || '',
+                recentJournals: profile.recent_journals || [],
+                meditationsCount: profile.meditations_count || 0,
+                afternoonMeditationDone: profile.afternoon_meditation_done || false,
+                latestCheckinSummary: profile.latest_checkin_summary,
+                totalUrgesCount: typeof profile.total_urges_count === 'number' ? profile.total_urges_count : state.totalUrgesCount,
+                todayUrgesCount: typeof profile.today_urges_count === 'number' ? profile.today_urges_count : state.todayUrgesCount,
+                dailyUrgeCounts: profile.daily_urge_counts && profile.daily_urge_counts.length > 0 ? profile.daily_urge_counts : state.dailyUrgeCounts,
+              };
+            });
+
 
             // Sync authStore user object so all components reading authUser get real-time database data
             try {

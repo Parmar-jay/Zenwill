@@ -21,7 +21,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { journalApi, JournalEntry } from '@/services/journal-api';
+import { useDailyMissionStore } from '@/store/daily-mission-store';
+import { useHabitStore } from '@/store/habit-store';
 import { PageEntrance } from '@/components/ui/smooth-loader';
+
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -149,6 +152,10 @@ export default function JournalIndexScreen() {
           setCommunityEntries((prev) => [created, ...prev.filter((e) => e.id !== created.id).slice(0, 4)]);
         }
 
+        // Complete mission task and sync habit store
+        useDailyMissionStore.getState().completeTask('journal');
+        useHabitStore.getState().syncFromDatabase().catch(() => {});
+
         // Reset form & close modal
         setNewTitle('');
         setNewContent('');
@@ -158,6 +165,7 @@ export default function JournalIndexScreen() {
 
         triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
       } else {
+
         throw new Error('Invalid response from server');
       }
     } catch (error: any) {

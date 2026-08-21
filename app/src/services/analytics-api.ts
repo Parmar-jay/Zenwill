@@ -121,6 +121,9 @@ export const analyticsApi = {
 
   logEvent(data: {
     event_type: string;
+    screen_name?: string;
+    feature_name?: string;
+    duration_seconds?: number;
     emotional_state?: string;
     trigger_context?: string;
     outcome?: string;
@@ -130,3 +133,4 @@ export const analyticsApi = {
     return api.post('/events/', data);
   },
 };
+

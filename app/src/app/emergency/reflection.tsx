@@ -15,6 +15,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { analyticsApi } from '@/services/analytics-api';
+import { useDailyMissionStore } from '@/store/daily-mission-store';
+import { useHabitStore } from '@/store/habit-store';
+
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -73,8 +76,11 @@ export default function EmergencyReflectionScreen() {
       console.warn('Backend emergency save warning (offline mode):', err);
     }
 
+    useDailyMissionStore.getState().completeTask('rescue');
+    useHabitStore.getState().syncFromDatabase().catch(() => {});
     router.navigate('/(tabs)/home' as any);
   };
+
 
   return (
     <LinearGradient

@@ -231,9 +231,11 @@ export default function BillingSingleScreen() {
                       <View style={{ flex: 1 }}>
                         <View style={styles.planTitleRow}>
                           <ThemedText style={styles.planTitleText}>{plans.monthly.title}</ThemedText>
-                          <View style={styles.saveTag}>
-                            <ThemedText style={styles.saveTagText}>{plans.monthly.savings}</ThemedText>
-                          </View>
+                          {plans.monthly.savings ? (
+                            <View style={styles.saveTag}>
+                              <ThemedText style={styles.saveTagText}>{plans.monthly.savings}</ThemedText>
+                            </View>
+                          ) : null}
                         </View>
                         <ThemedText style={styles.planSubText}>
                           {plans.monthly.billingDetail}
@@ -271,9 +273,11 @@ export default function BillingSingleScreen() {
                       <View style={{ flex: 1 }}>
                         <View style={styles.planTitleRow}>
                           <ThemedText style={styles.planTitleText}>{plans.annual.title}</ThemedText>
-                          <View style={[styles.saveTag, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                            <ThemedText style={[styles.saveTagText, { color: '#60A5FA' }]}>{plans.annual.savings}</ThemedText>
-                          </View>
+                          {plans.annual.savings ? (
+                            <View style={[styles.saveTag, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                              <ThemedText style={[styles.saveTagText, { color: '#60A5FA' }]}>{plans.annual.savings}</ThemedText>
+                            </View>
+                          ) : null}
                         </View>
                         <ThemedText style={styles.planSubText}>
                           {plans.annual.billingDetail}
@@ -318,7 +322,7 @@ export default function BillingSingleScreen() {
                   onPress={handleSubscribe}
                 >
                   <LinearGradient
-                    colors={['#6366F1', '#3B82F6', '#00E5FF']}
+                    colors={['#27272A', '#18181B', '#09090B']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.subscribeGradient}
@@ -699,6 +703,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
     borderRadius: 14,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
   },
   subscribeGradient: {
     flexDirection: 'row',

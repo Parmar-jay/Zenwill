@@ -158,7 +158,7 @@ export default function TriggerIntelligenceSingleScreen() {
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
           </TouchableOpacity>
 
-          <View style={{ alignItems: 'center' }}>
+          <View style={{ alignItems: 'center', flex: 1 }}>
             <ThemedText style={styles.categoryBadge}>BEHAVIORAL NEUROSCIENCE</ThemedText>
             <ThemedText style={styles.headerTitle}>Trigger Intelligence</ThemedText>
           </View>

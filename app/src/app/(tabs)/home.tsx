@@ -10,6 +10,7 @@ import {
   Animated,
   Easing,
   Image,
+  ImageBackground,
   TextInput,
   useWindowDimensions,
 } from 'react-native';
@@ -50,9 +51,6 @@ export const ALL_QUICK_ACTIONS: QuickActionDef[] = [
   { id: 'trigger-intel', title: 'Trigger Intel', subtitle: 'Trigger analytics', icon: 'flash-outline', route: '/trigger-intelligence', category: 'Analytics', color: '#F97316' },
   { id: 'leaderboard', title: 'Leaderboard', subtitle: 'Rankings & streaks', icon: 'trophy-outline', route: '/community/leaderboard', category: 'Community', color: '#F59E0B' },
   { id: 'community', title: 'Community', subtitle: 'Global brotherhood', icon: 'people-outline', route: '/community', category: 'Community', color: '#3B82F6' },
-  { id: 'urge-surfing', title: 'Urge Surfing', subtitle: 'Riding craving waves', icon: 'water-outline', route: '/emergency/urge-surfing', category: 'Core', color: '#06B6D4' },
-  { id: 'breathing-tool', title: 'Breathing', subtitle: 'Box breathing reset', icon: 'leaf-outline', route: '/emergency/breathing', category: 'Core', color: '#10B981' },
-  { id: 'grounding', title: 'Grounding', subtitle: '5-4-3-2-1 Sensory reset', icon: 'sparkles-outline', route: '/emergency/grounding', category: 'Core', color: '#8B5CF6' },
   { id: 'billing', title: 'Pro Upgrade', subtitle: 'Subscription & features', icon: 'card-outline', route: '/billing', category: 'Account', color: '#EAB308' },
 ];
 
@@ -592,10 +590,13 @@ export default function HomeScreen() {
   const handleApplyMentalShift = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     setMentalShiftApplied(true);
+    completeTask('rescue');
+    useHabitStore.getState().incrementUrgeCount();
     setTimeout(() => {
       setTriggerModalVisible(false);
       setMentalShiftApplied(false);
-    }, 1500);
+      router.push('/emergency/grounding' as any);
+    }, 1200);
   };
 
   // Math variables for circular progress ring
@@ -770,629 +771,652 @@ export default function HomeScreen() {
           contentContainerStyle={[styles.scrollContent, isTabletOrWeb && styles.scrollContentTablet]}
           showsVerticalScrollIndicator={false}
         >
-        <View style={[styles.mainWrapper, { gap: 16 }]}>
-          {/* Top Hero Section: Dual Cards (Streak & Vedic Mind Science) */}
-          <Animated.View
-            style={[
-              styles.topDualCardsRow,
-              isExtraSmallScreen && styles.topDualCardsRowColumn,
-              { opacity: fadeAnims.grid1, transform: [{ translateY: slideAnims.grid1 }] },
-            ]}
-          >
-            {/* LEFT CARD: STREAK & GAMIFIED RANK GAUGE */}
-            <View style={[styles.topCardContainer, isExtraSmallScreen && { width: '100%' }]}>
-              <TouchableOpacity
-                activeOpacity={0.88}
-                onPress={() => {
-                  triggerHaptic();
-                  setRankModalVisible(true);
-                }}
-                style={[
-                  styles.topCardItem,
-                  {
-                    borderColor: currentRank.borderColor,
-                    shadowColor: currentRank.color,
-                    height: '100%',
-                  },
-                ]}
-              >
-                {/* Centered Conquerer Image Background */}
-                <Image
-                  source={require('../../../assets/images/conqurer.png')}
-                  style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]}
-                  resizeMode="cover"
-                />
-                <LinearGradient
-                  colors={['rgba(15, 23, 42, 0.45)', 'rgba(6, 11, 25, 0.75)']}
-                  style={StyleSheet.absoluteFill}
-                />
-
-                {/* Card Header Row */}
-                <View style={styles.topCardHeaderRow}>
-                  <View style={styles.cardHeaderTitleRow}>
-                    <Ionicons name="flame" size={13} color={currentRank.color} style={{ marginRight: 4 }} />
-                    <ThemedText style={styles.topCardHeaderTitle} numberOfLines={1}>STREAK POWER</ThemedText>
-                  </View>
-                  <View style={[styles.infoIconButton, { backgroundColor: currentRank.bgGlow }]}>
-                    <Ionicons name="information-circle-outline" size={14} color={currentRank.color} />
-                  </View>
-                </View>
-
-                {/* Luxury Minimalist Center Display: 2 / 6 (Completed / Remaining) */}
-                <View style={styles.luxuryStreakContainer}>
-                  <Animated.View style={[styles.luxuryNumberRow, { transform: [{ scale: streakPulseAnim }] }]}>
-                    <ThemedText
-                      style={[
-                        styles.luxuryStreakBigNumber,
-                        {
-                          color: currentRank.color,
-                          fontSize: streak > 999 ? 32 : streak > 99 ? 38 : 44,
-                          lineHeight: streak > 999 ? 38 : streak > 99 ? 44 : 52,
-                        }
-                      ]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit={true}
-                    >
-                      {streak}
-                    </ThemedText>
-                    <ThemedText style={styles.luxuryStreakDivider}>/</ThemedText>
-                    <ThemedText style={styles.luxuryStreakTargetNumber}>
-                      {daysLeftInRank > 0 ? daysLeftInRank : 0}
-                    </ThemedText>
-                  </Animated.View>
-
-                  <ThemedText style={styles.luxuryStreakSublabel}>
-                    {daysLeftInRank > 0
-                      ? `${streak} COMPLETED  •  ${daysLeftInRank} REMAINING`
-                      : `${streak} DAYS COMPLETED  •  MAX TIER`}
-                  </ThemedText>
-
-                  {/* Minimalist Animated Glass Progress Bar */}
-                  <View style={styles.luxuryProgressBarTrack}>
-                    <Animated.View style={[styles.luxuryProgressBarFill, { width: animatedProgressBarWidth }]}>
-                      <LinearGradient
-                        colors={currentRank.gradient}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                    </Animated.View>
-                  </View>
-                </View>
-
-                {/* Bottom Rank Info & Subtle Quote */}
-                <View style={styles.topCardBottomContainer}>
-                  <View
-                    style={[styles.topRankPill, { backgroundColor: currentRank.bgGlow, borderColor: currentRank.borderColor }]}
-                  >
-                    <ThemedText style={styles.topRankBadgeEmoji}>{currentRank.badge}</ThemedText>
-                    <ThemedText style={[styles.topRankText, { color: currentRank.color }]} numberOfLines={1}>
-                      {currentRank.name} • {daysLeftInRank > 0 ? `${daysLeftInRank}d Left` : 'Max Tier'}
-                    </ThemedText>
-                  </View>
-
-                  <ThemedText style={styles.topCardSubtitle} numberOfLines={2}>
-                    "He who conquers his mind conquers the universe."
-                  </ThemedText>
-                </View>
-              </TouchableOpacity>
-            </View>
-
-            {/* RIGHT CARD: VEDIC MIND SCIENCE & DAILY CHECK-IN ACTIONS */}
-            <View style={[styles.topCardContainer, isExtraSmallScreen && { width: '100%' }]}>
-              <View style={[styles.topCardItem, { height: '100%' }]}>
-                <Image
-                  source={require('../../../assets/images/krishna_dark_cyan.png')}
-                  style={[StyleSheet.absoluteFill, { width: '100%', height: '120%', top: -15 }]}
-                  resizeMode="cover"
-                />
-                <LinearGradient
-                  colors={['rgba(15, 23, 42, 0.45)', 'rgba(6, 11, 25, 0.75)']}
-                  style={StyleSheet.absoluteFill}
-                />
-
-                {/* Card Header Row - Clickable to open Katha Upanishad */}
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    triggerHaptic();
-                    setWisdomModalVisible(true);
-                  }}
-                  style={styles.topCardHeaderRow}
-                >
-                  <View style={styles.cardHeaderTitleRow}>
-                    <Ionicons name="disc-outline" size={13} color="#00E5FF" style={{ marginRight: 4 }} />
-                    <ThemedText style={styles.topCardHeaderTitle} numberOfLines={1}>Vedic Mind Science</ThemedText>
-                  </View>
-                  <Ionicons name="book-outline" size={14} color="#00E5FF" />
-                </TouchableOpacity>
-
-                {/* Card Content & Focus Quote */}
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    triggerHaptic();
-                    setWisdomModalVisible(true);
-                  }}
-                  style={styles.rightCardBody}
-                >
-                  <ThemedText style={styles.vedicFocusText} numberOfLines={2}>
-                    Stay present. Avoid one unnecessary urge.
-                  </ThemedText>
-
-                  {/* Retained / Relapsed Action Buttons (Submitted only once per day) */}
-                  <View style={styles.alignedActionContainer}>
-                    {!isLoggedToday ? (
-                      <View style={styles.alignedButtonRow}>
-                        <TouchableOpacity
-                          style={styles.alignedRetainBtn}
-                          activeOpacity={0.75}
-                          onPress={() => {
-                            triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-                            logDay(true);
-                          }}
-                        >
-                          <LinearGradient
-                            colors={['#10B981', '#059669']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                            style={styles.alignedBtnGradient}
-                          >
-                            <ThemedText style={styles.alignedRetainText}>Retain</ThemedText>
-                          </LinearGradient>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.alignedRelapseBtn}
-                          activeOpacity={0.75}
-                          onPress={() => {
-                            triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-                            logDay(false);
-                          }}
-                        >
-                          <LinearGradient
-                            colors={['rgba(239, 68, 68, 0.18)', 'rgba(185, 28, 28, 0.25)']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 0 }}
-                            style={styles.alignedBtnGradient}
-                          >
-                            <ThemedText style={styles.alignedRelapseText}>Relapse</ThemedText>
-                          </LinearGradient>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <View style={styles.loggedStatusBadgeRow}>
-                        <Ionicons
-                          name={lastLoggedStatus === 'retained' ? 'checkmark-circle' : 'alert-circle'}
-                          size={14}
-                          color={lastLoggedStatus === 'retained' ? '#10B981' : '#FF4D4D'}
-                        />
-                        <ThemedText
-                          style={[
-                            styles.loggedStatusText,
-                            { color: lastLoggedStatus === 'retained' ? '#10B981' : '#FF4D4D' },
-                          ]}
-                        >
-                          {lastLoggedStatus === 'retained' ? 'Retained Today' : 'Streak Reset'}
-                        </ThemedText>
-                        <Ionicons name="lock-closed" size={11} color="rgba(255,255,255,0.4)" style={{ marginLeft: 4 }} />
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-
-                {/* Bottom Navigation Link to Ashtavakra Gita */}
-                <TouchableOpacity
-                  style={styles.rightCardBottomBtn}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    triggerHaptic();
-                    setWisdomModalVisible(true);
-                  }}
-                >
-                  <ThemedText style={styles.rightCardBottomBtnText}>Read Ashtavakra Gita (The Observer)</ThemedText>
-                  <Ionicons name="chevron-forward" size={13} color="rgba(255,255,255,0.7)" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-
-          {/* Quick Actions Hub */}
-          <Animated.View
-            style={[
-              styles.quickActionsContainer,
-              { opacity: fadeAnims.actions, transform: [{ translateY: slideAnims.actions }] },
-            ]}
-          >
-            <View style={styles.quickActionsHeader}>
-              <ThemedText style={styles.quickActionsTitle} numberOfLines={1}>QUICK ACTIONS & SHORTCUTS</ThemedText>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.quickActionsScrollContent}
+          <View style={[styles.mainWrapper, { gap: 16 }]}>
+            {/* Top Hero Section: Dual Cards (Streak & Vedic Mind Science) */}
+            <Animated.View
+              style={[
+                styles.topDualCardsRow,
+                isExtraSmallScreen && styles.topDualCardsRowColumn,
+                { opacity: fadeAnims.grid1, transform: [{ translateY: slideAnims.grid1 }] },
+              ]}
             >
-              {displayedActions.map((action) => {
-                const isTaskCompleted =
-                  (action.id === 'checkin' && todayTasks?.checkin) ||
-                  (action.id === 'meditation' && todayTasks?.meditation) ||
-                  (action.id === 'journal' && todayTasks?.journal) ||
-                  (action.id === 'coach' && todayTasks?.coach) ||
-                  ((action.id === 'emergency' || action.id === 'urge-surfing' || action.id === 'breathing-tool' || action.id === 'grounding' || action.id === 'missions') && todayTasks?.rescue);
-
-                return (
-                  <TouchableOpacity
-                    key={action.id}
-                    style={styles.quickActionItem}
-                    activeOpacity={0.8}
-                    onPress={() => handleQuickActionPress(action)}
+              {/* LEFT CARD: STREAK & GAMIFIED RANK GAUGE */}
+              <View style={[styles.topCardContainer, isExtraSmallScreen && { width: '100%' }]}>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  onPress={() => {
+                    triggerHaptic();
+                    setRankModalVisible(true);
+                  }}
+                >
+                  <ImageBackground
+                    source={require('../../../assets/images/conqurer.png')}
+                    style={[
+                      styles.topCardItem,
+                      {
+                        borderColor: currentRank.borderColor,
+                        shadowColor: currentRank.color,
+                      },
+                    ]}
+                    imageStyle={{ borderRadius: 18, resizeMode: 'cover' }}
                   >
+                    {/* Dark Black Translucent Film Layer */}
                     <View
                       style={[
-                        styles.quickActionIconBg,
-                        action.isEmergency && styles.emergencyActionGlow,
-                        action.color && !action.isEmergency ? { borderColor: action.color + '40' } : null,
+                        StyleSheet.absoluteFill,
+                        { backgroundColor: 'rgba(0, 0, 0, 0.65)', borderRadius: 18, zIndex: 1 },
                       ]}
-                    >
-                      <Ionicons
-                        name={action.icon}
-                        size={20}
-                        color={action.isEmergency ? '#FF4D4D' : (action.color || '#6366F1')}
-                      />
-                      {isTaskCompleted && (
-                        <View style={styles.quickActionDoneBadge}>
-                          <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                      pointerEvents="none"
+                    />
+                    <LinearGradient
+                      colors={['rgba(0, 0, 0, 0.25)', 'rgba(0, 0, 0, 0.88)']}
+                      style={[StyleSheet.absoluteFill, { borderRadius: 18, zIndex: 2 }]}
+                      pointerEvents="none"
+                    />
+
+                    {/* Card Header Row */}
+                    <View style={[styles.topCardHeaderRow, { zIndex: 10 }]}>
+                      <View style={styles.cardHeaderTitleRow}>
+                        <Ionicons name="flame" size={13} color={currentRank.color} style={{ marginRight: 4 }} />
+                        <ThemedText style={styles.topCardHeaderTitle} numberOfLines={1}>STREAK POWER</ThemedText>
+                      </View>
+                      <View style={[styles.infoIconButton, { backgroundColor: currentRank.bgGlow }]}>
+                        <Ionicons name="information-circle-outline" size={14} color={currentRank.color} />
+                      </View>
+                    </View>
+
+                    {/* Luxury Minimalist Center Display: 2 / 6 (Completed / Remaining) */}
+                    <View style={[styles.luxuryStreakContainer, { zIndex: 10 }]}>
+                      <Animated.View style={[styles.luxuryNumberRow, { transform: [{ scale: streakPulseAnim }] }]}>
+                        <ThemedText
+                          style={[
+                            styles.luxuryStreakBigNumber,
+                            {
+                              color: currentRank.color,
+                              fontSize: streak > 999 ? 32 : streak > 99 ? 38 : 44,
+                              lineHeight: streak > 999 ? 38 : streak > 99 ? 44 : 52,
+                            }
+                          ]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit={true}
+                        >
+                          {streak}
+                        </ThemedText>
+                        <ThemedText style={styles.luxuryStreakDivider}>/</ThemedText>
+                        <ThemedText style={styles.luxuryStreakTargetNumber}>
+                          {daysLeftInRank > 0 ? daysLeftInRank : 0}
+                        </ThemedText>
+                      </Animated.View>
+
+                      <ThemedText style={styles.luxuryStreakSublabel}>
+                        {daysLeftInRank > 0
+                          ? `${streak} COMPLETED  •  ${daysLeftInRank} REMAINING`
+                          : `${streak} DAYS COMPLETED  •  MAX TIER`}
+                      </ThemedText>
+
+                      {/* Minimalist Animated Glass Progress Bar */}
+                      <View style={styles.luxuryProgressBarTrack}>
+                        <Animated.View style={[styles.luxuryProgressBarFill, { width: animatedProgressBarWidth }]}>
+                          <LinearGradient
+                            colors={currentRank.gradient}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={StyleSheet.absoluteFill}
+                          />
+                        </Animated.View>
+                      </View>
+                    </View>
+
+                    {/* Bottom Rank Info & Subtle Quote */}
+                    <View style={[styles.topCardBottomContainer, { zIndex: 10 }]}>
+                      <View
+                        style={[styles.topRankPill, { backgroundColor: currentRank.bgGlow, borderColor: currentRank.borderColor }]}
+                      >
+                        <ThemedText style={styles.topRankBadgeEmoji}>{currentRank.badge}</ThemedText>
+                        <ThemedText style={[styles.topRankText, { color: currentRank.color }]} numberOfLines={1}>
+                          {currentRank.name} • {daysLeftInRank > 0 ? `${daysLeftInRank}d Left` : 'Max Tier'}
+                        </ThemedText>
+                      </View>
+
+                      <ThemedText style={styles.topCardSubtitle} numberOfLines={2}>
+                        "He who conquers his mind conquers the universe."
+                      </ThemedText>
+                    </View>
+                  </ImageBackground>
+                </TouchableOpacity>
+              </View>
+
+              {/* RIGHT CARD: VEDIC MIND SCIENCE & DAILY CHECK-IN ACTIONS */}
+              <View style={[styles.topCardContainer, isExtraSmallScreen && { width: '100%' }]}>
+                <ImageBackground
+                  source={require('../../../assets/images/krishna_dark_cyan.png')}
+                  style={styles.topCardItem}
+                  imageStyle={{ borderRadius: 18, resizeMode: 'cover' }}
+                >
+                  {/* Dark Black Translucent Film Layer */}
+                  <View
+                    style={[
+                      StyleSheet.absoluteFill,
+                      { backgroundColor: 'rgba(0, 0, 0, 0.65)', borderRadius: 18, zIndex: 1 },
+                    ]}
+                    pointerEvents="none"
+                  />
+                  <LinearGradient
+                    colors={['rgba(0, 0, 0, 0.25)', 'rgba(0, 0, 0, 0.88)']}
+                    style={[StyleSheet.absoluteFill, { borderRadius: 18, zIndex: 2 }]}
+                    pointerEvents="none"
+                  />
+
+                  {/* Card Header Row - Clickable to open Katha Upanishad */}
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      triggerHaptic();
+                      setWisdomModalVisible(true);
+                    }}
+                    style={[styles.topCardHeaderRow, { zIndex: 10 }]}
+                  >
+                    <View style={styles.cardHeaderTitleRow}>
+                      <Ionicons name="disc-outline" size={13} color="#00E5FF" style={{ marginRight: 4 }} />
+                      <ThemedText style={styles.topCardHeaderTitle} numberOfLines={1}>Vedic Mind Science</ThemedText>
+                    </View>
+                    <Ionicons name="book-outline" size={14} color="#00E5FF" />
+                  </TouchableOpacity>
+
+                  {/* Card Content & Focus Quote */}
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      triggerHaptic();
+                      setWisdomModalVisible(true);
+                    }}
+                    style={[styles.rightCardBody, { zIndex: 10 }]}
+                  >
+                    <ThemedText style={styles.vedicFocusText} numberOfLines={2}>
+                      Stay present. Avoid one unnecessary urge.
+                    </ThemedText>
+
+                    {/* Retained / Relapsed Action Buttons (Submitted only once per day) */}
+                    <View style={styles.alignedActionContainer}>
+                      {!isLoggedToday ? (
+                        <View style={styles.alignedButtonRow}>
+                          <TouchableOpacity
+                            style={styles.alignedRetainBtn}
+                            activeOpacity={0.75}
+                            onPress={() => {
+                              triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+                              logDay(true);
+                            }}
+                          >
+                            <LinearGradient
+                              colors={['#10B981', '#059669']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 0 }}
+                              style={styles.alignedBtnGradient}
+                            >
+                              <ThemedText style={styles.alignedRetainText}>Retain</ThemedText>
+                            </LinearGradient>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.alignedRelapseBtn}
+                            activeOpacity={0.75}
+                            onPress={() => {
+                              triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+                              logDay(false);
+                            }}
+                          >
+                            <LinearGradient
+                              colors={['rgba(239, 68, 68, 0.18)', 'rgba(185, 28, 28, 0.25)']}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 0 }}
+                              style={styles.alignedBtnGradient}
+                            >
+                              <ThemedText style={styles.alignedRelapseText}>Relapse</ThemedText>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <View style={styles.loggedStatusBadgeRow}>
+                          <Ionicons
+                            name={lastLoggedStatus === 'retained' && streak > 0 ? 'checkmark-circle' : 'alert-circle'}
+                            size={14}
+                            color={lastLoggedStatus === 'retained' && streak > 0 ? '#10B981' : '#FF4D4D'}
+                          />
+                          <ThemedText
+                            style={[
+                              styles.loggedStatusText,
+                              { color: lastLoggedStatus === 'retained' && streak > 0 ? '#10B981' : '#FF4D4D' },
+                            ]}
+                          >
+                            {lastLoggedStatus === 'retained' && streak > 0 ? 'Retained Today' : 'Streak Reset'}
+                          </ThemedText>
+                          <Ionicons name="lock-closed" size={11} color="rgba(255,255,255,0.4)" style={{ marginLeft: 4 }} />
                         </View>
                       )}
                     </View>
-                    <ThemedText
-                      style={[
-                        styles.quickActionLabel,
-                        action.isEmergency && styles.emergencyActionText,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {action.title}
-                    </ThemedText>
                   </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </Animated.View>
 
-          {/* AI Insight Card */}
-          <Animated.View
-            style={{ opacity: fadeAnims.insight, transform: [{ translateY: slideAnims.insight }] }}
-          >
-            <TouchableOpacity
-              style={styles.aiInsightCard}
-              activeOpacity={0.9}
-              onPress={() => {
-                triggerHaptic();
-                setInsightModalVisible(true);
-              }}
-            >
-              <View style={styles.aiInsightHeaderRow}>
-                <Ionicons name="sparkles" size={13} color="#6366F1" style={{ marginRight: 5 }} />
-                <ThemedText style={styles.aiInsightHeaderLabel} numberOfLines={1}>AI INSIGHT FOR YOU</ThemedText>
+                  <TouchableOpacity
+                    style={[styles.rightCardBottomBtn, { zIndex: 10 }]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      triggerHaptic();
+                      setWisdomModalVisible(true);
+                    }}
+                  >
+                    <View style={{ flex: 1, paddingRight: 6 }}>
+                      <ThemedText style={styles.rightCardBottomBtnText} numberOfLines={1}>
+                        Read Ashtavakra Gita
+                      </ThemedText>
+                      <ThemedText style={{ fontSize: 9.5, color: '#00E5FF', fontWeight: '700', marginTop: 1 }} numberOfLines={1}>
+                        (The Observer)
+                      </ThemedText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={14} color="#00E5FF" />
+                  </TouchableOpacity>
+                </ImageBackground>
               </View>
+            </Animated.View>
 
-              <View style={styles.aiInsightContentRow}>
-                <View style={styles.aiInsightTextCol}>
-                  <ThemedText style={styles.aiInsightHeadline}>
-                    Your stress was higher than usual yesterday.
-                  </ThemedText>
-                  <ThemedText style={styles.aiInsightSubtitle}>
-                    Try 5 min of box breathing today to calm your nervous system.
-                  </ThemedText>
-                  <View style={styles.aiInsightLinkRow}>
-                    <ThemedText style={styles.aiInsightLinkText}>View Full Intelligence</ThemedText>
-                    <Ionicons name="chevron-forward" size={12} color="#6366F1" style={{ marginLeft: 4 }} />
-                  </View>
-                </View>
-                <Image
-                  source={require('../../../assets/images/neural_brain_silhouette.png')}
-                  style={styles.aiInsightBrainImage}
-                  resizeMode="contain"
-                />
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
-
-          {/* Grid Row 3: Latest Check-in & Today's Journal */}
-          <Animated.View
-            style={[
-              styles.gridRow,
-              isExtraSmallScreen && { flexDirection: 'column' },
-              { opacity: fadeAnims.grid3, transform: [{ translateY: slideAnims.grid3 }] },
-            ]}
-          >
-            {/* Daily Missions Card (Left Half-Card) */}
-            <View style={styles.cardHalf}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.cardHeaderTitleRow}>
-                  <Ionicons name="checkbox-outline" size={13} color="#10B981" />
-                  <ThemedText style={styles.cardHeaderLabel} numberOfLines={1}>DAILY MISSIONS</ThemedText>
-                </View>
-              </View>
-
-              <View style={styles.checkinMetricsContainer}>
-                {/* Task 1: Check-in */}
-                <View style={styles.metricRow}>
-                  <View style={styles.metricLabelGroup}>
-                    <Ionicons
-                      name={todayTasks?.checkin ? "checkmark-circle" : "create-outline"}
-                      size={13}
-                      color={todayTasks?.checkin ? "#10B981" : "#6366F1"}
-                      style={{ marginRight: 6 }}
-                    />
-                    <ThemedText style={styles.metricLabelText} numberOfLines={1}>Check-In</ThemedText>
-                  </View>
-                  {todayTasks?.checkin ? (
-                    <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.cardTaskStartBtn}
-                      onPress={() => {
-                        triggerHaptic();
-                        router.push('/daily-checkin' as any);
-                      }}
-                    >
-                      <ThemedText style={styles.cardTaskStartText}>Start</ThemedText>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Task 2: Meditation */}
-                <View style={styles.metricRow}>
-                  <View style={styles.metricLabelGroup}>
-                    <Ionicons
-                      name={todayTasks?.meditation ? "checkmark-circle" : "flower-outline"}
-                      size={13}
-                      color={todayTasks?.meditation ? "#10B981" : "#10B981"}
-                      style={{ marginRight: 6 }}
-                    />
-                    <ThemedText style={styles.metricLabelText} numberOfLines={1}>Meditation</ThemedText>
-                  </View>
-                  {todayTasks?.meditation ? (
-                    <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.cardTaskStartBtn}
-                      onPress={() => {
-                        triggerHaptic();
-                        router.push('/meditation' as any);
-                      }}
-                    >
-                      <ThemedText style={styles.cardTaskStartText}>Do</ThemedText>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Task 3: Journal */}
-                <View style={styles.metricRow}>
-                  <View style={styles.metricLabelGroup}>
-                    <Ionicons
-                      name={todayTasks?.journal ? "checkmark-circle" : "book-outline"}
-                      size={13}
-                      color={todayTasks?.journal ? "#10B981" : "#F59E0B"}
-                      style={{ marginRight: 6 }}
-                    />
-                    <ThemedText style={styles.metricLabelText} numberOfLines={1}>Journal</ThemedText>
-                  </View>
-                  {todayTasks?.journal ? (
-                    <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.cardTaskStartBtn}
-                      onPress={() => {
-                        triggerHaptic();
-                        router.push('/journal' as any);
-                      }}
-                    >
-                      <ThemedText style={styles.cardTaskStartText}>Write</ThemedText>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Task 4: AI Coach */}
-                <View style={styles.metricRow}>
-                  <View style={styles.metricLabelGroup}>
-                    <Ionicons
-                      name={todayTasks?.coach ? "checkmark-circle" : "chatbubble-ellipses-outline"}
-                      size={13}
-                      color={todayTasks?.coach ? "#10B981" : "#8B5CF6"}
-                      style={{ marginRight: 6 }}
-                    />
-                    <ThemedText style={styles.metricLabelText} numberOfLines={1}>AI Coach</ThemedText>
-                  </View>
-                  {todayTasks?.coach ? (
-                    <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.cardTaskStartBtn}
-                      onPress={() => {
-                        triggerHaptic();
-                        router.push('/chat' as any);
-                      }}
-                    >
-                      <ThemedText style={styles.cardTaskStartText}>Chat</ThemedText>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {/* Task 5: Urge Rescue */}
-                <View style={styles.metricRow}>
-                  <View style={styles.metricLabelGroup}>
-                    <Ionicons
-                      name={todayTasks?.rescue ? "checkmark-circle" : "shield-outline"}
-                      size={13}
-                      color={todayTasks?.rescue ? "#10B981" : "#EF4444"}
-                      style={{ marginRight: 6 }}
-                    />
-                    <ThemedText style={styles.metricLabelText} numberOfLines={1}>Urge Rescue</ThemedText>
-                  </View>
-                  {todayTasks?.rescue ? (
-                    <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.cardTaskStartBtn}
-                      onPress={() => {
-                        triggerHaptic();
-                        router.push('/emergency' as any);
-                      }}
-                    >
-                      <ThemedText style={styles.cardTaskStartText}>Reset</ThemedText>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            </View>
-
-            {/* Today's Journal Card (Right) */}
-            <View style={styles.cardHalf}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.cardHeaderTitleRow}>
-                  <Ionicons name="book-outline" size={13} color="#F59E0B" />
-                  <ThemedText style={styles.cardHeaderLabel} numberOfLines={1}>{"TODAY'S JOURNAL"}</ThemedText>
-                </View>
-              </View>
-
-              <View style={styles.journalContentRow}>
-                <View style={styles.journalTextCol}>
-                  <ThemedText style={styles.journalTitle}>Reflect & Clear Your Mind</ThemedText>
-                  <ThemedText style={styles.journalSubtitle}>
-                    Write today’s wins, mood, & urge triggers.
-                  </ThemedText>
-                </View>
-                <Image
-                  source={require('../../../assets/images/journal_notebook.png')}
-                  style={styles.journalNotebookImage}
-                  resizeMode="contain"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={styles.writeNowButton}
-                activeOpacity={0.8}
-                onPress={() => {
-                  triggerHaptic();
-                  router.push('/journal' as any);
-                }}
-              >
-                <ThemedText style={styles.writeNowButtonText}>Write Reflection</ThemedText>
-                <Ionicons name="create-outline" size={14} color="#F59E0B" />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-
-          {/* Recommended Meditation Section */}
-          <Animated.View
-            style={[
-              styles.meditationSectionContainer,
-              { opacity: fadeAnims.meditation, transform: [{ translateY: slideAnims.meditation }] },
-            ]}
-          >
-            <View style={styles.meditationSectionHeader}>
-              <ThemedText style={styles.meditationHeaderTitle} numberOfLines={1}>RECOMMENDED MEDITATION</ThemedText>
-              <TouchableOpacity
-                style={styles.meditationSeeAllButton}
-                activeOpacity={0.7}
-                onPress={() => {
-                  triggerHaptic();
-                  router.push('/meditation');
-                }}
-              >
-                <ThemedText style={styles.meditationSeeAllText}>See All</ThemedText>
-                <Ionicons name="chevron-forward" size={12} color="#6366F1" style={{ marginLeft: 2 }} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.meditationCardContainer}>
-              <View style={styles.meditationThumbnailContainer}>
-                <Image
-                  source={require('../../../assets/images/meditation_forest.png')}
-                  style={styles.meditationThumbnail}
-                />
-                <View style={styles.meditationPlayIconCircle}>
-                  <Ionicons name="play" size={12} color="#ffffff" style={{ marginLeft: 2 }} />
-                </View>
-              </View>
-
-              <View style={styles.meditationTextContainer}>
-                <ThemedText style={styles.meditationTitleText}>Deep Relaxation & Focus</ThemedText>
-                <ThemedText style={styles.meditationSubtitleText}>
-                  Reduce stress, calm craving waves & restore inner clarity.
-                </ThemedText>
-                <View style={styles.meditationInfoRow}>
-                  <View style={styles.meditationInfoBadge}>
-                    <Ionicons name="time-outline" size={11} color="#94A3B8" style={{ marginRight: 4 }} />
-                    <ThemedText style={styles.meditationInfoText}>10 min</ThemedText>
-                  </View>
-                  <View style={styles.meditationInfoBadge}>
-                    <Ionicons name="stats-chart-outline" size={11} color="#94A3B8" style={{ marginRight: 4 }} />
-                    <ThemedText style={styles.meditationInfoText}>Beginner</ThemedText>
-                  </View>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.meditationStartButton}
-                activeOpacity={0.8}
-                onPress={() => {
-                  triggerHaptic();
-                  router.push('/meditation');
-                }}
-              >
-                <Ionicons name="play" size={10} color="#6366F1" style={{ marginRight: 4 }} />
-                <ThemedText style={styles.meditationStartButtonText}>Start</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-
-          {/* Evening Reflection Reminder */}
-          {isEvening && (
+            {/* Quick Actions Hub */}
             <Animated.View
               style={[
-                styles.eveningReflectionCard,
-                { opacity: fadeAnims.meditation, transform: [{ translateY: slideAnims.meditation }] },
+                styles.quickActionsContainer,
+                { opacity: fadeAnims.actions, transform: [{ translateY: slideAnims.actions }] },
               ]}
             >
+              <View style={styles.quickActionsHeader}>
+                <ThemedText style={styles.quickActionsTitle} numberOfLines={1}>QUICK ACTIONS & SHORTCUTS</ThemedText>
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.quickActionsScrollContent}
+              >
+                {displayedActions.map((action) => {
+                  const isTaskCompleted =
+                    (action.id === 'checkin' && todayTasks?.checkin) ||
+                    (action.id === 'meditation' && todayTasks?.meditation) ||
+                    (action.id === 'journal' && todayTasks?.journal) ||
+                    (action.id === 'coach' && todayTasks?.coach) ||
+                    ((action.id === 'emergency' || action.id === 'urge-surfing' || action.id === 'breathing-tool' || action.id === 'grounding' || action.id === 'missions') && todayTasks?.rescue);
+
+                  return (
+                    <TouchableOpacity
+                      key={action.id}
+                      style={styles.quickActionItem}
+                      activeOpacity={0.8}
+                      onPress={() => handleQuickActionPress(action)}
+                    >
+                      <View style={{ position: 'relative' }}>
+                        <View
+                          style={[
+                            styles.quickActionIconBg,
+                            action.isEmergency && styles.emergencyActionGlow,
+                            action.color && !action.isEmergency ? { borderColor: action.color + '40' } : null,
+                          ]}
+                        >
+                          <Ionicons
+                            name={action.icon}
+                            size={20}
+                            color={action.isEmergency ? '#FF4D4D' : (action.color || '#6366F1')}
+                          />
+                        </View>
+                        {isTaskCompleted && (
+                          <View style={styles.quickActionDoneBadge}>
+                            <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                          </View>
+                        )}
+                      </View>
+                      <ThemedText
+                        style={[
+                          styles.quickActionLabel,
+                          action.isEmergency && styles.emergencyActionText,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {action.title}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </Animated.View>
+
+            {/* AI Insight Card */}
+            <Animated.View
+              style={{ opacity: fadeAnims.insight, transform: [{ translateY: slideAnims.insight }] }}
+            >
               <TouchableOpacity
-                style={styles.eveningReflectionInner}
-                activeOpacity={0.85}
+                style={styles.aiInsightCard}
+                activeOpacity={0.9}
                 onPress={() => {
                   triggerHaptic();
-                  router.push('/journal');
+                  setInsightModalVisible(true);
                 }}
               >
-                <View style={styles.cardHeaderRow}>
-                  <View style={styles.cardHeaderTitleRow}>
-                    <Ionicons name="moon-outline" size={13} color="#8B5CF6" />
-                    <ThemedText style={styles.cardHeaderLabel} numberOfLines={1}>EVENING REFLECTION</ThemedText>
-                  </View>
-                  <View style={styles.eveningBadge}>
-                    <ThemedText style={styles.eveningBadgeText}>NIGHT ROUTINE</ThemedText>
-                  </View>
+                <View style={styles.aiInsightHeaderRow}>
+                  <Ionicons name="sparkles" size={13} color="#6366F1" style={{ marginRight: 5 }} />
+                  <ThemedText style={styles.aiInsightHeaderLabel} numberOfLines={1}>AI INSIGHT FOR YOU</ThemedText>
                 </View>
-                <ThemedText style={styles.eveningTitle}>What helped you stay disciplined today?</ThemedText>
-                <ThemedText style={styles.eveningSubtitle}>
-                  Reflect on today&apos;s victories and lock in your mental clarity before bedtime.
-                </ThemedText>
-                <View style={styles.eveningActionBtn}>
-                  <ThemedText style={styles.eveningActionBtnText}>Write Short Reflection</ThemedText>
-                  <Ionicons name="pencil-outline" size={13} color="#8B5CF6" />
+
+                <View style={styles.aiInsightContentRow}>
+                  <View style={styles.aiInsightTextCol}>
+                    <ThemedText style={styles.aiInsightHeadline}>
+                      Your stress was higher than usual yesterday.
+                    </ThemedText>
+                    <ThemedText style={styles.aiInsightSubtitle}>
+                      Try 5 min of box breathing today to calm your nervous system.
+                    </ThemedText>
+                    <View style={styles.aiInsightLinkRow}>
+                      <ThemedText style={styles.aiInsightLinkText}>View Full Intelligence</ThemedText>
+                      <Ionicons name="chevron-forward" size={12} color="#6366F1" style={{ marginLeft: 4 }} />
+                    </View>
+                  </View>
+                  <Image
+                    source={require('../../../assets/images/neural_brain_silhouette.png')}
+                    style={styles.aiInsightBrainImage}
+                    resizeMode="contain"
+                  />
                 </View>
               </TouchableOpacity>
             </Animated.View>
-          )}
-        </View>
 
-        {/* Spacing bottom to avoid navigation tab overlap */}
-        <View style={{ height: 110 }} />
-      </ScrollView>
-    </PageEntrance>
+            {/* Grid Row 3: Latest Check-in & Today's Journal */}
+            <Animated.View
+              style={[
+                styles.gridRow,
+                isExtraSmallScreen && { flexDirection: 'column' },
+                { opacity: fadeAnims.grid3, transform: [{ translateY: slideAnims.grid3 }] },
+              ]}
+            >
+              {/* Daily Missions Card (Left Half-Card) */}
+              <View style={styles.cardHalf}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.cardHeaderTitleRow}>
+                    <Ionicons name="checkbox-outline" size={13} color="#10B981" />
+                    <ThemedText style={styles.cardHeaderLabel} numberOfLines={1}>DAILY MISSIONS</ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.checkinMetricsContainer}>
+                  {/* Task 1: Check-in */}
+                  <View style={styles.metricRow}>
+                    <View style={styles.metricLabelGroup}>
+                      <Ionicons
+                        name={todayTasks?.checkin ? "checkmark-circle" : "create-outline"}
+                        size={13}
+                        color={todayTasks?.checkin ? "#10B981" : "#6366F1"}
+                        style={{ marginRight: 6 }}
+                      />
+                      <ThemedText style={styles.metricLabelText} numberOfLines={1}>Check-In</ThemedText>
+                    </View>
+                    {todayTasks?.checkin ? (
+                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.cardTaskStartBtn}
+                        onPress={() => {
+                          triggerHaptic();
+                          router.push('/daily-checkin' as any);
+                        }}
+                      >
+                        <ThemedText style={styles.cardTaskStartText}>Start</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Task 2: Meditation */}
+                  <View style={styles.metricRow}>
+                    <View style={styles.metricLabelGroup}>
+                      <Ionicons
+                        name={todayTasks?.meditation ? "checkmark-circle" : "flower-outline"}
+                        size={13}
+                        color={todayTasks?.meditation ? "#10B981" : "#10B981"}
+                        style={{ marginRight: 6 }}
+                      />
+                      <ThemedText style={styles.metricLabelText} numberOfLines={1}>Meditation</ThemedText>
+                    </View>
+                    {todayTasks?.meditation ? (
+                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.cardTaskStartBtn}
+                        onPress={() => {
+                          triggerHaptic();
+                          router.push('/meditation' as any);
+                        }}
+                      >
+                        <ThemedText style={styles.cardTaskStartText}>Do</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Task 3: Journal */}
+                  <View style={styles.metricRow}>
+                    <View style={styles.metricLabelGroup}>
+                      <Ionicons
+                        name={todayTasks?.journal ? "checkmark-circle" : "book-outline"}
+                        size={13}
+                        color={todayTasks?.journal ? "#10B981" : "#F59E0B"}
+                        style={{ marginRight: 6 }}
+                      />
+                      <ThemedText style={styles.metricLabelText} numberOfLines={1}>Journal</ThemedText>
+                    </View>
+                    {todayTasks?.journal ? (
+                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.cardTaskStartBtn}
+                        onPress={() => {
+                          triggerHaptic();
+                          router.push('/journal' as any);
+                        }}
+                      >
+                        <ThemedText style={styles.cardTaskStartText}>Write</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Task 4: AI Coach */}
+                  <View style={styles.metricRow}>
+                    <View style={styles.metricLabelGroup}>
+                      <Ionicons
+                        name={todayTasks?.coach ? "checkmark-circle" : "chatbubble-ellipses-outline"}
+                        size={13}
+                        color={todayTasks?.coach ? "#10B981" : "#8B5CF6"}
+                        style={{ marginRight: 6 }}
+                      />
+                      <ThemedText style={styles.metricLabelText} numberOfLines={1}>AI Coach</ThemedText>
+                    </View>
+                    {todayTasks?.coach ? (
+                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.cardTaskStartBtn}
+                        onPress={() => {
+                          triggerHaptic();
+                          router.push('/chat' as any);
+                        }}
+                      >
+                        <ThemedText style={styles.cardTaskStartText}>Chat</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Task 5: Urge Rescue */}
+                  <View style={styles.metricRow}>
+                    <View style={styles.metricLabelGroup}>
+                      <Ionicons
+                        name={todayTasks?.rescue ? "checkmark-circle" : "shield-outline"}
+                        size={13}
+                        color={todayTasks?.rescue ? "#10B981" : "#EF4444"}
+                        style={{ marginRight: 6 }}
+                      />
+                      <ThemedText style={styles.metricLabelText} numberOfLines={1}>Urge Rescue</ThemedText>
+                    </View>
+                    {todayTasks?.rescue ? (
+                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.cardTaskStartBtn}
+                        onPress={() => {
+                          triggerHaptic();
+                          router.push('/emergency' as any);
+                        }}
+                      >
+                        <ThemedText style={styles.cardTaskStartText}>Reset</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {/* Today's Journal Card (Right) */}
+              <View style={styles.cardHalf}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.cardHeaderTitleRow}>
+                    <Ionicons name="book-outline" size={13} color="#F59E0B" />
+                    <ThemedText style={styles.cardHeaderLabel} numberOfLines={1}>{"TODAY'S JOURNAL"}</ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.journalContentRow}>
+                  <View style={styles.journalTextCol}>
+                    <ThemedText style={styles.journalTitle}>Reflect & Clear Your Mind</ThemedText>
+                    <ThemedText style={styles.journalSubtitle}>
+                      Write today’s wins, mood, & urge triggers.
+                    </ThemedText>
+                  </View>
+                  <Image
+                    source={require('../../../assets/images/journal_notebook.png')}
+                    style={styles.journalNotebookImage}
+                    resizeMode="contain"
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.writeNowButton}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    triggerHaptic();
+                    router.push('/journal' as any);
+                  }}
+                >
+                  <ThemedText style={styles.writeNowButtonText}>Write Reflection</ThemedText>
+                  <Ionicons name="create-outline" size={14} color="#F59E0B" />
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+
+            {/* Recommended Meditation Section */}
+            <Animated.View
+              style={[
+                styles.meditationSectionContainer,
+                { opacity: fadeAnims.meditation, transform: [{ translateY: slideAnims.meditation }] },
+              ]}
+            >
+              <View style={styles.meditationSectionHeader}>
+                <ThemedText style={styles.meditationHeaderTitle} numberOfLines={1}>RECOMMENDED MEDITATION</ThemedText>
+                <TouchableOpacity
+                  style={styles.meditationSeeAllButton}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    triggerHaptic();
+                    router.push('/meditation');
+                  }}
+                >
+                  <ThemedText style={styles.meditationSeeAllText}>See All</ThemedText>
+                  <Ionicons name="chevron-forward" size={12} color="#6366F1" style={{ marginLeft: 2 }} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.meditationCardContainer}>
+                <View style={styles.meditationThumbnailContainer}>
+                  <Image
+                    source={require('../../../assets/images/meditation_forest.png')}
+                    style={styles.meditationThumbnail}
+                  />
+                  <View style={styles.meditationPlayIconCircle}>
+                    <Ionicons name="play" size={12} color="#ffffff" style={{ marginLeft: 2 }} />
+                  </View>
+                </View>
+
+                <View style={styles.meditationTextContainer}>
+                  <ThemedText style={styles.meditationTitleText}>Deep Relaxation & Focus</ThemedText>
+                  <ThemedText style={styles.meditationSubtitleText}>
+                    Reduce stress, calm craving waves & restore inner clarity.
+                  </ThemedText>
+                  <View style={styles.meditationInfoRow}>
+                    <View style={styles.meditationInfoBadge}>
+                      <Ionicons name="time-outline" size={11} color="#94A3B8" style={{ marginRight: 4 }} />
+                      <ThemedText style={styles.meditationInfoText}>10 min</ThemedText>
+                    </View>
+                    <View style={styles.meditationInfoBadge}>
+                      <Ionicons name="stats-chart-outline" size={11} color="#94A3B8" style={{ marginRight: 4 }} />
+                      <ThemedText style={styles.meditationInfoText}>Beginner</ThemedText>
+                    </View>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.meditationStartButton}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    triggerHaptic();
+                    router.push('/meditation');
+                  }}
+                >
+                  <Ionicons name="play" size={10} color="#6366F1" style={{ marginRight: 4 }} />
+                  <ThemedText style={styles.meditationStartButtonText}>Start</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+
+            {/* Evening Reflection Reminder */}
+            {isEvening && (
+              <Animated.View
+                style={[
+                  styles.eveningReflectionCard,
+                  { opacity: fadeAnims.meditation, transform: [{ translateY: slideAnims.meditation }] },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.eveningReflectionInner}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    triggerHaptic();
+                    router.push('/journal');
+                  }}
+                >
+                  <View style={styles.cardHeaderRow}>
+                    <View style={styles.cardHeaderTitleRow}>
+                      <Ionicons name="moon-outline" size={13} color="#8B5CF6" />
+                      <ThemedText style={styles.cardHeaderLabel} numberOfLines={1}>EVENING REFLECTION</ThemedText>
+                    </View>
+                    <View style={styles.eveningBadge}>
+                      <ThemedText style={styles.eveningBadgeText}>NIGHT ROUTINE</ThemedText>
+                    </View>
+                  </View>
+                  <ThemedText style={styles.eveningTitle}>What helped you stay disciplined today?</ThemedText>
+                  <ThemedText style={styles.eveningSubtitle}>
+                    Reflect on today&apos;s victories and lock in your mental clarity before bedtime.
+                  </ThemedText>
+                  <View style={styles.eveningActionBtn}>
+                    <ThemedText style={styles.eveningActionBtnText}>Write Short Reflection</ThemedText>
+                    <Ionicons name="pencil-outline" size={13} color="#8B5CF6" />
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          </View>
+
+          {/* Spacing bottom to avoid navigation tab overlap */}
+          <View style={{ height: 110 }} />
+        </ScrollView>
+      </PageEntrance>
 
       {/* --- Vedic Wisdom Modal (Info Button) --- */}
       <Modal
@@ -1416,24 +1440,24 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ paddingVertical: 10, gap: 14 }} showsVerticalScrollIndicator={false}>
-              <ThemedText style={{ fontSize: 14, color: '#E2E8F0', lineHeight: 22 }}>
+            <ScrollView contentContainerStyle={{ paddingVertical: 12, gap: 16, alignItems: 'center' }} showsVerticalScrollIndicator={false}>
+              <ThemedText style={{ fontSize: 14, color: '#F1F5F9', lineHeight: 23, textAlign: 'center' }}>
                 {"Realize the truth of your existence. You are not this physical body, this heartbeat, or the temporary thoughts passing through your mind. Your body is simply an instrument—a tool to experience nature. You are the eternal "}
-                <ThemedText style={{ color: '#00E5FF', fontWeight: '900' }}>Pure Observer (Sakshi)</ThemedText>
+                <ThemedText style={{ color: '#00E5FF', fontWeight: '900', textShadowColor: 'rgba(0, 229, 255, 0.5)', textShadowRadius: 8 }}>Pure Observer (Sakshi)</ThemedText>
                 {" standing peacefully behind every thought, untouched by physical desires."}
               </ThemedText>
 
-              <ThemedText style={{ fontSize: 14, color: '#E2E8F0', lineHeight: 22 }}>
+              <ThemedText style={{ fontSize: 14, color: '#F1F5F9', lineHeight: 23, textAlign: 'center' }}>
                 {"Wasting your vital force on instant gratification like masturbation is a profound mistake. Masturbation is a temporary illusion—a cheap trick of your brain's reward system that promises pleasure but leaves your mind tired, your focus broken, and your spirit empty. Wasting your vital energy on physical friction is "}
-                <ThemedText style={{ color: '#F59E0B', fontWeight: '900' }}>Utterly Useless & Unworthy Of You</ThemedText>
+                <ThemedText style={{ color: '#F59E0B', fontWeight: '900', textShadowColor: 'rgba(245, 158, 11, 0.5)', textShadowRadius: 8 }}>Utterly Useless & Unworthy Of You</ThemedText>
                 {". It drains the power meant for your real growth, health, and success."}
               </ThemedText>
 
-              <ThemedText style={{ fontSize: 14, color: '#E2E8F0', lineHeight: 22 }}>
+              <ThemedText style={{ fontSize: 14, color: '#F1F5F9', lineHeight: 23, textAlign: 'center' }}>
                 {"When an urge arises, do not fight it and do not give in. Simply sit still, close your eyes, and "}
-                <ThemedText style={{ color: '#10B981', fontWeight: '900' }}>Sit in Meditation</ThemedText>
+                <ThemedText style={{ color: '#10B981', fontWeight: '900', textShadowColor: 'rgba(16, 185, 129, 0.5)', textShadowRadius: 8 }}>Sit in Meditation</ThemedText>
                 {". Watch the desire rise and fall without reacting. In that peaceful silence, your vital energy is automatically "}
-                <ThemedText style={{ color: '#10B981', fontWeight: '900' }}>Transmuted Into Unshakeable Willpower</ThemedText>
+                <ThemedText style={{ color: '#10B981', fontWeight: '900', textShadowColor: 'rgba(16, 185, 129, 0.5)', textShadowRadius: 8 }}>Transmuted Into Unshakeable Willpower</ThemedText>
                 {", sharp clarity, and inner strength. You are the master of your mind."}
               </ThemedText>
             </ScrollView>
@@ -1860,7 +1884,7 @@ const styles = StyleSheet.create({
   topDualCardsRow: {
     width: '100%',
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'flex-start',
     gap: 12,
   },
   topDualCardsRowColumn: {
@@ -1870,13 +1894,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topCardItem: {
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    borderRadius: 20,
+    position: 'relative',
+    backgroundColor: '#070B18',
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.25)',
     overflow: 'hidden',
-    padding: 14,
-    minHeight: 285,
+    padding: 12,
+    minHeight: 255,
     justifyContent: 'space-between',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 6 },
@@ -1888,20 +1913,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 2,
     gap: 4,
   },
   topCardHeaderTitle: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: 0.8,
     flexShrink: 1,
   },
   infoIconButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1909,47 +1934,47 @@ const styles = StyleSheet.create({
   luxuryStreakContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 10,
+    marginVertical: 4,
     overflow: 'visible',
   },
   luxuryNumberRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 6,
+    gap: 3,
+    paddingVertical: 2,
     overflow: 'visible',
   },
   luxuryStreakBigNumber: {
-    fontSize: 44,
-    lineHeight: 52,
+    fontSize: 34,
+    lineHeight: 40,
     fontWeight: '900',
-    letterSpacing: -1.2,
-    paddingVertical: 2,
+    letterSpacing: -1,
+    paddingVertical: 1,
     includeFontPadding: false,
   },
   luxuryStreakDivider: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: '300',
     color: 'rgba(255, 255, 255, 0.7)',
-    marginHorizontal: 3,
+    marginHorizontal: 2,
     includeFontPadding: false,
   },
   luxuryStreakTargetNumber: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: '700',
     color: '#FFFFFF',
     includeFontPadding: false,
   },
   luxuryStreakSublabel: {
-    fontSize: 9.5,
+    fontSize: 8.5,
     fontWeight: '800',
     color: '#00E5FF',
-    letterSpacing: 1.4,
-    marginTop: 2,
-    marginBottom: 10,
+    letterSpacing: 1,
+    marginTop: 1,
+    marginBottom: 6,
   },
   luxuryProgressBarTrack: {
     width: '86%',
@@ -2009,10 +2034,13 @@ const styles = StyleSheet.create({
   topCardSubtitle: {
     fontSize: 10.5,
     fontWeight: '600',
-    color: '#CBD5E1',
+    color: '#F1F5F9',
     textAlign: 'center',
     lineHeight: 14.5,
     fontStyle: 'italic',
+    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   rightCardBody: {
     flex: 1,
@@ -2021,9 +2049,12 @@ const styles = StyleSheet.create({
   },
   vedicFocusText: {
     fontSize: 12.5,
-    fontWeight: '600',
-    color: '#F8FAFC',
+    fontWeight: '700',
+    color: '#FFFFFF',
     lineHeight: 17,
+    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   rightCardXpBadge: {
     flexDirection: 'row',
@@ -2133,7 +2164,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
-    marginTop: 4,
+    marginTop: 6,
   },
   rightCardBottomBtnText: {
     fontSize: 11.5,
@@ -2459,20 +2490,17 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 16,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   emergencyActionGlow: {
-    borderColor: 'rgba(255, 77, 77, 0.35)',
-    backgroundColor: 'rgba(255, 77, 77, 0.08)',
-    shadowColor: '#FF4D4D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 4,
+    borderColor: '#FF4D4D',
+    borderWidth: 1.5,
+    backgroundColor: '#260D12',
   },
   emergencyActionText: {
     color: '#FF4D4D',
@@ -2484,6 +2512,14 @@ const styles = StyleSheet.create({
     color: '#E2E8F0',
     marginTop: 6,
     textAlign: 'center',
+  },
+  quickActionDoneBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#030712',
+    borderRadius: 10,
+    zIndex: 10,
   },
   moreActionsIconBg: {
     backgroundColor: 'rgba(99, 102, 241, 0.08)',
@@ -2619,13 +2655,6 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '800',
     color: '#818CF8',
-  },
-  quickActionDoneBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    backgroundColor: '#030712',
-    borderRadius: 10,
   },
   checkinLinkRow: {
     flexDirection: 'row',
@@ -2893,7 +2922,7 @@ const styles = StyleSheet.create({
   modalBg: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: Platform.OS === 'web' || Dimensions.get('window').width >= 768 ? 'center' : 'flex-end',
+    justifyContent: 'center',
     alignItems: 'center',
   },
   modalContentGlass: {

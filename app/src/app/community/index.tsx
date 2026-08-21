@@ -120,7 +120,7 @@ export default function CommunityWorldChatScreen() {
   const isInvalidName = (name: string) => {
     if (!name || !name.trim()) return true;
     const v = name.trim();
-    if (v.length === 24 || (v.length >= 20 && v.includes('-')) || v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_')) {
+    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_')) {
       return true;
     }
     return false;
@@ -129,6 +129,9 @@ export default function CommunityWorldChatScreen() {
   const getCleanUserName = (name: string) => {
     if (isInvalidName(name)) {
       return 'Operative';
+    }
+    if (name.includes('@')) {
+      return name.split('@')[0];
     }
     return name.split(' ')[0];
   };
@@ -337,7 +340,7 @@ export default function CommunityWorldChatScreen() {
         {activeTab === 'world' ? (
           <KeyboardAvoidingView
             style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           >
             <View style={styles.chatStreamContainer}>
               <ScrollView
@@ -824,7 +827,7 @@ const styles = StyleSheet.create({
   },
   inputWrapper: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     backgroundColor: 'rgba(20, 24, 33, 0.92)',
     borderRadius: 24,
     borderWidth: 1.5,
@@ -850,8 +853,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
-    alignSelf: 'flex-end',
-    marginBottom: Platform.OS === 'web' ? 4 : 2,
+    alignSelf: 'center',
   },
   sendBtnDisabled: {
     opacity: 0.35,

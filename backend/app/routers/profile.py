@@ -37,7 +37,19 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
     # 2. Fetch daily check-in checklist logs
     checkins = await DailyCheckin.find(
         {"$or": [{"user_id": user_id_str}, {"user_id": current_user.email}]}
-    ).sort("-created_at").limit(7).to_list()
+    ).sort("-created_at").limit(30).to_list()
+
+    checkin_history_list = [
+        {
+            "date": str(c.date),
+            "status": "relapsed" if getattr(c, "relapse_occurred", False) else "retained",
+            "streakAfter": getattr(c, "streak_day", 1) or 1,
+            "strengthAfter": getattr(c, "focus_score", 50) or 50,
+            "mood": c.mood,
+            "urge_intensity": c.urge_intensity,
+        }
+        for c in checkins
+    ]
 
     latest_checkin = checkins[0] if checkins else None
     latest_checkin_summary = None
@@ -51,6 +63,7 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
             "focus_score": latest_checkin.focus_score,
             "date": str(latest_checkin.date),
         }
+
 
     # 3. Fetch emergency sessions & urge count stats
     emergency_sessions = await EmergencySession.find(
@@ -142,6 +155,7 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         total_urges_count=total_urges_count,
         today_urges_count=today_urges_count,
         daily_urge_counts=daily_urge_counts,
+        checkin_history=checkin_history_list,
     )
 
 
@@ -169,19 +183,8 @@ async def update_my_profile(
 
     await current_user.save()
 
-    return UserProfileResponse(
-        id=str(current_user.id),
-        email=current_user.email,
-        name=current_user.name,
-        is_onboarded=current_user.is_onboarded,
-        onboarding_step=current_user.onboarding_step,
-        created_at=current_user.created_at,
-        streak=current_user.streak or 0,
-        max_streak=current_user.max_streak or 0,
-        total_points=current_user.total_points or 0,
-        mind_strength=current_user.mind_strength or 50,
-        last_checkin_date=current_user.last_checkin_date,
-    )
+    return await get_my_profile(current_user=current_user)
+
 
 
 from app.models.onboarding import Onboarding

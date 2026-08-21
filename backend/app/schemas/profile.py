@@ -76,9 +76,11 @@ class UserProfileResponse(BaseModel):
     total_urges_count: int = 0
     today_urges_count: int = 0
     daily_urge_counts: List[Dict[str, Any]] = []
+    checkin_history: List[Dict[str, Any]] = []
 
     class Config:
         from_attributes = True
+
 
 
 class UpdateProfileRequest(BaseModel):

@@ -15,6 +15,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { EMERGENCY_SOS_SEQUENCE } from '@/constants/practices';
+import { useDailyMissionStore } from '@/store/daily-mission-store';
+import { useHabitStore } from '@/store/habit-store';
+import { analyticsApi } from '@/services/analytics-api';
+
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -74,8 +78,20 @@ export default function EmergencyBreathingScreen() {
             } else {
               setIsSosRunning(false);
               triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+              useDailyMissionStore.getState().completeTask('rescue');
+              analyticsApi.logEvent({
+                event_type: 'emergency_exercise',
+                screen_name: 'emergency_breathing',
+                feature_name: 'box_breathing',
+                duration_seconds: 180,
+                outcome: 'resisted',
+                emotional_state: 'grounded',
+                metadata: { phases_completed: EMERGENCY_SOS_SEQUENCE.phases.length },
+              }).catch(() => {});
+              useHabitStore.getState().syncFromDatabase().catch(() => {});
               return 0;
             }
+
           }
           return prev - 1;
         });

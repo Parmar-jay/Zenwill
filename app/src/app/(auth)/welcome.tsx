@@ -92,14 +92,6 @@ export default function AuthWelcomeScreen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
-        {/* Top Logo - ZEN in white, WILL in blue */}
-        <View style={styles.logoContainer}>
-          <ThemedText style={styles.logoText}>
-            <ThemedText style={styles.logoZen}>ZEN</ThemedText>
-            <ThemedText style={styles.logoWill}>WILL</ThemedText>
-          </ThemedText>
-        </View>
-
         {/* Outer ScrollView to ensure responsiveness across all phone screens */}
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -243,48 +235,45 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   textGroupContainer: {
-    minHeight: 180,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.three,
-    gap: Spacing.two,
   },
   headlineBox: {
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 90,
+    marginBottom: 12,
   },
   headline: {
-    fontSize: SCREEN_HEIGHT < 700 ? 26 : 30,
-    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }),
-    fontStyle: 'italic',
-    fontWeight: '800',
+    fontSize: SCREEN_HEIGHT < 700 ? 28 : 34,
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontWeight: '700',
     color: '#ffffff',
     textAlign: 'center',
-    lineHeight: SCREEN_HEIGHT < 700 ? 34 : 38,
-    letterSpacing: -0.2,
-    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    lineHeight: SCREEN_HEIGHT < 700 ? 36 : 42,
+    letterSpacing: -0.3,
+    textShadowColor: 'rgba(0, 0, 0, 0.98)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadowRadius: 10,
   },
   highlightText: {
-    color: '#00A8FF', // Elegant electric blue accent inside quote
-    fontStyle: 'italic',
-    fontWeight: '800',
-    textShadowColor: 'rgba(0, 0, 0, 0.95)',
+    color: '#00E5FF', // Signature Electric Cyan/Blue accent
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontWeight: '700',
+    textShadowColor: 'rgba(0, 229, 255, 0.45)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadowRadius: 10,
   },
   subheadingBox: {
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 50,
   },
   subheading: {
-    fontSize: SCREEN_HEIGHT < 700 ? 13 : 15,
-    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: SCREEN_HEIGHT < 700 ? 15 : 16.5,
+    fontFamily: 'DMSans_500Medium',
+    color: 'rgba(255, 255, 255, 0.95)',
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 24,
     paddingHorizontal: Spacing.three,
     textShadowColor: 'rgba(0, 0, 0, 0.95)',
     textShadowOffset: { width: 0, height: 1 },
@@ -297,7 +286,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(0, 168, 255, 0.35)', // Glowing blue frame
+    borderColor: 'rgba(0, 229, 255, 0.45)', // Glowing cyan frame
   },
   btnPrimaryGradient: {
     paddingVertical: SCREEN_HEIGHT < 700 ? 14 : 16,
@@ -306,22 +295,25 @@ const styles = StyleSheet.create({
   },
   btnPrimaryText: {
     color: '#ffffff',
+    fontFamily: 'SpaceGrotesk_700Bold',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 16.5,
+    letterSpacing: 0.5,
   },
   btnSecondary: {
-    backgroundColor: 'rgba(255, 255, 255, 0.01)',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 16,
     paddingVertical: SCREEN_HEIGHT < 700 ? 14 : 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   btnSecondaryText: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#ffffff',
+    fontFamily: 'SpaceGrotesk_600SemiBold',
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 15.5,
   },
   dividerRow: {
     flexDirection: 'row',
@@ -333,12 +325,14 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   dividerText: {
-    color: 'rgba(255, 255, 255, 0.3)',
-    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 13,
   },
+
   socialRow: {
     flexDirection: 'row',
     justifyContent: 'center',

@@ -255,11 +255,14 @@ export default function DailyCheckinScreen() {
 
     try {
       await mindApi.submitCheckin(payload);
+      useHabitStore.getState().syncFromDatabase().catch(() => {});
     } catch (error) {
       console.log('Checkin submit notice (handled locally):', error);
     } finally {
+      useHabitStore.getState().syncFromDatabase().catch(() => {});
       setIsSubmitting(false);
       setIsCompletedAnim(true);
+
       triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
 
       Animated.spring(completeScale, {

@@ -38,4 +38,18 @@ export const missionsApi = {
   completeMission(missionId: string, data?: { duration_actual_minutes?: number; feedback?: string }): Promise<MissionCompleteResponse> {
     return api.post<MissionCompleteResponse>(`/missions/${missionId}/complete`, data || {});
   },
+
+  completeCategory(category: string, data?: { duration_actual_minutes?: number; feedback?: string }): Promise<MissionCompleteResponse> {
+    return api.post<MissionCompleteResponse>('/missions/complete-category', {
+      category,
+      duration_actual_minutes: data?.duration_actual_minutes,
+      feedback: data?.feedback,
+    });
+  },
+
+  syncMissions(tasks: Record<string, boolean> | { [key: string]: boolean }): Promise<Mission[]> {
+    return api.post<Mission[]>('/missions/sync', { tasks });
+  },
 };
+
+

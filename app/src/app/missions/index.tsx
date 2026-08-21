@@ -197,8 +197,8 @@ export default function DailyMissionsScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerTitleContainer}>
+            <ThemedText style={styles.headerCategory}>DAILY COMMAND</ThemedText>
             <ThemedText style={styles.headerTitle}>Daily Missions</ThemedText>
-            <ThemedText style={styles.headerSubtitle}>5 Tasks • 100 PTS Total</ThemedText>
           </View>
 
           <View style={{ width: 36 }} />
@@ -286,11 +286,11 @@ export default function DailyMissionsScreen() {
                 ]}
               >
                 <View style={styles.taskCardLeft}>
-                  <View style={[styles.iconContainer, { backgroundColor: item.done ? 'rgba(16, 185, 129, 0.15)' : item.color + '18' }]}>
+                  <View style={[styles.iconContainer, { backgroundColor: item.done ? '#10B981' : item.color + '18' }]}>
                     <Ionicons
-                      name={item.done ? 'checkmark-circle' : item.icon}
+                      name={item.done ? 'checkmark-sharp' : item.icon}
                       size={20}
-                      color={item.done ? '#10B981' : item.color}
+                      color={item.done ? '#FFFFFF' : item.color}
                     />
                   </View>
 
@@ -311,7 +311,7 @@ export default function DailyMissionsScreen() {
 
                 {item.done ? (
                   <View style={styles.donePill}>
-                    <Ionicons name="checkmark-sharp" size={14} color="#10B981" />
+                    <Ionicons name="checkmark-sharp" size={14} color="#FFFFFF" />
                     <ThemedText style={styles.donePillText}>Done</ThemedText>
                   </View>
                 ) : (
@@ -410,16 +410,20 @@ const styles = StyleSheet.create({
   },
   headerTitleContainer: {
     flex: 1,
-    marginLeft: 12,
+    alignItems: 'center',
+  },
+  headerCategory: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
   },
   headerTitle: {
-    color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  headerSubtitle: {
-    color: '#94A3B8',
-    fontSize: 12,
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   pointsPill: {
     flexDirection: 'row',
@@ -630,11 +634,14 @@ const styles = StyleSheet.create({
   taskTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
   },
   taskTitle: {
     color: '#F8FAFC',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
+    flexShrink: 1,
   },
   taskTitleDone: {
     color: '#94A3B8',
@@ -644,7 +651,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
-    marginLeft: 8,
   },
   ptsBadgeDone: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
@@ -659,15 +665,16 @@ const styles = StyleSheet.create({
   },
   taskSubtitle: {
     color: '#64748B',
-    fontSize: 12,
+    fontSize: 11.5,
     marginTop: 2,
   },
   actionBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
   },
   actionBtnText: {
     color: '#FFFFFF',
@@ -677,17 +684,17 @@ const styles = StyleSheet.create({
   donePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
   },
   donePillText: {
-    color: '#10B981',
+    color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
     marginLeft: 4,
   },
   historyCard: {

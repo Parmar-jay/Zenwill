@@ -64,15 +64,6 @@ export default function EmergencyIndexScreen() {
       color: '#8B5CF6',
       badge: 'Mindfulness',
     },
-    {
-      id: 'delay-challenge',
-      title: 'Delay Challenge',
-      subtitle: 'Postpone action by 5, 10, or 15 mins',
-      icon: 'timer-outline' as const,
-      route: '/emergency/delay-challenge',
-      color: '#F59E0B',
-      badge: 'Willpower',
-    },
   ];
 
   return (
@@ -146,7 +137,7 @@ export default function EmergencyIndexScreen() {
           <View style={styles.toolsSection}>
             <View style={styles.sectionHeaderRow}>
               <ThemedText style={styles.sectionTitle}>De-escalation Protocols</ThemedText>
-              <ThemedText style={styles.sectionCount}>4 Instant Tools</ThemedText>
+              <ThemedText style={styles.sectionCount}>3 Instant Tools</ThemedText>
             </View>
 
             <View style={styles.toolsGrid}>
