@@ -22,7 +22,6 @@ import {
   DMSans_700Bold_Italic,
 } from '@expo-google-fonts/dm-sans';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -140,7 +139,6 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={PureBlackTheme}>
-      <AnimatedSplashOverlay />
       <AuthGuard>
         <Stack
           screenOptions={{

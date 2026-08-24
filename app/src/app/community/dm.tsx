@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -59,8 +59,15 @@ export default function DirectMessageScreen() {
   const [targetDisplayName, setTargetDisplayName] = useState<string>(getCleanName(rawTargetName));
 
   const currentUser = useAuthStore((state) => state.user);
-  const currentUserId = currentUser?.id || currentUser?.email || 'user_current';
-  const myName = useOnboardingStore((state) => state.firstName) || 'Warrior';
+  const currentUserId = currentUser?.id ? String(currentUser.id) : (currentUser?.email || '');
+  const myName = useOnboardingStore((state) => state.firstName) || currentUser?.name || 'You';
+
+  const myUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (currentUser?.id) ids.add(String(currentUser.id).trim().toLowerCase());
+    if (currentUser?.email) ids.add(currentUser.email.trim().toLowerCase());
+    return ids;
+  }, [currentUser?.id, currentUser?.email]);
 
   const [messages, setMessages] = useState<DirectMessageItem[]>([]);
   const [inputText, setInputText] = useState<string>('');
@@ -132,7 +139,7 @@ export default function DirectMessageScreen() {
           const unconfirmedPrev = prev.filter((p) => {
             if (historyIds.has(p.id)) return false;
             const alreadyInHistory = history.some(
-              (h) => h.content === p.content && (h.sender_id === p.sender_id || h.sender_name === p.sender_name)
+              (h) => h.content === p.content && h.sender_id === p.sender_id
             );
             return !alreadyInHistory;
           });
@@ -332,12 +339,9 @@ export default function DirectMessageScreen() {
                 </View>
               ) : (
                 messages.map((msg) => {
-                  const isMe = (currentUserId !== 'user_current' && msg.sender_id === currentUserId) ||
-                               (currentUser?.id ? msg.sender_id === currentUser.id : false) ||
-                               (currentUser?.email ? msg.sender_id === currentUser.email : false) ||
-                               (msg.sender_id === 'user_current') ||
-                               (msg.sender_id?.startsWith('temp-')) ||
-                               (msg.sender_name && myName && msg.sender_name.toLowerCase() === myName.toLowerCase());
+                  const senderId = (msg.sender_id || '').trim().toLowerCase();
+                  const isMe = (msg.id && typeof msg.id === 'string' && msg.id.startsWith('temp-')) ||
+                               (myUserIds.size > 0 && myUserIds.has(senderId));
 
                   return (
                     <View

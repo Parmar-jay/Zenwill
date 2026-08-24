@@ -89,7 +89,7 @@ export default function CommunityWorldChatScreen() {
     return 0;
   }, [currentUser?.streak, habitStreak]);
 
-  const currentUserId = currentUser?.id || currentUser?.email || 'user_guest';
+  const currentUserId = currentUser?.id ? String(currentUser.id) : (currentUser?.email || '');
   const firstName = currentUser?.name || useOnboardingStore((state) => state.firstName) || 'Operative';
   const userRankInfo = useMemo(() => getGamifiedRank(userStreak), [userStreak]);
 
@@ -102,22 +102,24 @@ export default function CommunityWorldChatScreen() {
   const [inputHeight, setInputHeight] = useState<number>(40);
   const [isSending, setIsSending] = useState<boolean>(false);
 
-  const myIdentities = useMemo(() => {
+  const myUserIds = useMemo(() => {
     const ids = new Set<string>();
-    if (currentUserId && currentUserId !== 'user_guest') ids.add(currentUserId.toLowerCase());
-    if (currentUser?.id) ids.add(String(currentUser.id).toLowerCase());
-    if (currentUser?.email) ids.add(currentUser.email.toLowerCase());
-    if (firstName && firstName !== 'Operative') ids.add(firstName.toLowerCase());
+    if (currentUser?.id) ids.add(String(currentUser.id).trim().toLowerCase());
+    if (currentUser?.email) ids.add(currentUser.email.trim().toLowerCase());
     return ids;
-  }, [currentUserId, currentUser?.id, currentUser?.email, firstName]);
+  }, [currentUser?.id, currentUser?.email]);
 
-  const checkIsUserMsg = (msg: WorldChatMessage) => {
+  const checkIsUserMsg = (msg: WorldChatMessage): boolean => {
     if (!msg) return false;
-    const uid = (msg.user_id || '').toLowerCase();
-    const authName = (msg.author_name || '').toLowerCase();
-    if (myIdentities.has(uid) || myIdentities.has(authName)) return true;
-    if (uid === 'user_current' || uid.startsWith('temp-')) return true;
-    return false;
+    // Optimistic in-flight message sent on this device
+    if (msg.id && typeof msg.id === 'string' && msg.id.startsWith('temp-')) {
+      return true;
+    }
+    const uid = (msg.user_id || '').trim().toLowerCase();
+    if (!uid || uid === 'user_guest' || uid === 'user_current' || uid === 'operative') {
+      return false;
+    }
+    return myUserIds.size > 0 && myUserIds.has(uid);
   };
 
   const formatDmTime = (timeStr: string) => {
@@ -243,7 +245,7 @@ export default function CommunityWorldChatScreen() {
           const unconfirmedPrev = prev.filter((p) => {
             if (fetchedIds.has(p.id)) return false;
             const alreadyInFetched = fetched.some(
-              (f) => f.content === p.content && (f.user_id === p.user_id || f.author_name === p.author_name)
+              (f) => f.content === p.content && f.user_id === p.user_id
             );
             return !alreadyInFetched;
           });

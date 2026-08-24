@@ -24,13 +24,14 @@ export default function VerifyEmailScreen() {
   const targetEmail = (params.email as string) || draftEmail || '';
   const targetName = (params.name as string) || draftName || '';
 
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otpCode, setOtpCode] = useState('');
+  const [isFocused, setIsFocused] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(30);
   const [isResending, setIsResending] = useState(false);
 
-  const inputRefs = useRef<Array<TextInput | null>>([]);
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     let timer: any;
@@ -40,51 +41,24 @@ export default function VerifyEmailScreen() {
     return () => clearInterval(timer);
   }, [resendCooldown]);
 
-  const handleOtpChange = (text: string, index: number) => {
+  useEffect(() => {
+    const focusTimer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 150);
+    return () => clearTimeout(focusTimer);
+  }, []);
+
+  const handleOtpChange = (text: string) => {
     setLocalError(null);
     clearError();
 
-    // Handle paste or auto-fill of multiple digits
-    const cleanDigits = text.replace(/[^0-9]/g, '');
-    if (cleanDigits.length > 1) {
-      const newOtp = [...otp];
-      for (let i = 0; i < cleanDigits.length && index + i < 6; i++) {
-        newOtp[index + i] = cleanDigits[i];
-      }
-      setOtp(newOtp);
-      const nextFocus = Math.min(5, index + cleanDigits.length);
-      inputRefs.current[nextFocus]?.focus();
+    // Clean numeric digits up to 6
+    const cleanDigits = text.replace(/[^0-9]/g, '').slice(0, 6);
+    setOtpCode(cleanDigits);
 
-      if (newOtp.every((d) => d.length === 1)) {
-        triggerDirectVerification(newOtp.join(''));
-      }
-      return;
-    }
-
-    const singleDigit = cleanDigits.slice(-1);
-    const newOtp = [...otp];
-    newOtp[index] = singleDigit;
-    setOtp(newOtp);
-
-    // Auto-focus next input field
-    if (singleDigit && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-
-    // Auto-verify if all 6 filled
-    if (singleDigit && index === 5 && newOtp.every((d) => d.length === 1)) {
-      triggerDirectVerification(newOtp.join(''));
-    }
-  };
-
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace') {
-      if (!otp[index] && index > 0) {
-        const newOtp = [...otp];
-        newOtp[index - 1] = '';
-        setOtp(newOtp);
-        inputRefs.current[index - 1]?.focus();
-      }
+    // Instant auto-verify as soon as 6th digit is typed/pasted
+    if (cleanDigits.length === 6) {
+      triggerDirectVerification(cleanDigits);
     }
   };
 
@@ -105,12 +79,11 @@ export default function VerifyEmailScreen() {
   };
 
   const handleVerify = async () => {
-    const code = otp.join('');
-    if (code.length < 6) {
+    if (otpCode.length < 6) {
       setLocalError('Please enter all 6 digits of the OTP code');
       return;
     }
-    triggerDirectVerification(code);
+    triggerDirectVerification(otpCode);
   };
 
   const handleResend = async () => {
@@ -180,25 +153,43 @@ export default function VerifyEmailScreen() {
               </Animated.View>
             )}
 
-            {/* OTP 6-Digit Code Inputs */}
-            <Animated.View entering={FadeInDown.delay(150).duration(400)} style={styles.otpContainer}>
-              {otp.map((digit, idx) => (
+            {/* OTP 6-Digit Instant Response Inputs */}
+            <Animated.View entering={FadeInDown.delay(150).duration(400)}>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => inputRef.current?.focus()}
+                style={styles.otpContainer}
+              >
                 <TextInput
-                  key={idx}
-                  ref={(ref) => { inputRefs.current[idx] = ref; }}
-                  style={[
-                    styles.otpBox,
-                    digit ? styles.otpBoxFilled : null,
-                    inputRefs.current[idx]?.isFocused() ? styles.otpBoxFocused : null,
-                  ]}
-                  value={digit}
-                  onChangeText={(text) => handleOtpChange(text, idx)}
-                  onKeyPress={(e) => handleKeyPress(e, idx)}
+                  ref={inputRef}
+                  value={otpCode}
+                  onChangeText={handleOtpChange}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
                   keyboardType="number-pad"
-                  maxLength={idx === 0 ? 6 : 1}
-                  selectTextOnFocus
+                  maxLength={6}
+                  textContentType="oneTimeCode"
+                  autoComplete="sms-otp"
+                  style={styles.hiddenInput}
+                  caretHidden
                 />
-              ))}
+                {[0, 1, 2, 3, 4, 5].map((idx) => {
+                  const digit = otpCode[idx] || '';
+                  const isCurrentActive = isFocused && (otpCode.length === idx || (otpCode.length === 6 && idx === 5));
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.otpBox,
+                        digit ? styles.otpBoxFilled : null,
+                        isCurrentActive ? styles.otpBoxFocused : null,
+                      ]}
+                    >
+                      <ThemedText style={styles.otpDigitText}>{digit}</ThemedText>
+                    </View>
+                  );
+                })}
+              </TouchableOpacity>
             </Animated.View>
 
             {/* Verify CTA Button with Loading State */}
@@ -363,6 +354,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 24,
+    position: 'relative',
+  },
+  hiddenInput: {
+    position: 'absolute',
+    opacity: 0,
+    width: '100%',
+    height: '100%',
+    top: 0,
+    left: 0,
+    zIndex: 10,
   },
   otpBox: {
     width: 46,
@@ -371,10 +372,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.1)',
-    textAlign: 'center',
-    fontSize: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpDigitText: {
+    fontSize: 22,
     fontWeight: '800',
     color: '#ffffff',
+    textAlign: 'center',
   },
   otpBoxFilled: {
     borderColor: '#00E5FF',
@@ -382,7 +387,7 @@ const styles = StyleSheet.create({
   },
   otpBoxFocused: {
     borderColor: '#00E5FF',
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    backgroundColor: 'rgba(0, 229, 255, 0.14)',
   },
   primaryButton: {
     borderRadius: 14,

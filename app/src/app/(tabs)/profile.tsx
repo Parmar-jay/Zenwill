@@ -47,16 +47,44 @@ export default function TabsProfileScreen() {
   const updateUser = useAuthStore((state) => state.updateUser);
   
   const { streak } = useHabitStore();
-  const currentRank = getGamifiedRank(streak);
+  const [liveStreak, setLiveStreak] = useState<number>(streak);
+  const currentRank = getGamifiedRank(liveStreak);
+
+  const onboarding = useOnboardingStore();
+  const updateOnboarding = useOnboardingStore((state) => state.updateProfile);
+
+  // Dynamic Profile State (fetched exclusively from backend)
+  const [name, setName] = useState<string>(
+    authUser?.name || onboarding.firstName || (authUser?.email ? authUser.email.split('@')[0] : '')
+  );
+  const [email, setEmail] = useState<string>(authUser?.email || '');
+  const [bio, setBio] = useState<string>(onboarding.personalStatement || '');
+  const [primaryGoal, setPrimaryGoal] = useState<string>(
+    onboarding.primaryOutcome ? formatLabel(onboarding.primaryOutcome) : ''
+  );
+  const [occupation, setOccupation] = useState<Occupation | ''>(onboarding.occupation || '');
+  const [dailySchedule, setDailySchedule] = useState<DailySchedule | ''>(onboarding.dailySchedule || '');
+  const [selfControl, setSelfControl] = useState<SelfControl | ''>(onboarding.selfControl || '');
 
   const fetchLiveProfile = async () => {
     try {
-      useHabitStore.getState().syncFromDatabase();
+      await useHabitStore.getState().syncFromDatabase();
       const userProf = await profileApi.getMe();
       if (userProf) {
-        if (userProf.name) setName(userProf.name);
-        if (userProf.bio) setBio(userProf.bio);
-        if (userProf.primary_outcome) setPrimaryGoal(formatLabel(userProf.primary_outcome));
+        if (userProf.name) {
+          setName(userProf.name);
+        } else if (authUser?.name) {
+          setName(authUser.name);
+        }
+        if (userProf.email) {
+          setEmail(userProf.email);
+        }
+        if (userProf.bio !== undefined && userProf.bio !== null) {
+          setBio(userProf.bio);
+        }
+        if (userProf.primary_outcome) {
+          setPrimaryGoal(formatLabel(userProf.primary_outcome));
+        }
         if (userProf.occupation) {
           setOccupation(userProf.occupation as Occupation);
           updateOnboarding({ occupation: userProf.occupation as Occupation });
@@ -68,6 +96,9 @@ export default function TabsProfileScreen() {
         if (userProf.self_control) {
           setSelfControl(userProf.self_control as SelfControl);
           updateOnboarding({ selfControl: userProf.self_control as SelfControl });
+        }
+        if (typeof userProf.streak === 'number') {
+          setLiveStreak(userProf.streak);
         }
       }
     } catch (e) {
@@ -84,24 +115,6 @@ export default function TabsProfileScreen() {
       fetchLiveProfile();
     }, [])
   );
-
-  const onboarding = useOnboardingStore();
-  const updateOnboarding = useOnboardingStore((state) => state.updateProfile);
-
-  // Editable Profile State
-  const [name, setName] = useState<string>(
-    authUser?.name || onboarding.firstName || authUser?.email?.split('@')[0] || 'Zen Operative'
-  );
-  const [email] = useState<string>(authUser?.email || 'user@zenwill.me');
-  const [bio, setBio] = useState<string>(
-    onboarding.personalStatement || 'Unshakable focus & daily habit mastery.'
-  );
-  const [primaryGoal, setPrimaryGoal] = useState<string>(
-    onboarding.primaryOutcome ? formatLabel(onboarding.primaryOutcome) : 'Stronger Discipline'
-  );
-  const [occupation, setOccupation] = useState<Occupation>(onboarding.occupation || 'business_owner');
-  const [dailySchedule, setDailySchedule] = useState<DailySchedule>(onboarding.dailySchedule || 'morning');
-  const [selfControl, setSelfControl] = useState<SelfControl>(onboarding.selfControl || 'strong');
 
   // Modal Visibility
   const [isEditModalVisible, setIsEditModalVisible] = useState<boolean>(false);
@@ -125,18 +138,18 @@ export default function TabsProfileScreen() {
   const [tempName, setTempName] = useState(name);
   const [tempBio, setTempBio] = useState(bio);
   const [tempGoal, setTempGoal] = useState(primaryGoal);
-  const [tempOccupation, setTempOccupation] = useState<Occupation>(occupation);
-  const [tempSchedule, setTempSchedule] = useState<DailySchedule>(dailySchedule);
-  const [tempSelfControl, setTempSelfControl] = useState<SelfControl>(selfControl);
+  const [tempOccupation, setTempOccupation] = useState<Occupation>(occupation || 'business_owner');
+  const [tempSchedule, setTempSchedule] = useState<DailySchedule>(dailySchedule || 'morning');
+  const [tempSelfControl, setTempSelfControl] = useState<SelfControl>(selfControl || 'strong');
 
   const openEditModal = () => {
     triggerHaptic();
     setTempName(name);
     setTempBio(bio);
     setTempGoal(primaryGoal);
-    setTempOccupation(occupation);
-    setTempSchedule(dailySchedule);
-    setTempSelfControl(selfControl);
+    setTempOccupation(occupation || 'business_owner');
+    setTempSchedule(dailySchedule || 'morning');
+    setTempSelfControl(selfControl || 'strong');
     setIsEditModalVisible(true);
   };
 
@@ -270,12 +283,14 @@ export default function TabsProfileScreen() {
             >
               <View style={styles.profileTopRow}>
                 <View style={styles.avatarGlowContainer}>
-                  <ThemedText style={styles.avatarText}>{name.charAt(0).toUpperCase()}</ThemedText>
+                  <ThemedText style={styles.avatarText}>
+                    {((name || email || 'Zen').charAt(0) || 'Z').toUpperCase()}
+                  </ThemedText>
                 </View>
 
                 <View style={{ flex: 1, gap: 4 }}>
-                  <ThemedText style={styles.usernameText}>{name}</ThemedText>
-                  <ThemedText style={styles.emailText}>{email}</ThemedText>
+                  <ThemedText style={styles.usernameText}>{name || (email ? email.split('@')[0] : 'Zen Operative')}</ThemedText>
+                  <ThemedText style={styles.emailText}>{email || 'No email associated'}</ThemedText>
                   
                   <View style={[styles.levelBadgeRow, { backgroundColor: currentRank.bgGlow, borderColor: currentRank.borderColor, borderWidth: 1 }]}>
                     <ThemedText style={{ fontSize: 11, marginRight: 2 }}>{currentRank.badge}</ThemedText>
@@ -290,12 +305,12 @@ export default function TabsProfileScreen() {
               <View style={styles.bioContainer}>
                 <View style={styles.bioQuoteRow}>
                   <Ionicons name="chatbox-ellipses-outline" size={14} color="#00E5FF" />
-                  <ThemedText style={styles.bioText}>"{bio}"</ThemedText>
+                  <ThemedText style={styles.bioText}>"{bio || 'No personal bio added yet.'}"</ThemedText>
                 </View>
                 
                 <View style={styles.goalPill}>
                   <Ionicons name="sparkles" size={12} color="#10B981" />
-                  <ThemedText style={styles.goalPillText}>Target: {primaryGoal}</ThemedText>
+                  <ThemedText style={styles.goalPillText}>Target: {primaryGoal || 'Not Specified'}</ThemedText>
                 </View>
               </View>
             </LinearGradient>
@@ -305,7 +320,7 @@ export default function TabsProfileScreen() {
           <View style={styles.quickMetricsRow}>
             <View style={styles.metricChip}>
               <Ionicons name="flame" size={18} color="#F59E0B" style={{ marginBottom: 4 }} />
-              <ThemedText style={styles.metricVal}>{streak} Days</ThemedText>
+              <ThemedText style={styles.metricVal}>{liveStreak} Days</ThemedText>
               <ThemedText style={styles.metricLabel}>Clean Streak</ThemedText>
             </View>
 
@@ -334,32 +349,32 @@ export default function TabsProfileScreen() {
             <View style={styles.detailGrid}>
               <View style={styles.detailCard}>
                 <ThemedText style={styles.detailLabel}>Display Name</ThemedText>
-                <ThemedText style={styles.detailValue}>{name}</ThemedText>
+                <ThemedText style={styles.detailValue}>{name || (email ? email.split('@')[0] : 'Not Specified')}</ThemedText>
               </View>
 
               <View style={styles.detailCard}>
                 <ThemedText style={styles.detailLabel}>Primary Goal</ThemedText>
-                <ThemedText style={styles.detailValue}>{primaryGoal}</ThemedText>
+                <ThemedText style={styles.detailValue}>{primaryGoal || 'Not Specified'}</ThemedText>
               </View>
 
               <View style={styles.detailCard}>
                 <ThemedText style={styles.detailLabel}>Occupation</ThemedText>
-                <ThemedText style={styles.detailValue}>{formatLabel(occupation)}</ThemedText>
+                <ThemedText style={styles.detailValue}>{occupation ? formatLabel(occupation) : 'Not Specified'}</ThemedText>
               </View>
 
               <View style={styles.detailCard}>
                 <ThemedText style={styles.detailLabel}>Daily Focus Peak</ThemedText>
-                <ThemedText style={styles.detailValue}>{formatLabel(dailySchedule)}</ThemedText>
+                <ThemedText style={styles.detailValue}>{dailySchedule ? formatLabel(dailySchedule) : 'Not Specified'}</ThemedText>
               </View>
 
               <View style={styles.detailCardFull}>
                 <ThemedText style={styles.detailLabel}>Self-Control Baseline</ThemedText>
-                <ThemedText style={styles.detailValue}>{formatLabel(selfControl)}</ThemedText>
+                <ThemedText style={styles.detailValue}>{selfControl ? formatLabel(selfControl) : 'Not Specified'}</ThemedText>
               </View>
 
               <View style={styles.detailCardFull}>
                 <ThemedText style={styles.detailLabel}>Personal Motivation / Bio</ThemedText>
-                <ThemedText style={styles.detailValueSub}>{bio}</ThemedText>
+                <ThemedText style={styles.detailValueSub}>{bio || 'No personal statement provided.'}</ThemedText>
               </View>
             </View>
 
