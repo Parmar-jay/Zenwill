@@ -53,12 +53,13 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "d2ee7cc2-b22f-4b39-a7f9-9a246cb042a2"
+        "projectId": "50ed04ff-90ac-476b-8ff1-c0a90890ab74"
       }
     },
     "updates": {
       "enabled": false,
       "checkAutomatically": "NEVER"
-    }
+    },
+    "owner": "jay9009"
   }
 }
