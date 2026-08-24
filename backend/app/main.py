@@ -10,14 +10,23 @@ from app.database import init_db
 from app.routers import auth, profile, mind_profile, checkin, journal, missions, coach, emergency, analytics, events, community, purpose
 
 
+import asyncio
+from app.services.account_purger import start_expired_accounts_worker
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database tables on startup."""
     print("[ZenWill] API starting up...")
     await init_db()
     print("[ZenWill] Database tables verified/created")
+
+    # Start background task to purge accounts that passed 7-day grace period
+    worker_task = asyncio.create_task(start_expired_accounts_worker())
+
     yield
     print("[ZenWill] API shutting down")
+    worker_task.cancel()
 
 
 app = FastAPI(

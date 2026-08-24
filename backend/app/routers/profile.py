@@ -248,9 +248,12 @@ async def submit_onboarding(
     Persists data to 'onboardings' collection and initializes Mind Profile.
     """
     # 1. Save / Update Onboarding collection document
-    onboarding_record = await Onboarding.find_one(Onboarding.user_id == str(current_user.id))
+    user_id_str = str(current_user.id)
+    onboarding_record = await Onboarding.find_one(
+        {"$or": [{"user_id": user_id_str}, {"user_id": current_user.email}]}
+    )
     if not onboarding_record:
-        onboarding_record = Onboarding(user_id=str(current_user.id))
+        onboarding_record = Onboarding(user_id=user_id_str)
 
     onboarding_record.first_name = payload.firstName
     onboarding_record.age_group = payload.ageGroup

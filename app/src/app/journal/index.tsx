@@ -11,6 +11,7 @@ import {
   Switch,
   Alert,
   KeyboardAvoidingView,
+  StatusBar,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -472,6 +473,7 @@ export default function JournalIndexScreen() {
           {/* Modal Content Sheet (Sibling, completely independent of backdrop touch) */}
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
             style={styles.modalSheet}
           >
             <View style={styles.modalHandle} />

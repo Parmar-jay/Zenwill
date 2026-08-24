@@ -8,10 +8,14 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Image,
+  Keyboard,
+  StatusBar,
+  Alert,
+  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -67,15 +71,40 @@ export default function DirectMessageScreen() {
   const [isTargetOnline, setIsTargetOnline] = useState<boolean>(false);
   const [userStatusText, setUserStatusText] = useState<string>('Offline');
 
-  // Load real DM Chat history & target online status from database with 3s polling
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+  const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  // Load real DM Chat history & target user status every 3s
   useEffect(() => {
-    loadChatHistory();
+    loadChatHistory(true);
     fetchUserOnlineStatus();
+
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
     const interval = setInterval(() => {
       loadChatHistory(false);
       fetchUserOnlineStatus();
     }, 3000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      showSub.remove();
+      hideSub.remove();
+    };
   }, [targetUserId]);
 
   const fetchUserOnlineStatus = async () => {
@@ -93,14 +122,27 @@ export default function DirectMessageScreen() {
     }
   };
 
-  const loadChatHistory = async (shouldScroll = true) => {
+  const loadChatHistory = async (shouldScroll = false) => {
     try {
       const history = await communityApi.getDmHistory(targetUserId);
-      if (history) {
-        setMessages(history);
+      if (history && Array.isArray(history)) {
+        setMessages((prev) => {
+          const historyIds = new Set(history.map((h) => h.id));
+          // Preserve any in-flight or unconfirmed message that is not yet in history
+          const unconfirmedPrev = prev.filter((p) => {
+            if (historyIds.has(p.id)) return false;
+            const alreadyInHistory = history.some(
+              (h) => h.content === p.content && (h.sender_id === p.sender_id || h.sender_name === p.sender_name)
+            );
+            return !alreadyInHistory;
+          });
+          return [...history, ...unconfirmedPrev];
+        });
       }
       if (shouldScroll) {
-        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 200);
+        requestAnimationFrame(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        });
       }
     } catch (e) {
       console.log('Error loading DM history:', e);
@@ -120,8 +162,9 @@ export default function DirectMessageScreen() {
     setInputHeight(40);
     setIsSending(true);
 
+    const tempId = `temp-${Date.now()}`;
     const tempMsg: DirectMessageItem = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       sender_id: currentUserId,
       sender_name: myName,
       receiver_id: targetUserId,
@@ -138,12 +181,40 @@ export default function DirectMessageScreen() {
     });
 
     try {
-      await communityApi.sendDirectMessage(targetUserId, textToSend, 'text');
-      await loadChatHistory(true);
+      const res = await communityApi.sendDirectMessage(targetUserId, textToSend, 'text');
+      if (res && res.id) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? res : m))
+        );
+      }
     } catch (e) {
       console.log('Error sending DM:', e);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handlePromptDeleteChat = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDeleteChat = async () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    setIsDeleting(true);
+    setShowDeleteModal(false);
+    setMessages([]);
+    try {
+      await communityApi.deleteDmConversation(targetUserId);
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.navigate('/community' as any);
+      }
+    } catch (e) {
+      console.log('Error deleting chat:', e);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -184,119 +255,136 @@ export default function DirectMessageScreen() {
 
       <Stack.Screen options={{ headerShown: false }} />
 
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={0}
         >
-          {/* Header Bar — Clean, displaying display name and online status */}
-          <View style={styles.headerBar}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={() => {
-                triggerHaptic();
-                if (router.canGoBack()) {
-                  router.back();
-                } else {
-                  router.navigate('/community' as any);
-                }
-              }}
+          <View style={{ flex: 1, paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }}>
+            {/* Header Bar — Clean, displaying display name and online status */}
+            <View style={styles.headerBar}>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => {
+                  triggerHaptic();
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.navigate('/community' as any);
+                  }
+                }}
+              >
+                <Ionicons name="chevron-back" size={24} color="#00E5FF" />
+              </TouchableOpacity>
+
+              <View style={styles.userInfoBox}>
+                <View style={styles.avatarWrapper}>
+                  <ThemedText style={{ fontSize: 13, fontWeight: '800', color: '#00E5FF' }}>
+                    {targetDisplayName.charAt(0).toUpperCase()}
+                  </ThemedText>
+                  <View style={[styles.onlineDot, { backgroundColor: isTargetOnline ? '#22C55E' : '#64748B' }]} />
+                </View>
+                <View>
+                  <ThemedText style={styles.userNameText}>{targetDisplayName}</ThemedText>
+                  <ThemedText style={[styles.userStatusText, { color: isTargetOnline ? '#22C55E' : '#94A3B8' }]}>
+                    {userStatusText}
+                  </ThemedText>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.headerTrashBtn}
+                onPress={handlePromptDeleteChat}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="trash-outline" size={16} color="rgba(248, 113, 113, 0.85)" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Scrollable Chat Area */}
+            <ScrollView
+              ref={scrollViewRef}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
             >
-              <Ionicons name="chevron-back" size={24} color="#00E5FF" />
-            </TouchableOpacity>
-
-            <View style={styles.userInfoBox}>
-              <View style={styles.avatarWrapper}>
-                <ThemedText style={{ fontSize: 13, fontWeight: '800', color: '#00E5FF' }}>
-                  {targetDisplayName.charAt(0).toUpperCase()}
-                </ThemedText>
-                <View style={[styles.onlineDot, { backgroundColor: isTargetOnline ? '#22C55E' : '#64748B' }]} />
-              </View>
-              <View>
-                <ThemedText style={styles.userNameText}>{targetDisplayName}</ThemedText>
-                <ThemedText style={[styles.userStatusText, { color: isTargetOnline ? '#22C55E' : '#94A3B8' }]}>
-                  {userStatusText}
+              {/* End-to-End Encrypted Banner */}
+              <View style={styles.encryptedBanner}>
+                <View style={styles.encryptedHeader}>
+                  <Ionicons name="lock-closed" size={13} color="#F59E0B" />
+                  <ThemedText style={styles.encryptedTitle}>Messages are end-to-end encrypted</ThemedText>
+                </View>
+                <ThemedText style={styles.encryptedSub}>
+                  No one outside of this chat can read or listen to them.
                 </ThemedText>
               </View>
-            </View>
 
-            <View style={{ width: 32 }} />
-          </View>
+              {/* Empty Messages State */}
+              {messages.length === 0 ? (
+                <View style={styles.emptyDmState}>
+                  <Ionicons name="chatbubbles-outline" size={32} color="#00E5FF" />
+                  <ThemedText style={styles.emptyDmText}>
+                    Direct Message conversation with {targetDisplayName}. Send a message to start!
+                  </ThemedText>
+                </View>
+              ) : (
+                messages.map((msg) => {
+                  const isMe = (currentUserId !== 'user_current' && msg.sender_id === currentUserId) ||
+                               (currentUser?.id ? msg.sender_id === currentUser.id : false) ||
+                               (currentUser?.email ? msg.sender_id === currentUser.email : false) ||
+                               (msg.sender_id === 'user_current') ||
+                               (msg.sender_id?.startsWith('temp-')) ||
+                               (msg.sender_name && myName && msg.sender_name.toLowerCase() === myName.toLowerCase());
 
-          {/* Scrollable Chat Area */}
-          <ScrollView
-            ref={scrollViewRef}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets={true}
-          >
-            {/* End-to-End Encrypted Banner */}
-            <View style={styles.encryptedBanner}>
-              <View style={styles.encryptedHeader}>
-                <Ionicons name="lock-closed" size={13} color="#F59E0B" />
-                <ThemedText style={styles.encryptedTitle}>Messages are end-to-end encrypted</ThemedText>
-              </View>
-              <ThemedText style={styles.encryptedSub}>
-                No one outside of this chat can read or listen to them.
-              </ThemedText>
-            </View>
-
-            {/* Empty Messages State */}
-            {messages.length === 0 ? (
-              <View style={styles.emptyDmState}>
-                <Ionicons name="chatbubbles-outline" size={32} color="#00E5FF" />
-                <ThemedText style={styles.emptyDmText}>
-                  Direct Message conversation with {targetDisplayName}. Send a message to start!
-                </ThemedText>
-              </View>
-            ) : (
-              messages.map((msg) => {
-                const isMe = (currentUserId !== 'user_current' && msg.sender_id === currentUserId) ||
-                             (currentUser?.id ? msg.sender_id === currentUser.id : false) ||
-                             (currentUser?.email ? msg.sender_id === currentUser.email : false) ||
-                             (msg.sender_id === 'user_current') ||
-                             (msg.sender_id?.startsWith('temp-')) ||
-                             (msg.sender_name && myName && msg.sender_name.toLowerCase() === myName.toLowerCase());
-
-                return (
-                  <View
-                    key={msg.id}
-                    style={[
-                      styles.msgRow,
-                      isMe ? styles.msgRowMe : styles.msgRowOther,
-                    ]}
-                  >
-                    {/* Standard Text Message Bubble matching WhatsApp style */}
-                    <View style={isMe ? styles.bubbleMe : styles.bubbleOther}>
-                      <ThemedText style={styles.msgContentText}>{msg.content}</ThemedText>
-                      <View style={styles.msgFooterRow}>
-                        <ThemedText style={styles.msgTimeText}>
-                          {formatTime(msg.created_at)}
-                        </ThemedText>
-                        {isMe && (
-                          msg.is_read ? (
-                            // 1. User has seen/read the message -> Double Blue Tick
-                            <Ionicons name="checkmark-done" size={15} color="#53BDEB" style={{ marginLeft: 3 }} />
-                          ) : isTargetOnline ? (
-                            // 2. User is online (delivered) -> Double Gray Tick
-                            <Ionicons name="checkmark-done" size={15} color="#94A3B8" style={{ marginLeft: 3 }} />
-                          ) : (
-                            // 3. User is offline (sent) -> Single Gray Tick
-                            <Ionicons name="checkmark" size={14} color="#94A3B8" style={{ marginLeft: 3 }} />
-                          )
-                        )}
+                  return (
+                    <View
+                      key={msg.id}
+                      style={[
+                        styles.msgRow,
+                        isMe ? styles.msgRowMe : styles.msgRowOther,
+                      ]}
+                    >
+                      {/* Standard Text Message Bubble matching WhatsApp style */}
+                      <View style={isMe ? styles.bubbleMe : styles.bubbleOther}>
+                        <ThemedText style={styles.msgContentText}>{msg.content}</ThemedText>
+                        <View style={styles.msgFooterRow}>
+                          <ThemedText style={styles.msgTimeText}>
+                            {formatTime(msg.created_at)}
+                          </ThemedText>
+                          {isMe && (
+                            msg.is_read ? (
+                              // 1. User has seen/read the message -> Double Blue Tick
+                              <Ionicons name="checkmark-done" size={15} color="#53BDEB" style={{ marginLeft: 3 }} />
+                            ) : isTargetOnline ? (
+                              // 2. User is online (delivered) -> Double Gray Tick
+                              <Ionicons name="checkmark-done" size={15} color="#94A3B8" style={{ marginLeft: 3 }} />
+                            ) : (
+                              // 3. User is offline (sent) -> Single Gray Tick
+                              <Ionicons name="checkmark" size={14} color="#94A3B8" style={{ marginLeft: 3 }} />
+                            )
+                          )}
+                        </View>
                       </View>
                     </View>
-                  </View>
-                );
-              })
-            )}
-          </ScrollView>
+                  );
+                })
+              )}
+            </ScrollView>
 
-          {/* Floating Pill Message Input Bar matching reference design */}
-          <View style={styles.inputContainer}>
+            {/* Floating Pill Message Input Bar matching reference design */}
+            <View
+              style={[
+                styles.inputContainer,
+                {
+                  paddingBottom: keyboardHeight > 0
+                    ? 8
+                    : Math.max(8, insets.bottom),
+                },
+              ]}
+            >
             <View style={styles.inputWrapper}>
               <TextInput
                 style={[
@@ -327,9 +415,56 @@ export default function DirectMessageScreen() {
               </TouchableOpacity>
             </View>
           </View>
-
-        </KeyboardAvoidingView>
+        </View>
+      </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* CONFIRM DELETE CONVERSATION MODAL */}
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowDeleteModal(false)}
+        >
+          <View style={styles.deleteModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.deleteModalIconCircle}>
+              <Ionicons name="trash-outline" size={22} color="#F87171" />
+            </View>
+
+            <ThemedText style={styles.deleteModalTitle}>DELETE CONVERSATION</ThemedText>
+            <ThemedText style={styles.deleteModalDesc}>
+              Delete all direct messages with{' '}
+              <ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>
+                {targetDisplayName}
+              </ThemedText>
+              ? This action is permanent.
+            </ThemedText>
+
+            <View style={styles.deleteModalActionsRow}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelBtn}
+                activeOpacity={0.75}
+                onPress={() => setShowDeleteModal(false)}
+              >
+                <ThemedText style={styles.deleteModalCancelText}>Cancel</ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                activeOpacity={0.75}
+                onPress={handleConfirmDeleteChat}
+              >
+                <ThemedText style={styles.deleteModalConfirmText}>Delete Chat</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -371,6 +506,16 @@ const styles = StyleSheet.create({
   backBtn: {
     padding: 4,
     backgroundColor: 'transparent',
+  },
+  headerTrashBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   userInfoBox: {
     flexDirection: 'row',
@@ -574,5 +719,91 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.35,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  deleteModalCard: {
+    width: '86%',
+    maxWidth: 330,
+    backgroundColor: '#090E1A',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.25)',
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 25,
+  },
+  deleteModalIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  deleteModalTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  deleteModalDesc: {
+    fontSize: 12.5,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  deleteModalActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  deleteModalCancelBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteModalCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  deleteModalConfirmBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteModalConfirmText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#F87171',
   },
 });

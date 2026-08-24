@@ -66,7 +66,8 @@ async def register(payload: RegisterRequest):
             existing.otp_code = otp_code
             existing.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)
             await existing.save()
-            await send_otp_email(existing.email, otp_code)
+            import asyncio
+            asyncio.create_task(send_otp_email(existing.email, otp_code))
             return {
                 "message": f"Verification code sent to {existing.email}",
                 "email": existing.email
@@ -91,7 +92,8 @@ async def register(payload: RegisterRequest):
     profile = MindProfile(user_id=str(user.id))
     await profile.insert()
 
-    await send_otp_email(email, otp_code)
+    import asyncio
+    asyncio.create_task(send_otp_email(email, otp_code))
 
     return {
         "message": f"Verification code sent to {email}",
@@ -116,7 +118,8 @@ async def login(payload: LoginRequest):
         user.otp_code = otp_code
         user.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)
         await user.save()
-        await send_otp_email(user.email, otp_code)
+        import asyncio
+        asyncio.create_task(send_otp_email(user.email, otp_code))
         raise HTTPException(status_code=403, detail="email_unverified")
 
     # Check if user is scheduled for deletion; if < 7 days, auto-cancel deletion!
@@ -172,7 +175,8 @@ async def request_otp(payload: OtpRequestPayload):
         user.otp_expires_at = expires_at
         await user.save()
 
-    await send_otp_email(email, otp_code)
+    import asyncio
+    asyncio.create_task(send_otp_email(email, otp_code))
 
     return {
         "message": f"OTP successfully sent to {email}",
@@ -375,7 +379,8 @@ async def forgot_password_request(payload: ForgotPasswordRequest):
     user.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)
     await user.save()
 
-    await send_otp_email(email, otp_code)
+    import asyncio
+    asyncio.create_task(send_otp_email(email, otp_code))
     return {
         "success": True,
         "message": f"Verification code sent to {email}"

@@ -91,36 +91,35 @@ def get_rank_info_for_days(days: int):
 
 @router.get("/messages", response_model=List[MessageResponse])
 async def get_world_chat_messages(limit: int = 50):
-    """Retrieve recent World Chat messages from database with real-time user streaks."""
+    """Retrieve recent World Chat messages from database with instant batch resolution."""
     try:
-        dummy_names = ["Operative_Kobe", "Operative_Titan", "Vanguard_Zero", "Sage_Arjuna"]
-        await CommunityMessage.find({"author_name": {"$in": dummy_names}}).delete()
-
         messages = await CommunityMessage.find_all().sort("-created_at").limit(limit).to_list()
         messages.sort(key=lambda m: m.created_at)
+
+        # Batch lookup users in a single query for maximum speed
+        user_ids = [m.user_id for m in messages if m.user_id]
+        users_map = {}
+        if user_ids:
+            try:
+                db_users = await User.find({"$or": [{"id": {"$in": user_ids}}, {"email": {"$in": user_ids}}]}).to_list()
+                for u in db_users:
+                    users_map[str(u.id)] = u
+                    if u.email:
+                        users_map[u.email] = u
+            except Exception:
+                pass
 
         result = []
         for m in messages:
             streak = m.author_streak or 0
             name = m.author_name
             
-            # Look up live user streak and name directly from User collection in MongoDB
-            try:
-                db_u = None
-                if m.user_id and len(m.user_id) == 24:
-                    db_u = await User.get(m.user_id)
-                if not db_u and m.user_id:
-                    db_u = await User.find_one({"$or": [{"_id": m.user_id}, {"id": m.user_id}, {"email": m.user_id}]})
-                if not db_u and m.author_name:
-                    db_u = await User.find_one({"name": m.author_name})
-
-                if db_u:
-                    if db_u.streak is not None:
-                        streak = db_u.streak
-                    if db_u.name and db_u.name.strip() and not is_invalid_user_identifier(db_u.name):
-                        name = db_u.name.split(" ")[0]
-            except Exception:
-                pass
+            db_u = users_map.get(m.user_id)
+            if db_u:
+                if db_u.streak is not None:
+                    streak = db_u.streak
+                if db_u.name and db_u.name.strip() and not is_invalid_user_identifier(db_u.name):
+                    name = db_u.name.split(" ")[0]
 
             rank_tier, rank_badge = get_rank_info_for_days(streak)
 
@@ -366,39 +365,54 @@ async def resolve_user_real_name(user_id_or_name: str, fallback: str = "Former M
 
 @router.get("/dm/conversations", response_model=List[ConversationSummary])
 async def get_dm_conversations(current_user: Optional[User] = Depends(get_optional_current_user)):
-    """Fetch list of all active DM conversations for current user."""
-    user_id_str = str(current_user.id) if current_user else "user_current"
-    user_name_str = (current_user.name if current_user and current_user.name else "Warrior").split(" ")[0]
+    """Fetch list of active DM conversations STRICTLY for the current authenticated user."""
+    if not current_user:
+        return []
+
+    user_id_str = str(current_user.id)
+    user_email_str = current_user.email or ""
+    user_name_str = (current_user.name if current_user.name else "Warrior").split(" ")[0]
+
     try:
         # Clean up any corrupt self-referential or dummy test messages
         await DirectMessage.find({
             "$or": [
                 {"sender_id": user_id_str, "receiver_id": user_id_str},
+                {"sender_id": user_email_str, "receiver_id": user_email_str},
                 {"sender_name": "Operative_Kobe"},
                 {"sender_name": "Operative_Titan"},
             ]
         }).delete()
 
-        # Fetch all DMs involving current user
+        # STRICT ISOLATION: Fetch only DMs where the current user is strictly the sender or receiver
+        user_ids = [user_id_str]
+        if user_email_str:
+            user_ids.append(user_email_str)
+
         dms = await DirectMessage.find(
             {
                 "$or": [
-                    {"sender_id": user_id_str},
-                    {"receiver_id": user_id_str},
-                    {"sender_name": user_name_str},
-                    {"receiver_name": user_name_str},
+                    {"sender_id": {"$in": user_ids}},
+                    {"receiver_id": {"$in": user_ids}},
                 ]
             }
         ).sort("-created_at").to_list()
 
         conv_dict = {}
         for dm in dms:
-            # Skip invalid self-messages or corrupted records
-            if (dm.sender_id == dm.receiver_id and dm.sender_id == user_id_str) or (dm.sender_name == dm.receiver_name and dm.sender_name == user_name_str):
+            # Check whether current user is sender or receiver
+            is_sender = dm.sender_id in user_ids
+            is_receiver = dm.receiver_id in user_ids
+
+            # If user is neither, skip (strict privacy check)
+            if not is_sender and not is_receiver:
                 continue
 
-            is_sender = dm.sender_id == user_id_str or dm.sender_name == user_name_str
+            # Skip self messages
             other_id = dm.receiver_id if is_sender else dm.sender_id
+            if other_id in user_ids or other_id == "user_current":
+                continue
+
             raw_other_name = dm.receiver_name if is_sender else dm.sender_name
 
             # Resolve actual real user display name directly from MongoDB User collection
@@ -428,36 +442,46 @@ async def get_dm_chat_history(
     target_user_identifier: str,
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
-    """Fetch DM chat history between current user and target user ID or username."""
-    user_id_str = str(current_user.id) if current_user else "user_current"
-    user_name_str = (current_user.name if current_user and current_user.name else "Operative").split(" ")[0]
-    user_email_str = current_user.email if (current_user and current_user.email) else ""
+    """Fetch DM chat history STRICTLY between current user and target user ID."""
+    if not current_user:
+        return []
+
+    user_id_str = str(current_user.id)
+    user_email_str = current_user.email or ""
+    my_ids = [user_id_str]
+    if user_email_str:
+        my_ids.append(user_email_str)
+
+    target_id = target_user_identifier
+    target_ids = [target_id]
+
     try:
-        target_id = target_user_identifier
+        if "@" in target_id:
+            t_user = await User.find_one({"email": target_id})
+            if t_user:
+                target_ids.append(str(t_user.id))
+        else:
+            try:
+                from bson import ObjectId
+                t_user = await User.find_one({"_id": ObjectId(target_id)})
+                if t_user and t_user.email:
+                    target_ids.append(t_user.email)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
-        # Resolve target user from DB if possible
-        target_name_str = await resolve_user_real_name(target_user_identifier, fallback=target_user_identifier)
-
+    try:
         query_conditions = [
-            {"sender_id": user_id_str, "receiver_id": target_id},
-            {"sender_id": target_id, "receiver_id": user_id_str},
-            {"sender_id": user_id_str, "receiver_name": target_name_str},
-            {"sender_name": target_name_str, "receiver_id": user_id_str},
-            {"sender_id": target_id, "receiver_name": user_name_str},
-            {"sender_name": user_name_str, "receiver_name": target_name_str},
-            {"sender_name": target_name_str, "receiver_name": user_name_str},
+            {"sender_id": {"$in": my_ids}, "receiver_id": {"$in": target_ids}},
+            {"sender_id": {"$in": target_ids}, "receiver_id": {"$in": my_ids}},
         ]
-        if user_email_str:
-            query_conditions.extend([
-                {"sender_id": user_email_str, "receiver_id": target_id},
-                {"sender_id": target_id, "receiver_id": user_email_str},
-            ])
 
         dms = await DirectMessage.find({"$or": query_conditions}).sort("created_at").to_list()
 
         # Mark incoming unread messages as read
         for dm in dms:
-            if (dm.receiver_id == user_id_str or dm.receiver_name == user_name_str) and not dm.is_read:
+            if dm.receiver_id in my_ids and not dm.is_read:
                 dm.is_read = True
                 await dm.save()
 
@@ -490,14 +514,15 @@ async def send_direct_message(
     current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     """Send a direct message to target user and save cleanly to MongoDB."""
-    user_id_str = str(current_user.id) if current_user else "user_current"
-    sender_name = current_user.name.split(" ")[0] if (current_user and current_user.name) else await resolve_user_real_name(user_id_str, "Operative")
-    sender_username = sender_name.lower().replace(" ", "_")
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required to send direct messages.")
+
+    user_id_str = str(current_user.id)
+    sender_name = current_user.name.split(" ")[0] if current_user.name else "Operative"
+    sender_username = (current_user.name or "operative").lower().replace(" ", "_")
 
     target_id = payload.receiver_id or target_user_identifier
     target_name = await resolve_user_real_name(target_id, fallback=target_user_identifier)
-    if target_name == "Operative" or target_name == target_user_identifier:
-        target_name = await resolve_user_real_name(target_user_identifier, fallback="Operative")
     target_username = target_name.lower().replace(" ", "_")
 
     new_dm = DirectMessage(
@@ -529,6 +554,58 @@ async def send_direct_message(
         is_read=new_dm.is_read,
         created_at=format_ist_time(new_dm.created_at),
     )
+
+
+@router.delete("/dm/{target_user_identifier}")
+async def delete_dm_conversation(
+    target_user_identifier: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    """Delete all direct messages between the current user and target user."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required to delete direct messages.")
+
+    user_id_str = str(current_user.id)
+    user_email_str = current_user.email or ""
+    my_ids = [user_id_str]
+    if user_email_str:
+        my_ids.append(user_email_str)
+
+    target_id = target_user_identifier
+    target_ids = [target_id]
+
+    try:
+        if "@" in target_id:
+            t_user = await User.find_one({"email": target_id})
+            if t_user:
+                target_ids.append(str(t_user.id))
+        else:
+            try:
+                from bson import ObjectId
+                t_user = await User.find_one({"_id": ObjectId(target_id)})
+                if t_user and t_user.email:
+                    target_ids.append(t_user.email)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        delete_result = await DirectMessage.find({
+            "$or": [
+                {"sender_id": {"$in": my_ids}, "receiver_id": {"$in": target_ids}},
+                {"sender_id": {"$in": target_ids}, "receiver_id": {"$in": my_ids}},
+            ]
+        }).delete()
+
+        return {
+            "status": "success",
+            "message": "Conversation deleted successfully",
+            "deleted_count": getattr(delete_result, "deleted_count", 0),
+        }
+    except Exception as e:
+        print(f"[ZenWill DM API Warning] delete_dm_conversation error ({e}).")
+        raise HTTPException(status_code=500, detail="Failed to delete conversation.")
 
 
 @router.get("/users/search")

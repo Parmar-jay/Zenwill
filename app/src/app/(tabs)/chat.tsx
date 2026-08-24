@@ -8,11 +8,13 @@ import {
   TextInput,
   Modal,
   Image,
+  Keyboard,
+  StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -61,7 +63,8 @@ export default function CoachChatScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
   const currentUser = useAuthStore((state) => state.user);
-  const firstName = currentUser?.name?.split(' ')[0] || useOnboardingStore((state) => state.firstName) || 'Brother';
+  const onboardingFirstName = useOnboardingStore((state) => state.firstName);
+  const firstName = currentUser?.name?.split(' ')[0] || onboardingFirstName || 'Brother';
 
   const userChatStorageKey = currentUser?.id
     ? `@zenwill_coach_msgs_${currentUser.id}`
@@ -103,31 +106,7 @@ export default function CoachChatScreen() {
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   });
 
-  // Load persistent chat history from MongoDB database & local cache
-  useEffect(() => {
-    loadChatHistory();
-
-    AsyncStorage.getItem(STORAGE_MEMORIES_KEY).then((saved) => {
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMemories(parsed);
-          }
-        } catch (e) {
-          // Fallback default
-        }
-      }
-    });
-  }, [currentUser?.id, firstName]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadChatHistory();
-    }, [currentUser?.id])
-  );
-
-  const loadChatHistory = async () => {
+  const loadChatHistory = useCallback(async () => {
     try {
       // 1. Read local cache for instant load
       const cached = await AsyncStorage.getItem(userChatStorageKey);
@@ -140,8 +119,8 @@ export default function CoachChatScreen() {
         } catch (e) {}
       }
 
-      // 2. Fetch real conversation history from MongoDB backend
-      const dbHistory = await coachApi.getHistory(50);
+      // 2. Fetch real conversation history from MongoDB backend if logged in
+      const dbHistory = await coachApi.getHistory(50).catch(() => null);
       if (dbHistory && dbHistory.length > 0) {
         const formattedMsgs: Message[] = dbHistory.map((m) => {
           let timeFormatted = '';
@@ -157,18 +136,71 @@ export default function CoachChatScreen() {
             timestamp: timeFormatted,
           };
         });
-        setMessages(formattedMsgs);
+        setMessages((prev) => {
+          const dbIds = new Set(formattedMsgs.map((f) => f.id));
+          const unconfirmedPrev = prev.filter((p) => {
+            if (dbIds.has(p.id)) return false;
+            const alreadyInDb = formattedMsgs.some((f) => f.text === p.text && f.sender === p.sender);
+            return !alreadyInDb;
+          });
+          return [...formattedMsgs, ...unconfirmedPrev];
+        });
         await AsyncStorage.setItem(userChatStorageKey, JSON.stringify(formattedMsgs));
       } else if (!cached) {
         setMessages([getInitialAiMessage(firstName)]);
       }
     } catch (err) {
-      console.log('Error loading coach chat history from database:', err);
       if (messages.length === 0) {
         setMessages([getInitialAiMessage(firstName)]);
       }
     }
-  };
+  }, [userChatStorageKey, firstName]);
+
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Load persistent chat history from MongoDB database & local cache
+  useEffect(() => {
+    loadChatHistory();
+
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    AsyncStorage.getItem(STORAGE_MEMORIES_KEY).then((saved) => {
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMemories(parsed);
+          }
+        } catch (e) {
+          // Fallback default
+        }
+      }
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [loadChatHistory]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadChatHistory();
+    }, [loadChatHistory])
+  );
 
   // Save messages to user-specific AsyncStorage whenever updated
   const saveMessages = async (newMsgs: Message[]) => {
@@ -294,7 +326,7 @@ export default function CoachChatScreen() {
 
       <Stack.Screen options={{ headerShown: false }} />
 
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         {/* Header Bar */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -325,61 +357,70 @@ export default function CoachChatScreen() {
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          keyboardVerticalOffset={0}
         >
-          {/* Messages Stream */}
-          <PageEntrance style={{ flex: 1 }}>
-            <ScrollView
-              ref={scrollViewRef}
-              contentContainerStyle={styles.messagesContainer}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              automaticallyAdjustKeyboardInsets={true}
-            >
-              {/* Continuous Message Stream */}
-              {messages.map((item) => (
-                <View
-                  key={item.id}
-                  style={[
-                    styles.messageRow,
-                    item.sender === 'user' ? styles.userRow : styles.aiRow,
-                  ]}
-                >
-                  {item.sender === 'ai' && (
+          <View style={{ flex: 1, paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }}>
+            {/* Messages Stream */}
+            <PageEntrance style={{ flex: 1 }}>
+              <ScrollView
+                ref={scrollViewRef}
+                contentContainerStyle={styles.messagesContainer}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+              >
+                {/* Continuous Message Stream */}
+                {messages.map((item) => (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.messageRow,
+                      item.sender === 'user' ? styles.userRow : styles.aiRow,
+                    ]}
+                  >
+                    {item.sender === 'ai' && (
+                      <View style={styles.aiAvatarCircle}>
+                        <Ionicons name="sparkles" size={13} color="#00E5FF" />
+                      </View>
+                    )}
+
+                    <View style={{ flex: 1, alignItems: item.sender === 'user' ? 'flex-end' : 'flex-start' }}>
+                      <View
+                        style={[
+                          styles.messageBubble,
+                          item.sender === 'user' ? styles.userBubble : styles.aiBubble,
+                        ]}
+                      >
+                        <ThemedText style={styles.messageText}>{item.text}</ThemedText>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+
+                {isStreaming && (
+                  <View style={[styles.messageRow, styles.aiRow]}>
                     <View style={styles.aiAvatarCircle}>
                       <Ionicons name="sparkles" size={13} color="#00E5FF" />
                     </View>
-                  )}
-
-                  <View style={{ flex: 1, alignItems: item.sender === 'user' ? 'flex-end' : 'flex-start' }}>
-                    <View
-                      style={[
-                        styles.messageBubble,
-                        item.sender === 'user' ? styles.userBubble : styles.aiBubble,
-                      ]}
-                    >
-                      <ThemedText style={styles.messageText}>{item.text}</ThemedText>
+                    <View style={[styles.messageBubble, styles.aiBubble, { paddingVertical: 10 }]}>
+                      <ThemedText style={styles.streamingText}>Synthesizing insight...</ThemedText>
                     </View>
                   </View>
-                </View>
-              ))}
+                )}
+              </ScrollView>
+            </PageEntrance>
 
-              {isStreaming && (
-                <View style={[styles.messageRow, styles.aiRow]}>
-                  <View style={styles.aiAvatarCircle}>
-                    <Ionicons name="sparkles" size={13} color="#00E5FF" />
-                  </View>
-                  <View style={[styles.messageBubble, styles.aiBubble, { paddingVertical: 10 }]}>
-                    <ThemedText style={styles.streamingText}>Synthesizing insight...</ThemedText>
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-          </PageEntrance>
-
-          {/* Input Bar — Matching Community Floating Pill Bar */}
-          <View style={styles.inputArea}>
+            {/* Input Bar — Matching Community Floating Pill Bar */}
+            <View
+              style={[
+                styles.inputArea,
+                {
+                  paddingBottom: keyboardHeight > 0
+                    ? 8
+                    : Math.max(8, insets.bottom),
+                },
+              ]}
+            >
             <View style={styles.inputWrapper}>
               <TextInput
                 style={[
@@ -412,7 +453,8 @@ export default function CoachChatScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
+      </KeyboardAvoidingView>
       </SafeAreaView>
 
       {/* AI Memory Bank & Context Modal */}

@@ -43,31 +43,53 @@ export default function VerifyEmailScreen() {
   const handleOtpChange = (text: string, index: number) => {
     setLocalError(null);
     clearError();
+
+    // Handle paste or auto-fill of multiple digits
+    const cleanDigits = text.replace(/[^0-9]/g, '');
+    if (cleanDigits.length > 1) {
+      const newOtp = [...otp];
+      for (let i = 0; i < cleanDigits.length && index + i < 6; i++) {
+        newOtp[index + i] = cleanDigits[i];
+      }
+      setOtp(newOtp);
+      const nextFocus = Math.min(5, index + cleanDigits.length);
+      inputRefs.current[nextFocus]?.focus();
+
+      if (newOtp.every((d) => d.length === 1)) {
+        triggerDirectVerification(newOtp.join(''));
+      }
+      return;
+    }
+
+    const singleDigit = cleanDigits.slice(-1);
     const newOtp = [...otp];
-    newOtp[index] = text;
+    newOtp[index] = singleDigit;
     setOtp(newOtp);
 
     // Auto-focus next input field
-    if (text && index < 5) {
+    if (singleDigit && index < 5) {
       inputRefs.current[index + 1]?.focus();
+    }
+
+    // Auto-verify if all 6 filled
+    if (singleDigit && index === 5 && newOtp.every((d) => d.length === 1)) {
+      triggerDirectVerification(newOtp.join(''));
     }
   };
 
   const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
+    if (e.nativeEvent.key === 'Backspace') {
+      if (!otp[index] && index > 0) {
+        const newOtp = [...otp];
+        newOtp[index - 1] = '';
+        setOtp(newOtp);
+        inputRefs.current[index - 1]?.focus();
+      }
     }
   };
 
-  const handleVerify = async () => {
-    const code = otp.join('');
-    if (code.length < 6) {
-      setLocalError('Please enter all 6 digits of the OTP code');
-      return;
-    }
-
+  const triggerDirectVerification = async (code: string) => {
     if (isVerifying || isLoading) return;
-
     setIsVerifying(true);
     setLocalError(null);
     clearError();
@@ -80,6 +102,15 @@ export default function VerifyEmailScreen() {
     } finally {
       setIsVerifying(false);
     }
+  };
+
+  const handleVerify = async () => {
+    const code = otp.join('');
+    if (code.length < 6) {
+      setLocalError('Please enter all 6 digits of the OTP code');
+      return;
+    }
+    triggerDirectVerification(code);
   };
 
   const handleResend = async () => {
@@ -164,7 +195,7 @@ export default function VerifyEmailScreen() {
                   onChangeText={(text) => handleOtpChange(text, idx)}
                   onKeyPress={(e) => handleKeyPress(e, idx)}
                   keyboardType="number-pad"
-                  maxLength={1}
+                  maxLength={idx === 0 ? 6 : 1}
                   selectTextOnFocus
                 />
               ))}

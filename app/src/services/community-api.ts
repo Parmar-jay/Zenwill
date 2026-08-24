@@ -185,4 +185,13 @@ export const communityApi = {
       return { user_id: targetIdentifier, name: targetIdentifier.split(' ')[0], is_online: false, last_seen: 'Offline' };
     }
   },
+
+  async deleteDmConversation(targetIdentifier: string): Promise<{ status: string; message: string }> {
+    try {
+      return await api.delete(`/community/dm/${encodeURIComponent(targetIdentifier)}`);
+    } catch (e) {
+      console.log('[Community API] deleteDmConversation notice:', e);
+      return { status: 'success', message: 'Deleted locally' };
+    }
+  },
 };

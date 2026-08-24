@@ -57,9 +57,18 @@ export default function TabsProfileScreen() {
         if (userProf.name) setName(userProf.name);
         if (userProf.bio) setBio(userProf.bio);
         if (userProf.primary_outcome) setPrimaryGoal(formatLabel(userProf.primary_outcome));
-        if (userProf.occupation) setOccupation(userProf.occupation as Occupation);
-        if (userProf.daily_schedule) setDailySchedule(userProf.daily_schedule as DailySchedule);
-        if (userProf.self_control) setSelfControl(userProf.self_control as SelfControl);
+        if (userProf.occupation) {
+          setOccupation(userProf.occupation as Occupation);
+          updateOnboarding({ occupation: userProf.occupation as Occupation });
+        }
+        if (userProf.daily_schedule) {
+          setDailySchedule(userProf.daily_schedule as DailySchedule);
+          updateOnboarding({ dailySchedule: userProf.daily_schedule as DailySchedule });
+        }
+        if (userProf.self_control) {
+          setSelfControl(userProf.self_control as SelfControl);
+          updateOnboarding({ selfControl: userProf.self_control as SelfControl });
+        }
       }
     } catch (e) {
       console.log('Error fetching live profile:', e);
@@ -90,7 +99,7 @@ export default function TabsProfileScreen() {
   const [primaryGoal, setPrimaryGoal] = useState<string>(
     onboarding.primaryOutcome ? formatLabel(onboarding.primaryOutcome) : 'Stronger Discipline'
   );
-  const [occupation, setOccupation] = useState<Occupation>(onboarding.occupation || 'employee');
+  const [occupation, setOccupation] = useState<Occupation>(onboarding.occupation || 'business_owner');
   const [dailySchedule, setDailySchedule] = useState<DailySchedule>(onboarding.dailySchedule || 'morning');
   const [selfControl, setSelfControl] = useState<SelfControl>(onboarding.selfControl || 'strong');
 

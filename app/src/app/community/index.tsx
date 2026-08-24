@@ -10,10 +10,16 @@ import {
   Text,
   Modal,
   Image,
+  Keyboard,
+  StatusBar,
+  Alert,
+  Animated,
+  PanResponder,
+  Dimensions,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -172,30 +178,81 @@ export default function CommunityWorldChatScreen() {
   // One-Click DM Action Modal state
   const [selectedUserForDm, setSelectedUserForDm] = useState<WorldChatMessage | null>(null);
 
+  // Delete DM Confirmation Modal state
+  const [deleteModalConv, setDeleteModalConv] = useState<ConversationSummaryItem | null>(null);
+
   // DM Conversations & Username Search State
   const [dmConversations, setDmConversations] = useState<ConversationSummaryItem[]>([]);
   const [searchUsername, setSearchUsername] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Array<{ id: string; name: string; username: string; badge: string }>>([]);
+
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // 1-Click Direct Delete Conversation Handler
+  const handleDeleteDmDirect = async (targetUserId: string) => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    setDmConversations((prev) => prev.filter((c) => c.other_user_id !== targetUserId));
+    try {
+      await communityApi.deleteDmConversation(targetUserId);
+    } catch (e) {
+      console.log('Error deleting DM conversation:', e);
+    }
+  };
 
   // Fetch World Chat & DM conversations with smooth 3s polling
   useEffect(() => {
     fetchMessages();
     fetchDmConversations();
 
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        if (activeTab === 'world') {
+          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+        }
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
     const interval = setInterval(() => {
       fetchMessages(false);
       fetchDmConversations();
     }, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
-  const fetchMessages = async (shouldScroll = true) => {
+    return () => {
+      clearInterval(interval);
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [activeTab]);
+
+  const fetchMessages = async (shouldScroll = false) => {
     try {
       const fetched = await communityApi.getMessages(50);
-      if (fetched && fetched.length > 0) {
-        setMessages(fetched);
+      if (fetched && Array.isArray(fetched)) {
+        setMessages((prev) => {
+          const fetchedIds = new Set(fetched.map((f) => f.id));
+          // Preserve any in-flight or unconfirmed message that is not yet in fetched
+          const unconfirmedPrev = prev.filter((p) => {
+            if (fetchedIds.has(p.id)) return false;
+            const alreadyInFetched = fetched.some(
+              (f) => f.content === p.content && (f.user_id === p.user_id || f.author_name === p.author_name)
+            );
+            return !alreadyInFetched;
+          });
+          return [...fetched, ...unconfirmedPrev];
+        });
         if (shouldScroll && activeTab === 'world') {
-          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 200);
+          requestAnimationFrame(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          });
         }
       }
     } catch (error) {
@@ -258,10 +315,12 @@ export default function CommunityWorldChatScreen() {
     };
 
     setMessages((prev) => [...prev, newMsg]);
-    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    });
 
     try {
-      await communityApi.sendMessage({
+      const res = await communityApi.sendMessage({
         user_id: currentUserId,
         author_name: firstName,
         author_rank: userRankInfo.name,
@@ -269,7 +328,11 @@ export default function CommunityWorldChatScreen() {
         author_streak: userStreak,
         content: messageText,
       });
-      fetchMessages(true);
+      if (res && res.id) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? res : m))
+        );
+      }
     } catch (error) {
       console.log('SendMessage handled:', error);
     } finally {
@@ -290,6 +353,19 @@ export default function CommunityWorldChatScreen() {
     });
   };
 
+  const handleConfirmDelete = async () => {
+    if (!deleteModalConv) return;
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    const targetId = deleteModalConv.other_user_id;
+    setDmConversations((prev) => prev.filter((c) => c.other_user_id !== targetId));
+    setDeleteModalConv(null);
+    try {
+      await communityApi.deleteDmConversation(targetId);
+    } catch (e) {
+      console.log('Error deleting conversation:', e);
+    }
+  };
+
   return (
     <View style={styles.fixedBgContainer}>
       {/* Fixed Non-Zoomable Device Width Fit Spartan Cosmic Wallpaper */}
@@ -304,7 +380,7 @@ export default function CommunityWorldChatScreen() {
 
       <Stack.Screen options={{ headerShown: false }} />
 
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         {/* Header Bar with Centered Tab Toggle */}
         <View style={styles.headerBar}>
           <TouchableOpacity
@@ -366,15 +442,15 @@ export default function CommunityWorldChatScreen() {
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
           >
-            <View style={styles.chatStreamContainer}>
+            <View style={[styles.chatStreamContainer, { paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
               <ScrollView
                 ref={scrollViewRef}
                 contentContainerStyle={styles.chatScrollContent}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
-                automaticallyAdjustKeyboardInsets={true}
               >
                 {messages.length === 0 ? (
                   <View style={styles.emptyChatState}>
@@ -444,7 +520,16 @@ export default function CommunityWorldChatScreen() {
               </ScrollView>
 
               {/* Floating Pill Message Input Bar matching WhatsApp smoothness */}
-              <View style={styles.inputContainer}>
+              <View
+                style={[
+                  styles.inputContainer,
+                  {
+                    paddingBottom: keyboardHeight > 0
+                      ? 8
+                      : Math.max(8, insets.bottom),
+                  },
+                ]}
+              >
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={[
@@ -500,7 +585,10 @@ export default function CommunityWorldChatScreen() {
               )}
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 12, gap: 10 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 80 }}
+              showsVerticalScrollIndicator={false}
+            >
               {/* Search Results */}
               {searchUsername.trim() !== '' && (
                 <View style={{ gap: 8 }}>
@@ -528,7 +616,7 @@ export default function CommunityWorldChatScreen() {
                 </View>
               )}
 
-              {/* Active DM Conversations (Only real database DMs, no hardcoded dummy contacts) */}
+              {/* Active DM Conversations with 1-Click Delete */}
               <View style={{ gap: 8, marginTop: searchUsername.trim() ? 12 : 0 }}>
                 <ThemedText style={styles.sectionHeaderTitle}>ACTIVE DIRECT MESSAGES</ThemedText>
 
@@ -545,6 +633,7 @@ export default function CommunityWorldChatScreen() {
                     <TouchableOpacity
                       key={conv.other_user_id}
                       style={styles.dmUserCard}
+                      activeOpacity={0.75}
                       onPress={() => handleOpenUserDm(conv.other_user_id, conv.other_user_name)}
                     >
                       <View style={styles.dmAvatarCircle}>
@@ -562,6 +651,19 @@ export default function CommunityWorldChatScreen() {
                           {conv.last_message}
                         </ThemedText>
                       </View>
+
+                      {/* Small Red-Bordered Dustbin: 1 Click to Delete */}
+                      <TouchableOpacity
+                        style={styles.smallRedBorderedDustbin}
+                        activeOpacity={0.65}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          handleDeleteDmDirect(conv.other_user_id);
+                        }}
+                      >
+                        <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                      </TouchableOpacity>
                     </TouchableOpacity>
                   ))
                 )}
@@ -630,6 +732,53 @@ export default function CommunityWorldChatScreen() {
                 </TouchableOpacity>
               </>
             )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* CONFIRM DELETE CONVERSATION MODAL */}
+      <Modal
+        visible={deleteModalConv !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteModalConv(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setDeleteModalConv(null)}
+        >
+          <View style={styles.deleteModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.deleteModalIconCircle}>
+              <Ionicons name="trash-outline" size={22} color="#F87171" />
+            </View>
+
+            <ThemedText style={styles.deleteModalTitle}>DELETE CONVERSATION</ThemedText>
+            <ThemedText style={styles.deleteModalDesc}>
+              Delete all direct messages with{' '}
+              <ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>
+                {deleteModalConv ? getCleanUserName(deleteModalConv.other_user_name) : ''}
+              </ThemedText>
+              ? This action is permanent.
+            </ThemedText>
+
+            <View style={styles.deleteModalActionsRow}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelBtn}
+                activeOpacity={0.75}
+                onPress={() => setDeleteModalConv(null)}
+              >
+                <ThemedText style={styles.deleteModalCancelText}>Cancel</ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                activeOpacity={0.75}
+                onPress={handleConfirmDelete}
+              >
+                <ThemedText style={styles.deleteModalConfirmText}>Delete Chat</ThemedText>
+              </TouchableOpacity>
+            </View>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1103,5 +1252,105 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#71717A',
     fontWeight: '600',
+  },
+  dmCardTrashBtn: {
+    padding: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginLeft: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallRedBorderedDustbin: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  deleteModalCard: {
+    width: '86%',
+    maxWidth: 330,
+    backgroundColor: '#090E1A',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.25)',
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 25,
+  },
+  deleteModalIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  deleteModalTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  deleteModalDesc: {
+    fontSize: 12.5,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  deleteModalActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  deleteModalCancelBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteModalCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  deleteModalConfirmBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteModalConfirmText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#F87171',
   },
 });

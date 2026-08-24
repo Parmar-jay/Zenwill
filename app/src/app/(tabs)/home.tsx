@@ -936,7 +936,7 @@ export default function HomeScreen() {
                         setWisdomModalVisible(true);
                       }}
                     >
-                      <ThemedText style={styles.vedicFocusText} numberOfLines={2}>
+                      <ThemedText style={styles.vedicFocusText}>
                         You think you're free—until an urge tells you what to do.
                       </ThemedText>
                     </TouchableOpacity>
@@ -2057,10 +2057,11 @@ const styles = StyleSheet.create({
     marginVertical: 6,
   },
   vedicFocusText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
     lineHeight: 17,
+    letterSpacing: 0.1,
     textShadowColor: 'rgba(0, 0, 0, 0.95)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
