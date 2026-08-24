@@ -18,17 +18,18 @@ SYSTEM_PROMPT_EMPOWERMENT = (
 )
 
 async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_EMPOWERMENT, model: Optional[str] = None) -> str:
-    """Call Google Gemini API using fast and cost-effective model with auto-fallback."""
+    """Call Google Gemini API using fast and reliable production models with auto-fallback."""
     api_key = settings.GEMINI_API_KEY
     if not api_key:
         logger.warning("No GEMINI_API_KEY set in config.")
         return ""
 
     candidate_models = [
-        model or settings.GEMINI_MODEL or "gemini-2.0-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
+        model or settings.GEMINI_MODEL or "gemini-2.5-flash",
         "gemini-2.5-flash",
+        "gemini-flash-latest",
+        "gemini-2.5-pro",
+        "gemini-pro-latest",
     ]
     # Remove duplicates while preserving order
     models_to_try = list(dict.fromkeys(candidate_models))
@@ -44,12 +45,12 @@ async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_E
             }
         ],
         "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 1024,
+            "temperature": 0.5,
+            "maxOutputTokens": 2048,
         }
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=35.0) as client:
         for target_model in models_to_try:
             url = f"{GEMINI_BASE_URL}/{target_model}:generateContent?key={api_key}"
             try:
@@ -66,12 +67,41 @@ async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_E
                     continue
                 else:
                     logger.warning(f"Gemini model {target_model} returned HTTP {response.status_code}: {response.text}")
-                    break
+                    continue
             except Exception as e:
                 logger.error(f"Error calling Gemini model {target_model}: {str(e)}")
                 continue
 
     return ""
+
+
+def safe_json_dumps(obj: Any) -> str:
+    """Safely serialize Python objects containing dates or datetimes to JSON string."""
+    try:
+        return json.dumps(obj, default=str)
+    except Exception:
+        return str(obj)
+
+
+def try_extract_json(text: str) -> Optional[Dict[str, Any]]:
+    """Attempt to parse JSON, fixing minor truncation if needed."""
+    if not text:
+        return None
+    clean = text.replace("```json", "").replace("```", "").strip()
+    try:
+        return json.loads(clean)
+    except Exception:
+        pass
+    
+    # Try finding the first '{' and last '}'
+    first_brace = clean.find("{")
+    last_brace = clean.rfind("}")
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        try:
+            return json.loads(clean[first_brace:last_brace + 1])
+        except Exception:
+            pass
+    return None
 
 
 async def evaluate_daily_mindset(user_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -84,11 +114,11 @@ Analyze the following 1-day data for user '{user_payload.get("username", "Warrio
 
 - Onboarding Primary Goal/Purpose: {user_payload.get("onboarding_purpose", "Mind Mastery & Energy Transmutation")}
 - Current Streak: {user_payload.get("streak", 0)} days
-- Today's Check-in Log: {json.dumps(user_payload.get("today_checkin", {}))}
+- Today's Check-in Log: {safe_json_dumps(user_payload.get("today_checkin", {}))}
 - Today's Urges Defeated: {user_payload.get("today_urges_count", 0)} (Total Urges Defeated: {user_payload.get("total_urges_count", 0)})
-- Meditation Log Today: {json.dumps(user_payload.get("meditation_log", {}))}
-- Recent 3 Journal Entries: {json.dumps(user_payload.get("recent_journals", []))}
-- Urge Feedback & Triggers Logged Today: {json.dumps(user_payload.get("today_urge_sessions", []))}
+- Meditation Log Today: {safe_json_dumps(user_payload.get("meditation_log", {}))}
+- Recent 3 Journal Entries: {safe_json_dumps(user_payload.get("recent_journals", []))}
+- Urge Feedback & Triggers Logged Today: {safe_json_dumps(user_payload.get("today_urge_sessions", []))}
 
 You MUST return STRICT JSON ONLY (no markdown formatting, no code blocks) matching this EXACT schema:
 {{
@@ -110,12 +140,10 @@ You MUST return STRICT JSON ONLY (no markdown formatting, no code blocks) matchi
     raw_response = await call_gemini_api(prompt, system_instruction=system_instruction)
     
     if raw_response:
-        clean_text = raw_response.replace("```json", "").replace("```", "").strip()
-        try:
-            parsed = json.loads(clean_text)
+        parsed = try_extract_json(raw_response)
+        if parsed and isinstance(parsed, dict) and "score" in parsed:
             return parsed
-        except Exception as e:
-            logger.error(f"Failed to parse Gemini Mindset evaluation JSON: {e}. Raw text: {clean_text}")
+        logger.warning(f"Could not parse Gemini Mindset evaluation JSON. Raw: {raw_response[:100]}...")
 
     # Robust fallback calculation if API key is rate-limited or pending
     checkin_done = 30 if user_payload.get("today_checkin") else 10
@@ -141,8 +169,8 @@ async def generate_trigger_intelligence_report(trigger_data: Dict[str, Any]) -> 
     prompt = f"""
 Analyze urge trigger metrics:
 - Total Urges Defeated: {trigger_data.get("total_urges_count", 0)}
-- Past 7 Days Breakdown: {json.dumps(trigger_data.get("daily_urge_counts", []))}
-- Common Triggers Logged: {json.dumps(trigger_data.get("top_triggers", ["Stress", "Late Night", "Boredom"]))}
+- Past 7 Days Breakdown: {safe_json_dumps(trigger_data.get("daily_urge_counts", []))}
+- Common Triggers Logged: {safe_json_dumps(trigger_data.get("top_triggers", ["Stress", "Late Night", "Boredom"]))}
 - Surfing Effectiveness Rate: {trigger_data.get("effectiveness_rate", 85)}%
 
 Generate STRICT JSON ONLY (no markdown code blocks):
@@ -155,11 +183,9 @@ Generate STRICT JSON ONLY (no markdown code blocks):
 """
     raw_response = await call_gemini_api(prompt)
     if raw_response:
-        clean_text = raw_response.replace("```json", "").replace("```", "").strip()
-        try:
-            return json.loads(clean_text)
-        except Exception:
-            pass
+        parsed = try_extract_json(raw_response)
+        if parsed and isinstance(parsed, dict) and "peak_risk_window" in parsed:
+            return parsed
 
     return {
         "peak_risk_window": "10:30 PM - 1:00 AM",

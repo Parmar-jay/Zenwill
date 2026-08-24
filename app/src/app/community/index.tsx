@@ -96,6 +96,24 @@ export default function CommunityWorldChatScreen() {
   const [inputHeight, setInputHeight] = useState<number>(40);
   const [isSending, setIsSending] = useState<boolean>(false);
 
+  const myIdentities = useMemo(() => {
+    const ids = new Set<string>();
+    if (currentUserId && currentUserId !== 'user_guest') ids.add(currentUserId.toLowerCase());
+    if (currentUser?.id) ids.add(String(currentUser.id).toLowerCase());
+    if (currentUser?.email) ids.add(currentUser.email.toLowerCase());
+    if (firstName && firstName !== 'Operative') ids.add(firstName.toLowerCase());
+    return ids;
+  }, [currentUserId, currentUser?.id, currentUser?.email, firstName]);
+
+  const checkIsUserMsg = (msg: WorldChatMessage) => {
+    if (!msg) return false;
+    const uid = (msg.user_id || '').toLowerCase();
+    const authName = (msg.author_name || '').toLowerCase();
+    if (myIdentities.has(uid) || myIdentities.has(authName)) return true;
+    if (uid === 'user_current' || uid.startsWith('temp-')) return true;
+    return false;
+  };
+
   const formatDmTime = (timeStr: string) => {
     if (!timeStr || timeStr === 'Invalid Date' || timeStr === 'null' || timeStr === 'undefined') return '';
     if (timeStr.includes('AM') || timeStr.includes('PM')) {
@@ -120,7 +138,7 @@ export default function CommunityWorldChatScreen() {
   const isInvalidName = (name: string) => {
     if (!name || !name.trim()) return true;
     const v = name.trim();
-    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_')) {
+    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_') || v.toLowerCase() === 'operative') {
       return true;
     }
     return false;
@@ -128,7 +146,7 @@ export default function CommunityWorldChatScreen() {
 
   const getCleanUserName = (name: string) => {
     if (isInvalidName(name)) {
-      return 'Operative';
+      return 'Former Member';
     }
     if (name.includes('@')) {
       return name.split('@')[0];
@@ -159,7 +177,7 @@ export default function CommunityWorldChatScreen() {
   const [searchUsername, setSearchUsername] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Array<{ id: string; name: string; username: string; badge: string }>>([]);
 
-  // Fetch World Chat & DM conversations on mount
+  // Fetch World Chat & DM conversations with smooth 3s polling
   useEffect(() => {
     fetchMessages();
     fetchDmConversations();
@@ -167,7 +185,7 @@ export default function CommunityWorldChatScreen() {
     const interval = setInterval(() => {
       fetchMessages(false);
       fetchDmConversations();
-    }, 800);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -304,14 +322,17 @@ export default function CommunityWorldChatScreen() {
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
           </TouchableOpacity>
 
-          <View style={styles.tabToggleRow}>
+          {/* Centered Pill Tab Switcher */}
+          <View style={styles.tabSwitcher}>
             <TouchableOpacity
               style={[styles.tabBtn, activeTab === 'world' && styles.tabBtnActive]}
               onPress={() => {
                 triggerHaptic();
                 setActiveTab('world');
+                setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 50);
               }}
             >
+              <Ionicons name="globe-outline" size={13} color={activeTab === 'world' ? '#000000' : '#8F94A3'} />
               <ThemedText style={[styles.tabBtnText, activeTab === 'world' && styles.tabBtnTextActive]}>
                 World Chat
               </ThemedText>
@@ -322,31 +343,38 @@ export default function CommunityWorldChatScreen() {
               onPress={() => {
                 triggerHaptic();
                 setActiveTab('dms');
+                fetchDmConversations();
               }}
             >
+              <Ionicons name="chatbubble-ellipses-outline" size={13} color={activeTab === 'dms' ? '#000000' : '#8F94A3'} />
               <ThemedText style={[styles.tabBtnText, activeTab === 'dms' && styles.tabBtnTextActive]}>
-                Direct Messages
+                Direct DMs
               </ThemedText>
+              {dmConversations.some((c) => (c.unread_count || 0) > 0) && (
+                <View style={styles.unreadBadgeDot} />
+              )}
             </TouchableOpacity>
           </View>
 
-          {/* Clean spacer on right */}
-          <View style={{ width: 28 }} />
+          <View style={{ width: 32 }} />
         </View>
 
         {/* ============================================================================== */}
-        {/* WORLD CHAT VIEW */}
+        {/* WORLD CHAT VIEW (ALL OPERATIVES BROADCAST STREAM) */}
         {/* ============================================================================== */}
         {activeTab === 'world' ? (
           <KeyboardAvoidingView
             style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             <View style={styles.chatStreamContainer}>
               <ScrollView
                 ref={scrollViewRef}
                 contentContainerStyle={styles.chatScrollContent}
                 showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                automaticallyAdjustKeyboardInsets={true}
               >
                 {messages.length === 0 ? (
                   <View style={styles.emptyChatState}>
@@ -358,9 +386,7 @@ export default function CommunityWorldChatScreen() {
                   </View>
                 ) : (
                   messages.map((msg) => {
-                    const isUserMsg = (currentUserId !== 'user_guest' && msg.user_id === currentUserId) ||
-                                      (currentUser?.email ? msg.user_id === currentUser.email : false) ||
-                                      (msg.user_id === 'user_current' && msg.author_name === firstName);
+                    const isUserMsg = checkIsUserMsg(msg);
                     const streakDays = isUserMsg ? userStreak : (msg.author_streak ?? 0);
                     const rankDetails = getGamifiedRank(streakDays);
 
@@ -370,8 +396,8 @@ export default function CommunityWorldChatScreen() {
                     }
 
                     const displayName = isUserMsg
-                      ? `${firstName.split(' ')[0]} (You)`
-                      : (msg.author_name ? msg.author_name.split(' ')[0] : 'Operative');
+                      ? 'You'
+                      : (msg.author_name && !isInvalidName(msg.author_name) ? msg.author_name.split(' ')[0] : 'Former Member');
 
                     return (
                       <View
@@ -390,7 +416,7 @@ export default function CommunityWorldChatScreen() {
                           style={[styles.chatBubbleCard, isUserMsg ? styles.userBubbleCard : styles.otherBubbleCard]}
                         >
                           <View style={styles.chatAuthorHeader}>
-                            <ThemedText style={styles.chatAuthorName} numberOfLines={1}>
+                            <ThemedText style={[styles.chatAuthorName, isUserMsg && { color: '#00E5FF' }]} numberOfLines={1}>
                               {displayName}
                             </ThemedText>
 
@@ -406,6 +432,10 @@ export default function CommunityWorldChatScreen() {
                           <Text style={[styles.chatMessageText, isUserMsg && styles.userMessageText]} selectable={true}>
                             {msg.content}
                           </Text>
+
+                          <View style={styles.msgFooterRow}>
+                            <Text style={styles.msgTimeText}>{msg.created_at || ''}</Text>
+                          </View>
                         </TouchableOpacity>
                       </View>
                     );
@@ -413,7 +443,7 @@ export default function CommunityWorldChatScreen() {
                 )}
               </ScrollView>
 
-              {/* Floating Pill Message Input Bar matching reference design */}
+              {/* Floating Pill Message Input Bar matching WhatsApp smoothness */}
               <View style={styles.inputContainer}>
                 <View style={styles.inputWrapper}>
                   <TextInput
@@ -425,33 +455,13 @@ export default function CommunityWorldChatScreen() {
                     placeholderTextColor="rgba(255, 255, 255, 0.45)"
                     value={inputText}
                     onChangeText={handleInputChange}
+                    onFocus={() => {
+                      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+                    }}
                     multiline={true}
-                    onKeyPress={(e: any) => {
-                      if (Platform.OS === 'web') {
-                        if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }
-                      }
-                    }}
-                    blurOnSubmit={false}
-                    returnKeyType="send"
-                    onSubmitEditing={() => {
-                      if (Platform.OS !== 'web') {
-                        handleSendMessage();
-                      }
-                    }}
-                    onContentSizeChange={(e) => {
-                      const measured = e.nativeEvent.contentSize.height;
-                      const numLines = inputText.split('\n').length;
-                      if (!inputText || inputText.trim() === '' || (numLines === 1 && inputText.length < 45)) {
-                        setInputHeight(40);
-                      } else {
-                        setInputHeight(getDynamicInputHeight(inputText, measured));
-                      }
-                    }}
                     maxLength={1000}
-                    selectionColor="#00E5FF"
+                    cursorColor="#00E5FF"
+                    selectionColor="rgba(0, 229, 255, 0.35)"
                     underlineColorAndroid="transparent"
                   />
 
@@ -669,25 +679,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  tabSwitcher: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 20,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+  },
   tabToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    borderRadius: 8,
-    padding: 2,
+    backgroundColor: '#0F172A',
+    borderRadius: 20,
+    padding: 3,
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.25)',
   },
   tabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingVertical: 7,
+    borderRadius: 16,
   },
   tabBtnActive: {
     backgroundColor: '#00E5FF',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabBtnText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#94A3B8',
     letterSpacing: 0.2,
@@ -695,6 +723,13 @@ const styles = StyleSheet.create({
   tabBtnTextActive: {
     color: '#000000',
     fontWeight: '800',
+  },
+  unreadBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+    marginLeft: 2,
   },
 
   /* World Chat Stream */
@@ -745,15 +780,21 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   userBubbleCard: {
-    backgroundColor: 'rgba(0, 229, 255, 0.14)',
+    backgroundColor: 'rgba(6, 12, 22, 0.78)',
     borderColor: 'rgba(0, 229, 255, 0.35)',
-    borderBottomRightRadius: 2,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 3,
     alignSelf: 'flex-end',
   },
   otherBubbleCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderBottomLeftRadius: 2,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    borderBottomLeftRadius: 3,
     alignSelf: 'flex-start',
   },
   chatAuthorHeader: {
@@ -765,7 +806,7 @@ const styles = StyleSheet.create({
   chatAuthorName: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#38BDF8',
     flex: 1,
   },
   streakMedalPill: {
@@ -796,11 +837,22 @@ const styles = StyleSheet.create({
   },
   chatMessageText: {
     fontSize: 13.5,
-    color: '#E2E8F0',
+    color: '#F1F5F9',
     lineHeight: 19,
   },
   userMessageText: {
     color: '#FFFFFF',
+  },
+  msgFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+    marginTop: 2,
+  },
+  msgTimeText: {
+    fontSize: 9.5,
+    color: 'rgba(255, 255, 255, 0.55)',
   },
   dmHintPill: {
     flexDirection: 'row',
@@ -819,29 +871,33 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
   },
   inputContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(6, 6, 10, 0.95)',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    backgroundColor: '#04070F',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(20, 24, 33, 0.92)',
+    backgroundColor: '#0C1322',
     borderRadius: 24,
     borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderColor: 'rgba(0, 229, 255, 0.45)',
     paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 4 : 4,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 2,
+    minHeight: 46,
   },
   textInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 14.5,
     lineHeight: 20,
+    minHeight: 38,
+    maxHeight: 120,
     textAlignVertical: 'center',
-    paddingVertical: Platform.OS === 'web' ? 8 : 6,
+    paddingVertical: Platform.OS === 'web' ? 8 : (Platform.OS === 'ios' ? 8 : 4),
     paddingRight: 8,
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },

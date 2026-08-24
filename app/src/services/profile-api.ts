@@ -40,6 +40,11 @@ export interface UserProfile {
     mood?: string;
     urge_intensity?: number;
   }>;
+  bio?: string | null;
+  primary_outcome?: string | null;
+  occupation?: string | null;
+  daily_schedule?: string | null;
+  self_control?: string | null;
 }
 
 
@@ -50,6 +55,12 @@ export const profileApi = {
 
   updateMe(data: {
     name?: string;
+    bio?: string;
+    personal_statement?: string;
+    primary_outcome?: string;
+    occupation?: string;
+    daily_schedule?: string;
+    self_control?: string;
     onboarding_step?: number;
     streak?: number;
     max_streak?: number;

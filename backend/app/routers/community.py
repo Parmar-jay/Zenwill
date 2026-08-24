@@ -332,10 +332,10 @@ def is_invalid_user_identifier(val: Optional[str]) -> bool:
     return False
 
 
-async def resolve_user_real_name(user_id_or_name: str, fallback: str = "Operative") -> str:
-    """Fetch exact user's real name directly from MongoDB User collection."""
+async def resolve_user_real_name(user_id_or_name: str, fallback: str = "Former Member") -> str:
+    """Fetch exact user's real name directly from MongoDB User collection. If deleted, return 'Former Member'."""
     if not user_id_or_name or not str(user_id_or_name).strip():
-        return fallback
+        return "Former Member"
 
     uid = str(user_id_or_name).strip()
     try:
@@ -347,25 +347,28 @@ async def resolve_user_real_name(user_id_or_name: str, fallback: str = "Operativ
                 {"name": uid}
             ]
         })
-        if u and u.name and u.name.strip():
-            return u.name.strip().split(" ")[0]
+        if u:
+            if u.is_scheduled_for_deletion or not u.is_active:
+                return "Former Member"
+            if u.name and u.name.strip():
+                return u.name.strip().split(" ")[0]
     except Exception as e:
         print(f"[User Lookup Notice] {e}")
 
-    if fallback and fallback.strip() and fallback != "Operative" and not fallback.startswith("user_") and not fallback.startswith("usr_") and "@" not in fallback:
+    if fallback and fallback.strip() and fallback not in ["Operative", "Former Member"] and not fallback.startswith("user_") and not fallback.startswith("usr_") and "@" not in fallback:
         return fallback.strip().split(" ")[0]
 
     if not uid.startswith("user_") and not uid.startswith("usr_") and "@" not in uid and len(uid) != 24 and not ("-" in uid and len(uid) >= 20):
         return uid.split(" ")[0]
 
-    return fallback
+    return "Former Member"
 
 
 @router.get("/dm/conversations", response_model=List[ConversationSummary])
 async def get_dm_conversations(current_user: Optional[User] = Depends(get_optional_current_user)):
     """Fetch list of all active DM conversations for current user."""
     user_id_str = str(current_user.id) if current_user else "user_current"
-    user_name_str = (current_user.name if current_user and current_user.name else "Operative").split(" ")[0]
+    user_name_str = (current_user.name if current_user and current_user.name else "Warrior").split(" ")[0]
     try:
         # Clean up any corrupt self-referential or dummy test messages
         await DirectMessage.find({

@@ -192,6 +192,8 @@ export default function PurposeSingleScreen() {
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets={true}
             >
             {/* Toast Notification */}
             {toastMessage !== '' && (
@@ -282,7 +284,9 @@ export default function PurposeSingleScreen() {
                             setTempPurposes((prev) => ({ ...prev, purpose_1: val }))
                           }
                           placeholder="Write your 1st purpose for mental clarity and wisdom..."
-                          placeholderTextColor="#52525B"
+                          placeholderTextColor="rgba(255, 255, 255, 0.38)"
+                          cursorColor="#EF4444"
+                          selectionColor="rgba(239, 68, 68, 0.4)"
                         />
                         <ThemedText style={styles.promptHint}>
                           Prompt: What standard of wisdom & mental focus elevates your mind?
@@ -346,7 +350,9 @@ export default function PurposeSingleScreen() {
                             setTempPurposes((prev) => ({ ...prev, purpose_2: val }))
                           }
                           placeholder="Write your 2nd purpose for spiritual peace and soul..."
-                          placeholderTextColor="#52525B"
+                          placeholderTextColor="rgba(255, 255, 255, 0.38)"
+                          cursorColor="#00E5FF"
+                          selectionColor="rgba(0, 229, 255, 0.4)"
                         />
                         <ThemedText style={styles.promptHint}>
                           Prompt: What spiritual value or inner peace anchors your soul?
@@ -410,7 +416,9 @@ export default function PurposeSingleScreen() {
                             setTempPurposes((prev) => ({ ...prev, purpose_3: val }))
                           }
                           placeholder="Write your 3rd purpose for action, family & legacy..."
-                          placeholderTextColor="#52525B"
+                          placeholderTextColor="rgba(255, 255, 255, 0.38)"
+                          cursorColor="#E879F9"
+                          selectionColor="rgba(232, 121, 249, 0.4)"
                         />
                         <ThemedText style={styles.promptHint}>
                           Prompt: How will your daily actions uplift family & community?
@@ -786,14 +794,17 @@ const styles = StyleSheet.create({
   },
   textInputArea: {
     fontFamily,
-    backgroundColor: 'rgba(5, 5, 8, 0.9)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    padding: 10,
+    backgroundColor: '#0F0B0D',
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     color: '#FFFFFF',
-    fontSize: 12.5,
-    minHeight: 55,
+    fontSize: 14,
+    lineHeight: 21,
+    minHeight: 70,
+    maxHeight: 140,
     textAlignVertical: 'top',
   },
   promptHint: {

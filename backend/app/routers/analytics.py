@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
 from app.models.user import User
@@ -104,7 +105,7 @@ async def run_mindset_evaluation(
             {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]}
         ).sort("-date").first_or_none()
 
-    checkin_dict = checkin_record.model_dump() if checkin_record else {}
+    checkin_dict = json.loads(json.dumps(checkin_record.model_dump(), default=str)) if checkin_record else {}
     
     # 2. Fetch Recent 3 Journals
     journals = await JournalEntry.find(

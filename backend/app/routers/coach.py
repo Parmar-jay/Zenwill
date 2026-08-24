@@ -18,12 +18,12 @@ async def send_message(
     current_user: User = Depends(get_current_user),
 ):
     session_id = payload.session_id or str(uuid_module.uuid4())
+    user_id_str = str(current_user.id)
+    user_email = current_user.email if current_user.email else ""
+    query = {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]} if user_email else {"user_id": user_id_str}
 
     # Load last 10 messages for context
-    history_rows = await ChatMessage.find(
-        ChatMessage.user_id == str(current_user.id)
-    ).sort(-ChatMessage.created_at).limit(10).to_list()
-
+    history_rows = await ChatMessage.find(query).sort("-created_at").limit(10).to_list()
     history_rows = list(reversed(history_rows))
     history = [{"role": m.role, "content": m.content} for m in history_rows]
 
@@ -31,17 +31,17 @@ async def send_message(
     profile = await get_or_create_mind_profile(current_user)
     profile_summary = get_profile_summary(profile)
 
-    # Store user message
+    # Store user message in MongoDB
     user_msg = ChatMessage(
-        user_id=str(current_user.id),
+        user_id=user_id_str,
         role="user",
         content=payload.message,
         emotional_context=payload.emotional_context,
         session_id=session_id,
     )
-    await user_msg.insert()
+    await user_msg.save()
 
-    # Generate AI reply via Gemini 2.5 Flash Lite
+    # Generate AI reply via Gemini
     from app.services.gemini_service import get_chat_response
     user_ctx = {
         "name": current_user.name or "Warrior",
@@ -53,15 +53,15 @@ async def send_message(
     # Detect emotional context from reply
     detected_context = _detect_emotional_context(payload.message)
 
-    # Store assistant reply
+    # Store assistant reply in MongoDB
     assistant_msg = ChatMessage(
-        user_id=str(current_user.id),
+        user_id=user_id_str,
         role="assistant",
         content=reply,
         emotional_context=detected_context,
         session_id=session_id,
     )
-    await assistant_msg.insert()
+    await assistant_msg.save()
 
     # Build suggested actions
     suggested_actions = _get_suggested_actions(detected_context, profile_summary)
@@ -80,11 +80,13 @@ async def get_chat_history(
     limit: int = 50,
     current_user: User = Depends(get_current_user),
 ):
-    messages = await ChatMessage.find(
-        ChatMessage.user_id == str(current_user.id)
-    ).sort(-ChatMessage.created_at).limit(limit).to_list()
+    user_id_str = str(current_user.id)
+    user_email = current_user.email if current_user.email else ""
+    query = {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]} if user_email else {"user_id": user_id_str}
 
+    messages = await ChatMessage.find(query).sort("-created_at").limit(limit).to_list()
     messages = list(reversed(messages))
+
     return [
         ChatHistoryMessage(
             id=str(m.id),
@@ -94,6 +96,19 @@ async def get_chat_history(
         )
         for m in messages
     ]
+
+
+@router.delete("/history")
+async def clear_chat_history(
+    current_user: User = Depends(get_current_user),
+):
+    """Clear all stored AI Coach chat messages for the current user."""
+    user_id_str = str(current_user.id)
+    user_email = current_user.email if current_user.email else ""
+    query = {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]} if user_email else {"user_id": user_id_str}
+
+    await ChatMessage.find(query).delete()
+    return {"status": "success", "message": "Chat history cleared"}
 
 
 def _detect_emotional_context(message: str) -> str:

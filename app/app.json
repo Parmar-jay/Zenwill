@@ -12,6 +12,9 @@
       "bundleIdentifier": "com.zenwill.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "android": {
@@ -22,7 +25,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.zenwill.app"
+      "package": "com.zenwill.app",
+      "runtimeVersion": "1.0.0"
     },
     "web": {
       "output": "single",
@@ -51,6 +55,9 @@
       "eas": {
         "projectId": "d2ee7cc2-b22f-4b39-a7f9-9a246cb042a2"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/d2ee7cc2-b22f-4b39-a7f9-9a246cb042a2"
     }
   }
 }

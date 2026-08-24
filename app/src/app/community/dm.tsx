@@ -41,10 +41,10 @@ export default function DirectMessageScreen() {
   const rawTargetName = (searchParams.user_name as string) || (searchParams.username as string) || '';
 
   const getCleanName = (raw: string) => {
-    if (!raw || !raw.trim()) return 'Operative';
+    if (!raw || !raw.trim()) return 'Former Member';
     const v = raw.trim();
-    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_')) {
-      return 'Operative';
+    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_') || v.toLowerCase() === 'operative') {
+      return 'Former Member';
     }
     if (v.includes('@')) {
       return v.split('@')[0];
@@ -56,7 +56,7 @@ export default function DirectMessageScreen() {
 
   const currentUser = useAuthStore((state) => state.user);
   const currentUserId = currentUser?.id || currentUser?.email || 'user_current';
-  const myName = useOnboardingStore((state) => state.firstName) || 'Operative';
+  const myName = useOnboardingStore((state) => state.firstName) || 'Warrior';
 
   const [messages, setMessages] = useState<DirectMessageItem[]>([]);
   const [inputText, setInputText] = useState<string>('');
@@ -67,14 +67,14 @@ export default function DirectMessageScreen() {
   const [isTargetOnline, setIsTargetOnline] = useState<boolean>(false);
   const [userStatusText, setUserStatusText] = useState<string>('Offline');
 
-  // Load real DM Chat history & target online status from database
+  // Load real DM Chat history & target online status from database with 3s polling
   useEffect(() => {
     loadChatHistory();
     fetchUserOnlineStatus();
     const interval = setInterval(() => {
       loadChatHistory(false);
       fetchUserOnlineStatus();
-    }, 800);
+    }, 3000);
     return () => clearInterval(interval);
   }, [targetUserId]);
 
@@ -84,7 +84,7 @@ export default function DirectMessageScreen() {
       if (status) {
         setIsTargetOnline(status.is_online);
         setUserStatusText(status.last_seen || (status.is_online ? 'Online' : 'Offline'));
-        if (status.name && status.name.length < 24 && !status.name.startsWith('user_')) {
+        if (status.name && status.name.length < 24 && !status.name.startsWith('user_') && status.name.toLowerCase() !== 'operative') {
           setTargetDisplayName(status.name.split(' ')[0]);
         }
       }
@@ -107,23 +107,8 @@ export default function DirectMessageScreen() {
     }
   };
 
-  const getDynamicInputHeight = (text: string, measuredHeight?: number) => {
-    if (!text || text.trim() === '') return 40;
-    const numLines = text.split('\n').length;
-    if (numLines === 1 && text.length < 45) {
-      return 40;
-    }
-    if (measuredHeight && measuredHeight > 0 && numLines > 1) {
-      return Math.min(110, Math.max(40, measuredHeight));
-    }
-    const estimatedLines = Math.max(numLines, Math.ceil(text.length / 45));
-    if (estimatedLines <= 1) return 40;
-    return Math.min(110, Math.max(40, 20 + estimatedLines * 18));
-  };
-
   const handleInputChange = (text: string) => {
     setInputText(text);
-    setInputHeight(getDynamicInputHeight(text));
   };
 
   const handleSend = async () => {
@@ -202,7 +187,7 @@ export default function DirectMessageScreen() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           {/* Header Bar — Clean, displaying display name and online status */}
           <View style={styles.headerBar}>
@@ -244,6 +229,8 @@ export default function DirectMessageScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets={true}
           >
             {/* End-to-End Encrypted Banner */}
             <View style={styles.encryptedBanner}>
@@ -267,9 +254,11 @@ export default function DirectMessageScreen() {
             ) : (
               messages.map((msg) => {
                 const isMe = (currentUserId !== 'user_current' && msg.sender_id === currentUserId) ||
+                             (currentUser?.id ? msg.sender_id === currentUser.id : false) ||
                              (currentUser?.email ? msg.sender_id === currentUser.email : false) ||
-                             (msg.sender_id === 'user_current' && msg.sender_name === myName) ||
-                             (msg.sender_name && msg.sender_name.toLowerCase() === myName.toLowerCase());
+                             (msg.sender_id === 'user_current') ||
+                             (msg.sender_id?.startsWith('temp-')) ||
+                             (msg.sender_name && myName && msg.sender_name.toLowerCase() === myName.toLowerCase());
 
                 return (
                   <View
@@ -279,7 +268,7 @@ export default function DirectMessageScreen() {
                       isMe ? styles.msgRowMe : styles.msgRowOther,
                     ]}
                   >
-                    {/* Standard Text Message Bubble */}
+                    {/* Standard Text Message Bubble matching WhatsApp style */}
                     <View style={isMe ? styles.bubbleMe : styles.bubbleOther}>
                       <ThemedText style={styles.msgContentText}>{msg.content}</ThemedText>
                       <View style={styles.msgFooterRow}>
@@ -288,8 +277,13 @@ export default function DirectMessageScreen() {
                         </ThemedText>
                         {isMe && (
                           msg.is_read ? (
-                            <Ionicons name="checkmark-done" size={15} color="#38BDF8" style={{ marginLeft: 3 }} />
+                            // 1. User has seen/read the message -> Double Blue Tick
+                            <Ionicons name="checkmark-done" size={15} color="#53BDEB" style={{ marginLeft: 3 }} />
+                          ) : isTargetOnline ? (
+                            // 2. User is online (delivered) -> Double Gray Tick
+                            <Ionicons name="checkmark-done" size={15} color="#94A3B8" style={{ marginLeft: 3 }} />
                           ) : (
+                            // 3. User is offline (sent) -> Single Gray Tick
                             <Ionicons name="checkmark" size={14} color="#94A3B8" style={{ marginLeft: 3 }} />
                           )
                         )}
@@ -313,33 +307,13 @@ export default function DirectMessageScreen() {
                 placeholderTextColor="rgba(255, 255, 255, 0.45)"
                 value={inputText}
                 onChangeText={handleInputChange}
+                onFocus={() => {
+                  setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+                }}
                 multiline={true}
-                onKeyPress={(e: any) => {
-                  if (Platform.OS === 'web') {
-                    if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }
-                }}
-                blurOnSubmit={false}
-                returnKeyType="send"
-                onSubmitEditing={() => {
-                  if (Platform.OS !== 'web') {
-                    handleSend();
-                  }
-                }}
-                onContentSizeChange={(e) => {
-                  const measured = e.nativeEvent.contentSize.height;
-                  const numLines = inputText.split('\n').length;
-                  if (!inputText || inputText.trim() === '' || (numLines === 1 && inputText.length < 45)) {
-                    setInputHeight(40);
-                  } else {
-                    setInputHeight(getDynamicInputHeight(inputText, measured));
-                  }
-                }}
                 maxLength={1000}
-                selectionColor="#00E5FF"
+                cursorColor="#00E5FF"
+                selectionColor="rgba(0, 229, 255, 0.35)"
                 underlineColorAndroid="transparent"
               />
 
@@ -515,33 +489,33 @@ const styles = StyleSheet.create({
     borderColor: '#090C14',
   },
   bubbleOther: {
-    backgroundColor: 'rgba(10, 13, 20, 0.85)',
+    backgroundColor: '#1E293B',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    borderBottomRightRadius: 14,
-    borderBottomLeftRadius: 2,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    maxWidth: '78%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    borderBottomLeftRadius: 3,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    maxWidth: '80%',
   },
   bubbleMe: {
-    backgroundColor: 'rgba(0, 229, 255, 0.14)',
+    backgroundColor: '#004D40',
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.35)',
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 2,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    maxWidth: '78%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 3,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    maxWidth: '80%',
   },
   msgContentText: {
-    fontSize: 13,
+    fontSize: 13.5,
     color: '#F8FAFC',
-    lineHeight: 18,
+    lineHeight: 19,
     fontWeight: '400',
   },
   msgFooterRow: {
@@ -549,38 +523,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 4,
-    marginTop: 4,
+    marginTop: 2,
   },
   msgTimeText: {
-    fontSize: 10,
-    color: '#94A3B8',
+    fontSize: 9.5,
+    color: 'rgba(255, 255, 255, 0.55)',
   },
 
-  /* Input Bar — Identical to World Chat */
+  /* Input Bar — Matching WhatsApp style */
   inputContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(6, 6, 10, 0.95)',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    backgroundColor: '#04070F',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(20, 24, 33, 0.92)',
+    backgroundColor: '#0C1322',
     borderRadius: 24,
     borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderColor: 'rgba(0, 229, 255, 0.45)',
     paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 4 : 4,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 2,
+    minHeight: 46,
   },
   textInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 14.5,
     lineHeight: 20,
+    minHeight: 38,
+    maxHeight: 120,
     textAlignVertical: 'center',
-    paddingVertical: Platform.OS === 'web' ? 8 : 6,
+    paddingVertical: Platform.OS === 'web' ? 8 : (Platform.OS === 'ios' ? 8 : 4),
     paddingRight: 8,
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },

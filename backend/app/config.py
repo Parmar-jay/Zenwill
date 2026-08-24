@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # ── Email / SMTP Configs ──────────────────────────────────────────────────
     SMTP_HOST: str = "smtp.gmail.com"

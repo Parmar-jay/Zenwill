@@ -201,14 +201,14 @@ export default function HomeScreen() {
   useEffect(() => {
     checkAndResetMidnight();
     useHabitStore.getState().syncFromDatabase();
-    useDailyMissionStore.getState().syncWithBackend().catch(() => {});
+    useDailyMissionStore.getState().syncWithBackend().catch(() => { });
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
       checkAndResetMidnight();
       useHabitStore.getState().syncFromDatabase();
-      useDailyMissionStore.getState().syncWithBackend().catch(() => {});
+      useDailyMissionStore.getState().syncWithBackend().catch(() => { });
     }, [])
   );
 
@@ -937,7 +937,7 @@ export default function HomeScreen() {
                       }}
                     >
                       <ThemedText style={styles.vedicFocusText} numberOfLines={2}>
-                        Stay present. Avoid one unnecessary urge.
+                        You think you're free—until an urge tells you what to do.
                       </ThemedText>
                     </TouchableOpacity>
 

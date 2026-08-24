@@ -49,13 +49,30 @@ export default function TabsProfileScreen() {
   const { streak } = useHabitStore();
   const currentRank = getGamifiedRank(streak);
 
+  const fetchLiveProfile = async () => {
+    try {
+      useHabitStore.getState().syncFromDatabase();
+      const userProf = await profileApi.getMe();
+      if (userProf) {
+        if (userProf.name) setName(userProf.name);
+        if (userProf.bio) setBio(userProf.bio);
+        if (userProf.primary_outcome) setPrimaryGoal(formatLabel(userProf.primary_outcome));
+        if (userProf.occupation) setOccupation(userProf.occupation as Occupation);
+        if (userProf.daily_schedule) setDailySchedule(userProf.daily_schedule as DailySchedule);
+        if (userProf.self_control) setSelfControl(userProf.self_control as SelfControl);
+      }
+    } catch (e) {
+      console.log('Error fetching live profile:', e);
+    }
+  };
+
   React.useEffect(() => {
-    useHabitStore.getState().syncFromDatabase();
+    fetchLiveProfile();
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
-      useHabitStore.getState().syncFromDatabase();
+      fetchLiveProfile();
     }, [])
   );
 
@@ -135,9 +152,17 @@ export default function TabsProfileScreen() {
     // Update local authentication session
     updateUser({ name: tempName });
 
-    // Sync back to backend database
+    // Sync all updated fields back to MongoDB database
     try {
-      await profileApi.updateMe({ name: tempName });
+      await profileApi.updateMe({
+        name: tempName,
+        bio: tempBio,
+        personal_statement: tempBio,
+        primary_outcome: tempGoal,
+        occupation: tempOccupation,
+        daily_schedule: tempSchedule,
+        self_control: tempSelfControl,
+      });
     } catch (error) {
       console.warn('Failed to sync profile update to server:', error);
     }

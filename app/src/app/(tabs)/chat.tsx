@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -10,7 +10,7 @@ import {
   Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native';
@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { coachApi } from '@/services/coach-api';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
+import { useAuthStore } from '@/store/auth-store';
 import { PageEntrance } from '@/components/ui/smooth-loader';
 
 const STORAGE_CHAT_KEY = '@zenwill_coach_continuous_messages_v2';
@@ -59,40 +60,52 @@ const DEFAULT_MEMORIES: MemoryItem[] = [
 export default function CoachChatScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
-  const firstName = useOnboardingStore((state) => state.firstName) || 'Brother';
+  const currentUser = useAuthStore((state) => state.user);
+  const firstName = currentUser?.name?.split(' ')[0] || useOnboardingStore((state) => state.firstName) || 'Brother';
+
+  const userChatStorageKey = currentUser?.id
+    ? `@zenwill_coach_msgs_${currentUser.id}`
+    : `@zenwill_coach_msgs_${currentUser?.email || 'guest'}`;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>(DEFAULT_MEMORIES);
   const [inputMessage, setInputMessage] = useState('');
+  const [inputHeight, setInputHeight] = useState(40);
   const [isStreaming, setIsStreaming] = useState(false);
   const [memoryModalVisible, setMemoryModalVisible] = useState(false);
   const [newMemoryInput, setNewMemoryInput] = useState('');
 
+  // Dynamic input height calculation ensuring clean collapse on backspace or reset
+  const getDynamicInputHeight = (text: string, measuredHeight?: number) => {
+    if (!text || text.trim() === '') return 40;
+    const numLines = text.split('\n').length;
+    if (numLines === 1 && text.length < 45) {
+      return 40;
+    }
+    if (measuredHeight && measuredHeight > 0 && numLines > 1) {
+      return Math.min(110, Math.max(40, measuredHeight));
+    }
+    const estimatedLines = Math.max(numLines, Math.ceil(text.length / 45));
+    if (estimatedLines <= 1) return 40;
+    return Math.min(110, Math.max(40, 20 + estimatedLines * 18));
+  };
+
+  const handleInputChange = (text: string) => {
+    setInputMessage(text);
+    const nextHeight = getDynamicInputHeight(text);
+    setInputHeight(nextHeight);
+  };
+
   const getInitialAiMessage = (name: string): Message => ({
     id: 'init-ai-greeting',
     sender: 'ai',
-    text: `Hello ${name}, how can I help you today?`,
+    text: `Hello ${name}, I am your AI Coach. How can I help you master your mind and energy today?`,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   });
 
-  // Load persistent chat history & memory bank on mount
+  // Load persistent chat history from MongoDB database & local cache
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_CHAT_KEY).then((saved) => {
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMessages(parsed);
-          } else {
-            setMessages([getInitialAiMessage(firstName)]);
-          }
-        } catch (e) {
-          setMessages([getInitialAiMessage(firstName)]);
-        }
-      } else {
-        setMessages([getInitialAiMessage(firstName)]);
-      }
-    });
+    loadChatHistory();
 
     AsyncStorage.getItem(STORAGE_MEMORIES_KEY).then((saved) => {
       if (saved) {
@@ -106,13 +119,62 @@ export default function CoachChatScreen() {
         }
       }
     });
-  }, [firstName]);
+  }, [currentUser?.id, firstName]);
 
-  // Save messages to AsyncStorage whenever updated
+  useFocusEffect(
+    useCallback(() => {
+      loadChatHistory();
+    }, [currentUser?.id])
+  );
+
+  const loadChatHistory = async () => {
+    try {
+      // 1. Read local cache for instant load
+      const cached = await AsyncStorage.getItem(userChatStorageKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+          }
+        } catch (e) {}
+      }
+
+      // 2. Fetch real conversation history from MongoDB backend
+      const dbHistory = await coachApi.getHistory(50);
+      if (dbHistory && dbHistory.length > 0) {
+        const formattedMsgs: Message[] = dbHistory.map((m) => {
+          let timeFormatted = '';
+          try {
+            timeFormatted = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } catch (e) {
+            timeFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          }
+          return {
+            id: m.id || String(Date.now()),
+            sender: m.role === 'assistant' ? 'ai' : 'user',
+            text: m.content,
+            timestamp: timeFormatted,
+          };
+        });
+        setMessages(formattedMsgs);
+        await AsyncStorage.setItem(userChatStorageKey, JSON.stringify(formattedMsgs));
+      } else if (!cached) {
+        setMessages([getInitialAiMessage(firstName)]);
+      }
+    } catch (err) {
+      console.log('Error loading coach chat history from database:', err);
+      if (messages.length === 0) {
+        setMessages([getInitialAiMessage(firstName)]);
+      }
+    }
+  };
+
+  // Save messages to user-specific AsyncStorage whenever updated
   const saveMessages = async (newMsgs: Message[]) => {
     setMessages(newMsgs);
     try {
-      await AsyncStorage.setItem(STORAGE_CHAT_KEY, JSON.stringify(newMsgs));
+      await AsyncStorage.setItem(userChatStorageKey, JSON.stringify(newMsgs));
     } catch (e) {
       // Silent catch
     }
@@ -134,16 +196,18 @@ export default function CoachChatScreen() {
 
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const userMsg: Message = {
       id: Date.now().toString(),
       sender: 'user',
       text: text.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: nowTime,
     };
 
     const updatedWithUser = [...messages, userMsg];
     saveMessages(updatedWithUser);
     setInputMessage('');
+    setInputHeight(40);
     setIsStreaming(true);
 
     // Complete AI Coach daily mission task
@@ -151,20 +215,27 @@ export default function CoachChatScreen() {
 
     try {
       const response = await coachApi.sendMessage({
-        message: text,
+        message: text.trim(),
       });
+
+      let aiTime = nowTime;
+      try {
+        if (response.created_at) {
+          aiTime = new Date(response.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+      } catch (e) {}
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
         text: response.reply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: aiTime,
       };
 
       saveMessages([...updatedWithUser, aiMsg]);
       triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     } catch (err) {
-      // Fallback offline responses
+      // Fallback offline response
       const offlineResponses = [
         `Stay present, ${firstName}. An urge is temporary energy — not a command. Choose one deliberate physical action right now to channel your vitality.`,
         `Every urge you defeat builds permanent neuro-pathways of self-mastery. What is the real emotion behind this moment?`,
@@ -174,7 +245,7 @@ export default function CoachChatScreen() {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
         text: offlineResponses[Math.floor(Math.random() * offlineResponses.length)],
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: nowTime,
       };
       saveMessages([...updatedWithUser, aiMsg]);
     } finally {
@@ -197,6 +268,9 @@ export default function CoachChatScreen() {
 
   const handleClearChat = async () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    try {
+      await coachApi.clearHistory();
+    } catch (e) {}
     const resetList = [getInitialAiMessage(firstName)];
     saveMessages(resetList);
     setMemoryModalVisible(false);
@@ -250,7 +324,7 @@ export default function CoachChatScreen() {
 
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
           {/* Messages Stream */}
@@ -259,6 +333,9 @@ export default function CoachChatScreen() {
               ref={scrollViewRef}
               contentContainerStyle={styles.messagesContainer}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets={true}
             >
               {/* Continuous Message Stream */}
               {messages.map((item) => (
@@ -284,8 +361,6 @@ export default function CoachChatScreen() {
                     >
                       <ThemedText style={styles.messageText}>{item.text}</ThemedText>
                     </View>
-
-                    <ThemedText style={styles.timestampText}>{item.timestamp}</ThemedText>
                   </View>
                 </View>
               ))}
@@ -307,14 +382,26 @@ export default function CoachChatScreen() {
           <View style={styles.inputArea}>
             <View style={styles.inputWrapper}>
               <TextInput
-                style={styles.textInput}
+                style={[
+                  styles.textInput,
+                  { height: inputHeight }
+                ]}
                 placeholder="Type a message..."
                 placeholderTextColor="rgba(255, 255, 255, 0.45)"
                 value={inputMessage}
-                onChangeText={setInputMessage}
+                onChangeText={handleInputChange}
+                onContentSizeChange={(e) => {
+                  const measuredHeight = e.nativeEvent.contentSize.height;
+                  setInputHeight(getDynamicInputHeight(inputMessage, measuredHeight));
+                }}
+                onFocus={() => {
+                  setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+                }}
                 multiline={true}
                 maxLength={1500}
-                selectionColor="#00E5FF"
+                cursorColor="#00E5FF"
+                selectionColor="rgba(0, 229, 255, 0.35)"
+                underlineColorAndroid="transparent"
               />
               <TouchableOpacity
                 style={[styles.sendBtn, !inputMessage.trim() && styles.sendBtnDisabled]}
@@ -586,21 +673,23 @@ const styles = StyleSheet.create({
     color: '#818CF8',
   },
   inputArea: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(6, 6, 10, 0.95)',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    backgroundColor: '#030712',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: 'rgba(0, 229, 255, 0.15)',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(20, 24, 33, 0.92)',
-    borderRadius: 24,
+    backgroundColor: '#0C1322',
+    borderRadius: 22,
     borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.35)',
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 4 : 4,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 2,
+    minHeight: 44,
     ...webNoOutline,
   },
   textInput: {
@@ -608,8 +697,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     lineHeight: 20,
+    minHeight: 38,
+    maxHeight: 110,
     textAlignVertical: 'center',
-    paddingVertical: Platform.OS === 'web' ? 8 : 6,
+    paddingVertical: Platform.OS === 'web' ? 8 : (Platform.OS === 'ios' ? 8 : 4),
     paddingRight: 8,
     ...webNoOutline,
   },

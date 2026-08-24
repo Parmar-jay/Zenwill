@@ -27,4 +27,8 @@ export const coachApi = {
   getHistory(limit = 50): Promise<CoachMessage[]> {
     return api.get<CoachMessage[]>(`/coach/history?limit=${limit}`);
   },
+
+  clearHistory(): Promise<{ status: string; message: string }> {
+    return api.delete<{ status: string; message: string }>('/coach/history');
+  },
 };

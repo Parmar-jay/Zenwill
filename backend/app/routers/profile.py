@@ -133,6 +133,16 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         f"Daily checklist indicates steady focus and mental power ({ai_mindset_score}/1000). {meditation_text}."
     )
 
+    # 7. Fetch Onboarding Profile Record
+    onboarding_record = await Onboarding.find_one(
+        {"$or": [{"user_id": user_id_str}, {"user_id": current_user.email}]}
+    )
+    bio_val = getattr(onboarding_record, "personal_statement", None) if onboarding_record else None
+    primary_outcome_val = getattr(onboarding_record, "primary_outcome", None) if onboarding_record else None
+    occupation_val = getattr(onboarding_record, "occupation", None) if onboarding_record else None
+    daily_schedule_val = getattr(onboarding_record, "daily_schedule", None) if onboarding_record else None
+    self_control_val = getattr(onboarding_record, "self_control", None) if onboarding_record else None
+
     return UserProfileResponse(
         id=user_id_str,
         email=current_user.email,
@@ -158,6 +168,11 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         today_urges_count=today_urges_count,
         daily_urge_counts=daily_urge_counts,
         checkin_history=checkin_history_list,
+        bio=bio_val,
+        primary_outcome=primary_outcome_val,
+        occupation=occupation_val,
+        daily_schedule=daily_schedule_val,
+        self_control=self_control_val,
     )
 
 
@@ -166,6 +181,8 @@ async def update_my_profile(
     payload: UpdateProfileRequest,
     current_user: User = Depends(get_current_user),
 ):
+    user_id_str = str(current_user.id)
+
     if payload.name is not None:
         current_user.name = payload.name
     if payload.onboarding_step is not None:
@@ -188,6 +205,30 @@ async def update_my_profile(
         current_user.last_retain_status = payload.last_retain_status
 
     await current_user.save()
+
+    # Also update Onboarding record in MongoDB if provided
+    onboarding_record = await Onboarding.find_one(
+        {"$or": [{"user_id": user_id_str}, {"user_id": current_user.email}]}
+    )
+    if not onboarding_record:
+        onboarding_record = Onboarding(user_id=user_id_str)
+
+    if payload.name is not None:
+        onboarding_record.first_name = payload.name
+    if payload.bio is not None:
+        onboarding_record.personal_statement = payload.bio
+    elif payload.personal_statement is not None:
+        onboarding_record.personal_statement = payload.personal_statement
+    if payload.primary_outcome is not None:
+        onboarding_record.primary_outcome = payload.primary_outcome
+    if payload.occupation is not None:
+        onboarding_record.occupation = payload.occupation
+    if payload.daily_schedule is not None:
+        onboarding_record.daily_schedule = payload.daily_schedule
+    if payload.self_control is not None:
+        onboarding_record.self_control = payload.self_control
+
+    await onboarding_record.save()
 
     return await get_my_profile(current_user=current_user)
 

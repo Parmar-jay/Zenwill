@@ -80,13 +80,25 @@ class UserProfileResponse(BaseModel):
     daily_urge_counts: List[Dict[str, Any]] = []
     checkin_history: List[Dict[str, Any]] = []
 
+    # Extended profile attributes
+    bio: Optional[str] = None
+    primary_outcome: Optional[str] = None
+    occupation: Optional[str] = None
+    daily_schedule: Optional[str] = None
+    self_control: Optional[str] = None
+
     class Config:
         from_attributes = True
 
 
-
 class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
+    bio: Optional[str] = None
+    personal_statement: Optional[str] = None
+    primary_outcome: Optional[str] = None
+    occupation: Optional[str] = None
+    daily_schedule: Optional[str] = None
+    self_control: Optional[str] = None
     onboarding_step: Optional[int] = None
     streak: Optional[int] = None
     max_streak: Optional[int] = None
