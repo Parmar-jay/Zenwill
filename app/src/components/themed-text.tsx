@@ -70,7 +70,14 @@ export function ThemedText({ style, type = 'default', fontFamily, themeColor, ..
     delete finalStyle.fontWeight;
   }
 
-  return <Text style={finalStyle} {...rest} />;
+  return (
+    <Text
+      style={finalStyle}
+      maxFontSizeMultiplier={rest.maxFontSizeMultiplier ?? 1.15}
+      allowFontScaling={rest.allowFontScaling ?? true}
+      {...rest}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

@@ -49,6 +49,8 @@ export interface AuthResponse {
   total_points: number;
   mind_strength: number;
   last_checkin_date: string | null;
+  last_retain_date?: string | null;
+  last_retain_status?: string | null;
 }
 
 export const authApi = {

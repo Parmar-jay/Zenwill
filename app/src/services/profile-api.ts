@@ -12,6 +12,8 @@ export interface UserProfile {
   total_points?: number;
   mind_strength?: number;
   last_checkin_date?: string | null;
+  last_retain_date?: string | null;
+  last_retain_status?: 'retained' | 'relapsed' | null;
   ai_mindset_score?: number;
   ai_mindset_analysis?: string;
   journals_count?: number;
@@ -54,6 +56,8 @@ export const profileApi = {
     mind_strength?: number;
     total_points?: number;
     last_checkin_date?: string | null;
+    last_retain_date?: string | null;
+    last_retain_status?: 'retained' | 'relapsed' | null;
   }): Promise<UserProfile> {
     return api.patch<UserProfile>('/profile/me', data);
   },

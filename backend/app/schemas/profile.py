@@ -66,6 +66,8 @@ class UserProfileResponse(BaseModel):
     total_points: int = 0
     mind_strength: int = 50
     last_checkin_date: Optional[str] = None
+    last_retain_date: Optional[str] = None
+    last_retain_status: Optional[str] = None
     ai_mindset_score: int = 500
     ai_mindset_analysis: Optional[str] = None
     journals_count: int = 0
@@ -91,4 +93,6 @@ class UpdateProfileRequest(BaseModel):
     mind_strength: Optional[int] = None
     total_points: Optional[int] = None
     last_checkin_date: Optional[str] = None
+    last_retain_date: Optional[str] = None
+    last_retain_status: Optional[str] = None
 

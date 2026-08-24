@@ -168,7 +168,7 @@ export default function DailyMissionsScreen() {
       pts: 20,
       icon: 'chatbubble-ellipses-outline' as const,
       color: '#8B5CF6',
-      route: '/coach/chat',
+      route: '/(tabs)/chat',
       actionLabel: 'Chat Coach',
       done: todayTasks?.coach,
     },
@@ -296,14 +296,14 @@ export default function DailyMissionsScreen() {
                   <View style={[styles.iconContainer, { backgroundColor: item.done ? '#10B981' : item.color + '18' }]}>
                     <Ionicons
                       name={item.done ? 'checkmark-sharp' : item.icon}
-                      size={20}
+                      size={18}
                       color={item.done ? '#FFFFFF' : item.color}
                     />
                   </View>
 
                   <View style={styles.taskTextCol}>
                     <View style={styles.taskTitleRow}>
-                      <ThemedText style={[styles.taskTitle, item.done && styles.taskTitleDone]}>
+                      <ThemedText style={[styles.taskTitle, item.done && styles.taskTitleDone]} numberOfLines={1}>
                         {item.title}
                       </ThemedText>
                       <View style={[styles.ptsBadge, item.done && styles.ptsBadgeDone]}>
@@ -312,13 +312,15 @@ export default function DailyMissionsScreen() {
                         </ThemedText>
                       </View>
                     </View>
-                    <ThemedText style={styles.taskSubtitle}>{item.subtitle}</ThemedText>
+                    <ThemedText style={styles.taskSubtitle} numberOfLines={1}>
+                      {item.subtitle}
+                    </ThemedText>
                   </View>
                 </View>
 
                 {item.done ? (
                   <View style={styles.donePill}>
-                    <Ionicons name="checkmark-sharp" size={14} color="#FFFFFF" />
+                    <Ionicons name="checkmark-sharp" size={13} color="#FFFFFF" />
                     <ThemedText style={styles.donePillText}>Done</ThemedText>
                   </View>
                 ) : (
@@ -328,7 +330,7 @@ export default function DailyMissionsScreen() {
                     onPress={() => handleTaskAction(item.route)}
                   >
                     <ThemedText style={styles.actionBtnText}>{item.actionLabel}</ThemedText>
-                    <Ionicons name="chevron-forward" size={14} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                    <Ionicons name="chevron-forward" size={13} color="#FFFFFF" style={{ marginLeft: 2 }} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -344,20 +346,28 @@ export default function DailyMissionsScreen() {
             <View style={styles.weeklyGraphRow}>
               {weeklyStats.map((stat, idx) => {
                 const isToday = idx === 6;
+                const hasPoints = stat.points > 0;
                 return (
                   <View key={stat.dateStr} style={styles.dayCol}>
-                    <ThemedText style={styles.dayColPts}>
+                    <ThemedText
+                      style={[
+                        styles.dayColPts,
+                        hasPoints && (isToday ? styles.dayColPtsToday : styles.dayColPtsActive),
+                      ]}
+                    >
                       {stat.points > 0 ? `${stat.points}` : '0'}
                     </ThemedText>
-                    <View style={styles.barTrack}>
-                      <View
-                        style={[
-                          styles.barFill,
-                          { height: `${Math.max(10, stat.percent)}%` },
-                          stat.percent === 100 && styles.barFillComplete,
-                          isToday && styles.barFillToday,
-                        ]}
-                      />
+                    <View style={[styles.barTrack, isToday && styles.barTrackToday]}>
+                      {hasPoints ? (
+                        <View
+                          style={[
+                            styles.barFill,
+                            { height: `${Math.max(15, stat.percent)}%` },
+                            stat.percent === 100 && styles.barFillComplete,
+                            isToday && styles.barFillToday,
+                          ]}
+                        />
+                      ) : null}
                     </View>
                     <ThemedText style={[styles.dayColName, isToday && styles.dayColNameToday]}>
                       {stat.dayName}
@@ -610,43 +620,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   taskCardDone: {
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
-    borderColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: 'rgba(16, 185, 129, 0.06)',
+    borderColor: 'rgba(16, 185, 129, 0.25)',
   },
   taskCardLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 12,
+    marginRight: 10,
   },
   iconContainer: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   taskTextCol: {
     flex: 1,
+    justifyContent: 'center',
+    gap: 2,
   },
   taskTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 4,
+    gap: 6,
   },
   taskTitle: {
     color: '#F8FAFC',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     flexShrink: 1,
   },
@@ -655,16 +667,17 @@ const styles = StyleSheet.create({
   },
   ptsBadge: {
     backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    alignSelf: 'center',
   },
   ptsBadgeDone: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
   },
   ptsBadgeText: {
     color: '#818CF8',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
   },
   ptsBadgeTextDone: {
@@ -672,42 +685,47 @@ const styles = StyleSheet.create({
   },
   taskSubtitle: {
     color: '#64748B',
-    fontSize: 11.5,
-    marginTop: 2,
+    fontSize: 10.5,
+    lineHeight: 14,
   },
   actionBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
+    minHeight: 30,
   },
   actionBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 11.5,
     fontWeight: '700',
   },
   donePill: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#10B981',
     borderColor: '#10B981',
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    minHeight: 30,
   },
   donePillText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
-    marginLeft: 4,
+    marginLeft: 3,
   },
   historyCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
-    borderRadius: 20,
-    padding: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
@@ -715,8 +733,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    height: 110,
-    paddingBottom: 8,
+    height: 120,
+    paddingBottom: 4,
+    paddingHorizontal: 4,
   },
   dayCol: {
     alignItems: 'center',
@@ -725,23 +744,37 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   dayColPts: {
-    color: '#64748B',
-    fontSize: 10,
-    fontWeight: '600',
-    marginBottom: 4,
+    color: 'rgba(255, 255, 255, 0.35)',
+    fontSize: 10.5,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  dayColPtsActive: {
+    color: '#00E5FF',
+  },
+  dayColPtsToday: {
+    color: '#F59E0B',
+    fontWeight: '800',
   },
   barTrack: {
-    width: 8,
-    height: 60,
+    width: 14,
+    height: 70,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 4,
+    borderRadius: 7,
     justifyContent: 'flex-end',
+    alignItems: 'center',
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  barTrackToday: {
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
   },
   barFill: {
     width: '100%',
     backgroundColor: '#6366F1',
-    borderRadius: 4,
+    borderRadius: 6,
   },
   barFillComplete: {
     backgroundColor: '#10B981',
@@ -752,11 +785,12 @@ const styles = StyleSheet.create({
   dayColName: {
     color: '#64748B',
     fontSize: 11,
-    marginTop: 6,
+    fontWeight: '600',
+    marginTop: 8,
   },
   dayColNameToday: {
     color: '#F59E0B',
-    fontWeight: '700',
+    fontWeight: '800',
   },
   historyMetaRow: {
     flexDirection: 'row',

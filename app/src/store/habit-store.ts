@@ -122,20 +122,15 @@ export const useHabitStore = create<HabitState>()(
             ...state.history.filter((h) => h.date !== today),
           ];
 
-          // Persist to backend database asynchronously
+          // Persist Retain/Relapse to backend database asynchronously
           profileApi
             .updateMe({
               streak: nextStreak,
               mind_strength: nextStrength,
-              last_checkin_date: today,
+              last_retain_date: today,
+              last_retain_status: retained ? 'retained' : 'relapsed',
             })
             .catch(() => {});
-
-          // Complete daily check-in task in mission store
-          try {
-            const { useDailyMissionStore } = require('./daily-mission-store');
-            useDailyMissionStore.getState().completeTask('checkin');
-          } catch (e) {}
 
           return {
             streak: nextStreak,
@@ -148,7 +143,7 @@ export const useHabitStore = create<HabitState>()(
       },
 
       resetChallenge: () => {
-        profileApi.updateMe({ streak: 0, mind_strength: 0, last_checkin_date: null }).catch(() => {});
+        profileApi.updateMe({ streak: 0, mind_strength: 0, last_retain_date: null, last_retain_status: null }).catch(() => {});
         set({
           streak: 0,
           mindStrength: 0,
@@ -180,6 +175,8 @@ export const useHabitStore = create<HabitState>()(
           const profile = await profileApi.getMe();
           if (profile) {
             const today = getTodayDateString();
+            const lastRetainDate = profile.last_retain_date || null;
+            const lastRetainStatus = profile.last_retain_status || null;
             const lastCheckin = profile.last_checkin_date || null;
             const liveStreak = typeof profile.streak === 'number' ? profile.streak : 0;
             const liveStrength = typeof profile.ai_mindset_score === 'number' ? profile.ai_mindset_score : (typeof profile.mind_strength === 'number' ? profile.mind_strength : 50);
@@ -189,12 +186,14 @@ export const useHabitStore = create<HabitState>()(
               const currentStatus = state.lastLoggedDate === today ? state.lastLoggedStatus : null;
 
               let statusToKeep: 'retained' | 'relapsed' | null = null;
-              if (lastCheckin === today) {
-                if (liveStreak === 0) {
-                  statusToKeep = 'relapsed';
-                } else {
-                  statusToKeep = currentStatus || (todayHistory ? (todayHistory.status as 'retained' | 'relapsed') : 'retained');
-                }
+              let dateToKeep: string | null = null;
+
+              if (lastRetainDate === today) {
+                dateToKeep = today;
+                statusToKeep = (lastRetainStatus as 'retained' | 'relapsed') || currentStatus || 'retained';
+              } else if (state.lastLoggedDate === today) {
+                dateToKeep = today;
+                statusToKeep = currentStatus || (todayHistory ? (todayHistory.status as 'retained' | 'relapsed') : null);
               }
 
               // Hydrate history from database checkin_history if available
@@ -211,7 +210,7 @@ export const useHabitStore = create<HabitState>()(
               return {
                 streak: liveStreak,
                 mindStrength: liveStrength,
-                lastLoggedDate: lastCheckin,
+                lastLoggedDate: dateToKeep,
                 lastLoggedStatus: statusToKeep,
                 history: hydratedHistory,
                 aiMindsetAnalysis: profile.ai_mindset_analysis || '',

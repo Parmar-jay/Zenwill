@@ -18,14 +18,21 @@ SYSTEM_PROMPT_EMPOWERMENT = (
 )
 
 async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_EMPOWERMENT, model: Optional[str] = None) -> str:
-    """Call Google Gemini API using gemini-2.5-flash-lite model exclusively."""
+    """Call Google Gemini API using fast and cost-effective model with auto-fallback."""
     api_key = settings.GEMINI_API_KEY
     if not api_key:
         logger.warning("No GEMINI_API_KEY set in config.")
         return ""
 
-    target_model = "gemini-2.5-flash-lite"
-    url = f"{GEMINI_BASE_URL}/{target_model}:generateContent?key={api_key}"
+    candidate_models = [
+        model or settings.GEMINI_MODEL or "gemini-2.0-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-2.5-flash",
+    ]
+    # Remove duplicates while preserving order
+    models_to_try = list(dict.fromkeys(candidate_models))
+
     payload = {
         "system_instruction": {
             "parts": [{"text": system_instruction}]
@@ -43,19 +50,26 @@ async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_E
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            response = await client.post(url, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                candidates = data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        return parts[0].get("text", "").strip()
-            else:
-                logger.warning(f"Gemini model {target_model} returned HTTP {response.status_code}: {response.text}")
-        except Exception as e:
-            logger.error(f"Error calling Gemini model {target_model}: {str(e)}")
+        for target_model in models_to_try:
+            url = f"{GEMINI_BASE_URL}/{target_model}:generateContent?key={api_key}"
+            try:
+                response = await client.post(url, json=payload)
+                if response.status_code == 200:
+                    data = response.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            return parts[0].get("text", "").strip()
+                elif response.status_code == 404:
+                    logger.warning(f"Gemini model {target_model} returned 404, attempting next fallback...")
+                    continue
+                else:
+                    logger.warning(f"Gemini model {target_model} returned HTTP {response.status_code}: {response.text}")
+                    break
+            except Exception as e:
+                logger.error(f"Error calling Gemini model {target_model}: {str(e)}")
+                continue
 
     return ""
 

@@ -1204,8 +1204,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   navNextBtn: {
-    width: 120,
-    height: 44,
+    minWidth: 120,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 12,
     backgroundColor: '#6366F1',
     justifyContent: 'center',

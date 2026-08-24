@@ -25,6 +25,8 @@ class User(Document):
     max_streak: int = 0
     last_active_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     last_checkin_date: Optional[str] = None
+    last_retain_date: Optional[str] = None
+    last_retain_status: Optional[str] = None
     total_points: int = 0
     mind_strength: int = 50
 

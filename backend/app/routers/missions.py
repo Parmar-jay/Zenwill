@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from app.models.user import User
 from app.models.mission import Mission
 from app.schemas.mission import (
@@ -33,8 +33,20 @@ async def get_todays_missions(
     current_user: User = Depends(get_current_user),
 ):
     profile = await get_or_create_mind_profile(current_user)
-    missions = await generate_todays_missions(str(current_user.id), profile)
-    return [_to_response(m) for m in missions]
+    # Ensure today's AI missions exist
+    await generate_todays_missions(str(current_user.id), profile)
+
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    today_end = today_start + timedelta(days=1)
+
+    todays_missions = await Mission.find(
+        Mission.user_id == str(current_user.id),
+        Mission.date_assigned >= today_start,
+        Mission.date_assigned < today_end,
+    ).sort("-date_assigned").to_list()
+
+    return [_to_response(m) for m in todays_missions]
 
 
 @router.get("/", response_model=List[MissionResponse])
@@ -58,14 +70,24 @@ async def complete_mission_by_category(
 ):
     profile = await get_or_create_mind_profile(current_user)
     # Ensure today's missions exist
-    todays_missions = await generate_todays_missions(str(current_user.id), profile)
+    await generate_todays_missions(str(current_user.id), profile)
+
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    today_end = today_start + timedelta(days=1)
+
+    todays_missions = await Mission.find(
+        Mission.user_id == str(current_user.id),
+        Mission.date_assigned >= today_start,
+        Mission.date_assigned < today_end,
+    ).to_list()
 
     cat_key = payload.category.lower().strip()
     target_categories = CATEGORY_MAP.get(cat_key, [cat_key])
 
     matched_mission = None
     for m in todays_missions:
-        if m.category in target_categories:
+        if m.category.lower() in target_categories:
             matched_mission = m
             break
 
@@ -82,15 +104,15 @@ async def complete_mission_by_category(
             mind_strength_reward=5,
             is_completed=True,
             is_ai_generated=False,
-            date_assigned=datetime.utcnow(),
-            date_completed=datetime.utcnow(),
+            date_assigned=now,
+            date_completed=now,
             why_assigned="Daily ritual completed by operative.",
             tags=[cat_key, "daily_ritual"],
         )
         await matched_mission.insert()
     else:
         matched_mission.is_completed = True
-        matched_mission.date_completed = datetime.utcnow()
+        matched_mission.date_completed = now
         await matched_mission.save()
 
     # Update mind profile & user total points
@@ -102,7 +124,11 @@ async def complete_mission_by_category(
     await current_user.save()
 
     # Fetch updated list of today's missions
-    updated_missions = await generate_todays_missions(str(current_user.id), profile)
+    updated_missions = await Mission.find(
+        Mission.user_id == str(current_user.id),
+        Mission.date_assigned >= today_start,
+        Mission.date_assigned < today_end,
+    ).sort("-date_assigned").to_list()
 
     return MissionCompleteResponse(
         success=True,
@@ -120,7 +146,17 @@ async def sync_daily_tasks(
     current_user: User = Depends(get_current_user),
 ):
     profile = await get_or_create_mind_profile(current_user)
-    todays_missions = await generate_todays_missions(str(current_user.id), profile)
+    await generate_todays_missions(str(current_user.id), profile)
+
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    today_end = today_start + timedelta(days=1)
+
+    todays_missions = await Mission.find(
+        Mission.user_id == str(current_user.id),
+        Mission.date_assigned >= today_start,
+        Mission.date_assigned < today_end,
+    ).to_list()
 
     tasks = payload.tasks or {}
     for task_key, is_done in tasks.items():
@@ -128,14 +164,39 @@ async def sync_daily_tasks(
             continue
         cat_key = task_key.lower().strip()
         target_categories = CATEGORY_MAP.get(cat_key, [cat_key])
+        matched = False
         for m in todays_missions:
-            if m.category in target_categories and not m.is_completed:
-                m.is_completed = True
-                m.date_completed = datetime.utcnow()
-                await m.save()
+            if m.category.lower() in target_categories:
+                matched = True
+                if not m.is_completed:
+                    m.is_completed = True
+                    m.date_completed = now
+                    await m.save()
+        if not matched:
+            new_m = Mission(
+                user_id=str(current_user.id),
+                title=f"Complete Daily {cat_key.title()}",
+                description=f"Successfully completed daily {cat_key} practice.",
+                category=cat_key,
+                difficulty="easy",
+                duration_minutes=10,
+                xp_reward=20,
+                mind_strength_reward=5,
+                is_completed=True,
+                is_ai_generated=False,
+                date_assigned=now,
+                date_completed=now,
+                why_assigned="Daily ritual completed by operative.",
+                tags=[cat_key, "daily_ritual"],
+            )
+            await new_m.insert()
 
     # Refresh
-    refreshed = await generate_todays_missions(str(current_user.id), profile)
+    refreshed = await Mission.find(
+        Mission.user_id == str(current_user.id),
+        Mission.date_assigned >= today_start,
+        Mission.date_assigned < today_end,
+    ).sort("-date_assigned").to_list()
     return [_to_response(m) for m in refreshed]
 
 

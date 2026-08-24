@@ -29,6 +29,8 @@ class TokenResponse(BaseModel):
     total_points: int = 0
     mind_strength: int = 50
     last_checkin_date: Optional[str] = None
+    last_retain_date: Optional[str] = None
+    last_retain_status: Optional[str] = None
 
 
 class RefreshRequest(BaseModel):

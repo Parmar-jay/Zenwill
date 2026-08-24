@@ -13,6 +13,8 @@ interface User {
   streak?: number;
   totalPoints?: number;
   lastCheckinDate?: string | null;
+  lastRetainDate?: string | null;
+  lastRetainStatus?: string | null;
 }
 
 interface AuthState {
@@ -52,12 +54,14 @@ interface AuthState {
 const syncUserStats = (response: AuthResponse) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const lastCheckin = response.last_checkin_date || null;
+    const lastRetainDate = response.last_retain_date || null;
+    const lastRetainStatus = response.last_retain_status || null;
+
     useHabitStore.setState({
       streak: typeof response.streak === 'number' ? response.streak : 0,
       mindStrength: typeof response.mind_strength === 'number' ? response.mind_strength : 50,
-      lastLoggedDate: lastCheckin,
-      lastLoggedStatus: lastCheckin === today ? 'retained' : null,
+      lastLoggedDate: lastRetainDate === today ? today : null,
+      lastLoggedStatus: lastRetainDate === today ? ((lastRetainStatus as any) || 'retained') : null,
     });
     if (typeof response.total_points === 'number' && response.total_points > 0) {
       useDailyMissionStore.setState({ totalPoints: response.total_points });
@@ -108,6 +112,9 @@ export const useAuthStore = create<AuthState>()(
               name: response.name ?? undefined,
               streak: response.streak,
               totalPoints: response.total_points,
+              lastCheckinDate: response.last_checkin_date,
+              lastRetainDate: response.last_retain_date,
+              lastRetainStatus: response.last_retain_status,
             },
             isLoading: false,
           });
@@ -154,6 +161,9 @@ export const useAuthStore = create<AuthState>()(
               name: response.name ?? undefined,
               streak: response.streak,
               totalPoints: response.total_points,
+              lastCheckinDate: response.last_checkin_date,
+              lastRetainDate: response.last_retain_date,
+              lastRetainStatus: response.last_retain_status,
             },
             isLoading: false,
           });
@@ -178,6 +188,9 @@ export const useAuthStore = create<AuthState>()(
               name: response.name ?? undefined,
               streak: response.streak,
               totalPoints: response.total_points,
+              lastCheckinDate: response.last_checkin_date,
+              lastRetainDate: response.last_retain_date,
+              lastRetainStatus: response.last_retain_status,
             },
             isLoading: false,
           });

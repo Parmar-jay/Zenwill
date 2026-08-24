@@ -140,6 +140,8 @@ async def login(payload: LoginRequest):
         total_points=user.total_points,
         mind_strength=user.mind_strength,
         last_checkin_date=user.last_checkin_date,
+        last_retain_date=user.last_retain_date,
+        last_retain_status=user.last_retain_status,
     )
 
 
@@ -223,6 +225,8 @@ async def verify_otp(payload: OtpVerifyPayload):
         total_points=user.total_points,
         mind_strength=user.mind_strength,
         last_checkin_date=user.last_checkin_date,
+        last_retain_date=user.last_retain_date,
+        last_retain_status=user.last_retain_status,
     )
 
 
@@ -329,6 +333,8 @@ async def google_auth(payload: GoogleAuthRequest):
         total_points=user.total_points,
         mind_strength=user.mind_strength,
         last_checkin_date=user.last_checkin_date,
+        last_retain_date=user.last_retain_date,
+        last_retain_status=user.last_retain_status,
     )
 
 

@@ -145,7 +145,9 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         total_points=current_user.total_points or 0,
         mind_strength=ai_mindset_score,
         last_checkin_date=current_user.last_checkin_date,
-        ai_mindset_score=ai_mindset_score,
+        last_retain_date=getattr(current_user, "last_retain_date", None),
+        last_retain_status=getattr(current_user, "last_retain_status", None),
+        ai_mindset_score=int(ai_mindset_score),
         ai_mindset_analysis=ai_analysis,
         journals_count=len(journals),
         recent_journals=recent_journals_list,
@@ -180,6 +182,10 @@ async def update_my_profile(
         current_user.total_points = payload.total_points
     if payload.last_checkin_date is not None:
         current_user.last_checkin_date = payload.last_checkin_date
+    if payload.last_retain_date is not None:
+        current_user.last_retain_date = payload.last_retain_date
+    if payload.last_retain_status is not None:
+        current_user.last_retain_status = payload.last_retain_status
 
     await current_user.save()
 

@@ -133,8 +133,10 @@ async def run_mindset_evaluation(
     
     # 4. Fetch Meditation Sessions Today
     med_events = await BehavioralEvent.find(
-        {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]},
-        BehavioralEvent.event_type.in_(["meditation_session", "meditation_completed", "afternoon_meditation"])
+        {
+            "$or": [{"user_id": user_id}, {"user_id": current_user.email}],
+            "event_type": {"$in": ["meditation_session", "meditation_completed", "afternoon_meditation"]}
+        }
     ).to_list()
     has_meditated_today = any(
         (e.created_at and e.created_at.strftime("%Y-%m-%d") == today_str) for e in med_events

@@ -3,7 +3,7 @@ Mission Service — dynamically generates personalized missions based on the use
 current Mind Profile and recent check-in data.
 """
 from typing import List, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from app.models.mission import Mission
 from app.models.mind_profile import MindProfile
 from app.models.daily_checkin import DailyCheckin
@@ -18,15 +18,18 @@ async def generate_todays_missions(
 ) -> List[Mission]:
     """
     Generate 3-5 personalized missions for today.
+    Missions reset daily at 12:00 AM (24-hour cycle).
     Selection logic is based on the user's current weaknesses and strengths.
     """
-    today = date.today()
-    today_start = datetime(today.year, today.month, today.day)
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    today_end = today_start + timedelta(days=1)
 
     # Check if missions already generated for today
     existing = await Mission.find(
         Mission.user_id == user_id,
         Mission.date_assigned >= today_start,
+        Mission.date_assigned < today_end,
         Mission.is_ai_generated == True,
     ).to_list()
 
@@ -50,8 +53,9 @@ async def generate_todays_missions(
             duration_minutes=m_data.get("duration_minutes", 15),
             xp_reward=m_data.get("xp_reward", 15),
             mind_strength_reward=m_data.get("mind_strength_reward", 3),
+            is_completed=False,
             is_ai_generated=True,
-            date_assigned=datetime.utcnow(),
+            date_assigned=now,
             why_assigned=_get_why_assigned(m_data["category"], profile, latest_checkin),
         )
         await mission.insert()

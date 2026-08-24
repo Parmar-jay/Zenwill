@@ -1,11 +1,11 @@
+import React from 'react';
 import { Tabs } from 'expo-router';
-import { StyleSheet, View, TouchableOpacity, Dimensions } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, useWindowDimensions, Platform } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
 
 // Haptic helper
 const triggerHaptic = () => {
@@ -30,16 +30,16 @@ const ShieldLightningIcon = ({ focused }: { focused: boolean }) => (
 );
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
+  const { width: W } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
   const currentRoute = state.routes[state.index];
   if (currentRoute?.name !== 'home') {
     return null;
   }
 
-  const { width: W } = Dimensions.get('window');
-  const insets = useSafeAreaInsets();
-
   // Height of tab bar container
-  const tabHeight = 60 + insets.bottom;
+  const tabHeight = Math.max(64, 60 + insets.bottom);
   const svgHeight = tabHeight + 24;
   const centerX = W / 2;
 
@@ -92,7 +92,12 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 >
                   <View style={[styles.centerButtonInner, isFocused && styles.centerButtonActive]} className="w-13 h-13 rounded-full bg-[#080808] border border-white/10 justify-center items-center pt-0.5">
                     <ShieldLightningIcon focused={isFocused} />
-                    <ThemedText style={[styles.centerButtonLabel, isFocused && styles.centerButtonLabelActive]} className="text-[8px] font-extrabold text-[#8F94A3] uppercase mt-0.5 tracking-wider">
+                    <ThemedText
+                      style={[styles.centerButtonLabel, isFocused && styles.centerButtonLabelActive]}
+                      className="text-[8px] font-extrabold text-[#8F94A3] uppercase mt-0.5 tracking-wider"
+                      numberOfLines={1}
+                      maxFontSizeMultiplier={1.05}
+                    >
                       RESCUE
                     </ThemedText>
                   </View>
@@ -132,7 +137,12 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 size={21}
                 color={isFocused ? '#2B6BFF' : '#8F94A3'}
               />
-              <ThemedText style={[styles.tabLabel, isFocused && styles.tabLabelActive]} className="text-[10px] font-semibold text-[#8F94A3] mt-1">
+              <ThemedText
+                style={[styles.tabLabel, isFocused && styles.tabLabelActive]}
+                className="text-[10px] font-semibold text-[#8F94A3] mt-1"
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.1}
+              >
                 {label}
               </ThemedText>
             </TouchableOpacity>

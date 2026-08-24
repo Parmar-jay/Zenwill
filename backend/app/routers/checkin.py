@@ -107,9 +107,11 @@ async def submit_checkin(
         from app.models.mission import Mission
         today_start = datetime(checkin_date.year, checkin_date.month, checkin_date.day)
         checkin_mission = await Mission.find_one(
-            Mission.user_id == str(current_user.id),
-            Mission.date_assigned >= today_start,
-            Mission.category.in_(["checkin", "morning"])
+            {
+                "user_id": str(current_user.id),
+                "date_assigned": {"$gte": today_start},
+                "category": {"$in": ["checkin", "morning"]}
+            }
         )
         if checkin_mission:
             checkin_mission.is_completed = True

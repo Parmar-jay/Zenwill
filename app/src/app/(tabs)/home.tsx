@@ -787,6 +787,7 @@ export default function HomeScreen() {
               <View style={[styles.topCardContainer, isExtraSmallScreen && { width: '100%' }]}>
                 <TouchableOpacity
                   activeOpacity={0.88}
+                  style={styles.topCardTouchable}
                   onPress={() => {
                     triggerHaptic();
                     setRankModalVisible(true);
@@ -927,17 +928,18 @@ export default function HomeScreen() {
                   </TouchableOpacity>
 
                   {/* Card Content & Focus Quote */}
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      triggerHaptic();
-                      setWisdomModalVisible(true);
-                    }}
-                    style={[styles.rightCardBody, { zIndex: 10 }]}
-                  >
-                    <ThemedText style={styles.vedicFocusText} numberOfLines={2}>
-                      Stay present. Avoid one unnecessary urge.
-                    </ThemedText>
+                  <View style={[styles.rightCardBody, { zIndex: 10 }]}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        triggerHaptic();
+                        setWisdomModalVisible(true);
+                      }}
+                    >
+                      <ThemedText style={styles.vedicFocusText} numberOfLines={2}>
+                        Stay present. Avoid one unnecessary urge.
+                      </ThemedText>
+                    </TouchableOpacity>
 
                     {/* Retained / Relapsed Action Buttons (Submitted only once per day) */}
                     <View style={styles.alignedActionContainer}>
@@ -998,7 +1000,7 @@ export default function HomeScreen() {
                         </View>
                       )}
                     </View>
-                  </TouchableOpacity>
+                  </View>
 
                   <TouchableOpacity
                     style={[styles.rightCardBottomBtn, { zIndex: 10 }]}
@@ -1887,13 +1889,16 @@ const styles = StyleSheet.create({
   topDualCardsRow: {
     width: '100%',
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     gap: 12,
   },
   topDualCardsRowColumn: {
     flexDirection: 'column',
   },
   topCardContainer: {
+    flex: 1,
+  },
+  topCardTouchable: {
     flex: 1,
   },
   topCardItem: {
@@ -1904,7 +1909,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0, 229, 255, 0.25)',
     overflow: 'hidden',
     padding: 12,
-    minHeight: 255,
+    flex: 1,
+    minHeight: 270,
     justifyContent: 'space-between',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 6 },
@@ -2101,7 +2107,7 @@ const styles = StyleSheet.create({
   },
   alignedRetainBtn: {
     flex: 1,
-    height: 38,
+    minHeight: 38,
     borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1,
@@ -2114,7 +2120,7 @@ const styles = StyleSheet.create({
   },
   alignedRelapseBtn: {
     flex: 1,
-    height: 38,
+    minHeight: 38,
     borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1,
@@ -2123,7 +2129,9 @@ const styles = StyleSheet.create({
   alignedBtnGradient: {
     flex: 1,
     width: '100%',
-    height: '100%',
+    minHeight: 38,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2145,7 +2153,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 38,
+    minHeight: 38,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 10,
     borderWidth: 1,

@@ -138,6 +138,17 @@ export const useDailyMissionStore = create<DailyMissionState>()(
           // Fallback to sync
           missionsApi.syncMissions({ ...get().todayTasks }).catch(() => {});
         });
+
+        // Sync auth store user points
+        try {
+          const { useAuthStore } = require('./auth-store');
+          const authUser = useAuthStore.getState().user;
+          if (authUser) {
+            useAuthStore.getState().updateUser({
+              totalPoints: get().totalPoints,
+            });
+          }
+        } catch (e) {}
       },
 
 
@@ -197,6 +208,7 @@ export const useDailyMissionStore = create<DailyMissionState>()(
 
       syncWithBackend: async () => {
         try {
+          get().checkAndResetMidnight();
           const today = getTodayStr();
           const state = get();
           const updated = { ...state.todayTasks };
@@ -231,7 +243,6 @@ export const useDailyMissionStore = create<DailyMissionState>()(
             const authUser = useAuthStore.getState().user;
 
             const isCheckinLoggedToday =
-              habitState.lastLoggedDate === today ||
               habitState.latestCheckinSummary?.date === today ||
               authUser?.lastCheckinDate === today;
 
@@ -243,6 +254,12 @@ export const useDailyMissionStore = create<DailyMissionState>()(
 
           if (changed) {
             set({ todayTasks: updated });
+          }
+
+          // Also push any locally completed tasks to backend DB to ensure complete persistence
+          const hasAnyCompleted = Object.values(updated).some(Boolean);
+          if (hasAnyCompleted) {
+            missionsApi.syncMissions(updated).catch(() => {});
           }
         } catch (e) {
           // Silent fallback to local storage state if offline
