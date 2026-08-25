@@ -69,9 +69,6 @@ export default function AuthRegisterScreen() {
       const detail = err?.detail || err?.message || '';
       if (detail.includes('already registered') || detail.includes('exists')) {
         setRegError('Account already exists with this email. Please sign in.');
-      } else if (err?.message === 'Network Error' || (err?.status === undefined && err?.message?.includes('Network'))) {
-        registerLocal(trimmedEmail);
-        router.replace('/(auth)/create-profile' as any);
       } else {
         setRegError(detail || 'Registration failed. Please try again.');
       }

@@ -48,6 +48,7 @@ export interface AuthResponse {
   max_streak: number;
   total_points: number;
   mind_strength: number;
+  email_verified?: boolean;
   last_checkin_date: string | null;
   last_retain_date?: string | null;
   last_retain_status?: string | null;

@@ -29,7 +29,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
-  const { isAuthenticated, isOnboarded, isHydrated } = useAuthStore();
+  const { isAuthenticated, isEmailVerified, isOnboarded, isHydrated, user } = useAuthStore();
 
   // Listen for Google OAuth web redirect hash/token
   useEffect(() => {
@@ -73,21 +73,28 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       }
     } else {
       // Authenticated users
-      if (!isOnboarded) {
-        // Authenticated but not onboarded -> restricted to onboarding flow
+      if (!isEmailVerified) {
+        // Email NOT verified -> user MUST verify email first before accessing the app!
+        if (secondSegment !== 'verify-email') {
+          router.replace({
+            pathname: '/(auth)/verify-email' as any,
+            params: { email: user?.email || '' },
+          });
+        }
+      } else if (!isOnboarded) {
+        // Authenticated & verified, but not onboarded -> restricted to onboarding flow
         if (!isAuthOrOnboardingScreen) {
           router.replace('/(auth)/create-profile' as any);
         }
       } else {
-        // Authenticated and onboarded
-        // If on public auth screens (login, register, welcome) or root index, send to home.
+        // Authenticated, verified, and onboarded -> access full app
         const isPublicAuthScreen = inAuthGroup && publicAuthScreens.includes(secondSegment);
         if (isPublicAuthScreen || inRootIndex) {
           router.replace('/(tabs)/home' as any);
         }
       }
     }
-  }, [isAuthenticated, isOnboarded, isHydrated, segments, navigationState?.key]);
+  }, [isAuthenticated, isEmailVerified, isOnboarded, isHydrated, segments, navigationState?.key, user?.email]);
 
   return <>{children}</>;
 }

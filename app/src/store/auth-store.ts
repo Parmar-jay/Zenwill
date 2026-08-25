@@ -12,6 +12,7 @@ interface User {
   name?: string;
   streak?: number;
   totalPoints?: number;
+  emailVerified?: boolean;
   lastCheckinDate?: string | null;
   lastRetainDate?: string | null;
   lastRetainStatus?: string | null;
@@ -19,6 +20,7 @@ interface User {
 
 interface AuthState {
   isAuthenticated: boolean;
+  isEmailVerified: boolean;
   isOnboarded: boolean;
   onboardingStep: number;
   user: User | null;
@@ -83,6 +85,7 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       isAuthenticated: false,
+      isEmailVerified: false,
       isOnboarded: false,
       onboardingStep: 0,
       user: null,
@@ -102,8 +105,10 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response: AuthResponse = await authApi.login({ email, password });
           syncUserStats(response);
+          const verified = response.email_verified !== false;
           set({
             isAuthenticated: true,
+            isEmailVerified: verified,
             isOnboarded: response.is_onboarded,
             onboardingStep: response.onboarding_step,
             user: {
@@ -112,6 +117,7 @@ export const useAuthStore = create<AuthState>()(
               name: response.name ?? undefined,
               streak: response.streak,
               totalPoints: response.total_points,
+              emailVerified: verified,
               lastCheckinDate: response.last_checkin_date,
               lastRetainDate: response.last_retain_date,
               lastRetainStatus: response.last_retain_status,
@@ -153,6 +159,7 @@ export const useAuthStore = create<AuthState>()(
           syncUserStats(response);
           set({
             isAuthenticated: true,
+            isEmailVerified: true,
             isOnboarded: response.is_onboarded,
             onboardingStep: response.onboarding_step,
             user: {
@@ -161,6 +168,7 @@ export const useAuthStore = create<AuthState>()(
               name: response.name ?? undefined,
               streak: response.streak,
               totalPoints: response.total_points,
+              emailVerified: true,
               lastCheckinDate: response.last_checkin_date,
               lastRetainDate: response.last_retain_date,
               lastRetainStatus: response.last_retain_status,
@@ -180,6 +188,7 @@ export const useAuthStore = create<AuthState>()(
           syncUserStats(response);
           set({
             isAuthenticated: true,
+            isEmailVerified: true,
             isOnboarded: response.is_onboarded,
             onboardingStep: response.onboarding_step,
             user: {
@@ -188,6 +197,7 @@ export const useAuthStore = create<AuthState>()(
               name: response.name ?? undefined,
               streak: response.streak,
               totalPoints: response.total_points,
+              emailVerified: true,
               lastCheckinDate: response.last_checkin_date,
               lastRetainDate: response.last_retain_date,
               lastRetainStatus: response.last_retain_status,
@@ -234,6 +244,7 @@ export const useAuthStore = create<AuthState>()(
 
         set({
           isAuthenticated: false,
+          isEmailVerified: false,
           isOnboarded: false,
           onboardingStep: 0,
           user: null,

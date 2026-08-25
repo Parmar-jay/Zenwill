@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './api';
 
 export interface WeeklyInsights {
@@ -199,6 +200,24 @@ export interface TriggerIntelligence {
   }>;
 }
 
+let memoryCachedRecommendations: UserRecommendations | null = null;
+const RECOMMENDATIONS_CACHE_KEY = '@zenwill_recommendations_cache';
+
+// Initialize cache from storage asynchronously
+if (typeof AsyncStorage !== 'undefined') {
+  AsyncStorage.getItem(RECOMMENDATIONS_CACHE_KEY).then((raw) => {
+    if (raw) {
+      try {
+        memoryCachedRecommendations = JSON.parse(raw);
+      } catch (e) {}
+    }
+  }).catch(() => {});
+}
+
+export const getCachedRecommendations = (): UserRecommendations | null => {
+  return memoryCachedRecommendations;
+};
+
 export const analyticsApi = {
   getWeeklyInsights(): Promise<WeeklyInsights> {
     return api.get<WeeklyInsights>('/analytics/weekly');
@@ -224,8 +243,13 @@ export const analyticsApi = {
     return api.get<ProgressIntelligence>('/analytics/progress-intelligence');
   },
 
-  getRecommendations(): Promise<UserRecommendations> {
-    return api.get<UserRecommendations>('/analytics/recommendations');
+  async getRecommendations(): Promise<UserRecommendations> {
+    const data = await api.get<UserRecommendations>('/analytics/recommendations');
+    if (data && data.ai_insight) {
+      memoryCachedRecommendations = data;
+      AsyncStorage.setItem(RECOMMENDATIONS_CACHE_KEY, JSON.stringify(data)).catch(() => {});
+    }
+    return data;
   },
 
   completeRecommendationTask(

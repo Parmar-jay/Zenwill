@@ -53,9 +53,6 @@ export default function AuthLoginScreen() {
       const detail = err?.detail || err?.message || '';
       if (detail === 'email_unverified' || detail.includes('unverified')) {
         router.replace({ pathname: '/(auth)/verify-email' as any, params: { email: email.trim() } });
-      } else if (err?.message === 'Network Error' || (err?.status === undefined && err?.message?.includes('Network'))) {
-        loginLocal(email);
-        router.replace('/(tabs)/home' as any);
       } else {
         setLoginError(detail || 'Incorrect password or invalid email. Please check your credentials.');
       }

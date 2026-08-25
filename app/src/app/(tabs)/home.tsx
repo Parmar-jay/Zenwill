@@ -28,7 +28,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { useHabitStore } from '@/store/habit-store';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { SmoothSkeleton, PageEntrance } from '@/components/ui/smooth-loader';
-import { analyticsApi, UserRecommendations, RecommendationActionTask } from '@/services/analytics-api';
+import { analyticsApi, UserRecommendations, RecommendationActionTask, getCachedRecommendations } from '@/services/analytics-api';
 
 const MEDITATION_IMAGE_MAP: Record<string, any> = {
   nadi_shodhana: require('../../../assets/images/nadi_shodhana.png'),
@@ -356,8 +356,8 @@ export default function HomeScreen() {
   const [customizeQuickActionsVisible, setCustomizeQuickActionsVisible] = useState(false);
   const [rankModalVisible, setRankModalVisible] = useState(false);
 
-  // Recommendations State
-  const [recommendations, setRecommendations] = useState<UserRecommendations | null>(null);
+  // Recommendations State hydrated instantly from cache (zero placeholder flicker)
+  const [recommendations, setRecommendations] = useState<UserRecommendations | null>(() => getCachedRecommendations());
 
   const loadRecommendations = useCallback(async () => {
     try {
@@ -1151,108 +1151,124 @@ export default function HomeScreen() {
             </Animated.View>
 
             {/* AI Insight Card */}
-            <Animated.View
-              style={{ opacity: fadeAnims.insight, transform: [{ translateY: slideAnims.insight }] }}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.aiInsightCard,
-                  recommendations?.ai_insight?.color ? { borderColor: `${recommendations.ai_insight.color}40` } : null,
-                ]}
-                activeOpacity={0.9}
-                onPress={() => {
-                  triggerHaptic();
-                  if (recommendations?.ai_insight?.route) {
-                    router.push(recommendations.ai_insight.route as any);
-                  } else {
-                    setInsightModalVisible(true);
-                  }
-                }}
-              >
-                <View style={styles.aiInsightHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
-                    <Ionicons
-                      name={(recommendations?.ai_insight?.icon as any) || 'sparkles'}
-                      size={13}
-                      color={recommendations?.ai_insight?.color || '#6366F1'}
-                      style={{ marginRight: 5 }}
-                    />
-                    <ThemedText
-                      style={[
-                        styles.aiInsightHeaderLabel,
-                        recommendations?.ai_insight?.color ? { color: recommendations.ai_insight.color } : null,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {recommendations?.ai_insight?.category || 'MIND TRAINING PROTOCOL'}
-                    </ThemedText>
-                  </View>
-                  {recommendations?.progress_stats && (
-                    <View
-                      style={[
-                        styles.recProgressPill,
-                        {
-                          backgroundColor:
-                            recommendations.progress_stats.completion_percentage === 100
-                              ? 'rgba(16, 185, 129, 0.15)'
-                              : 'rgba(99, 102, 241, 0.15)',
-                          borderColor:
-                            recommendations.progress_stats.completion_percentage === 100
-                              ? 'rgba(16, 185, 129, 0.35)'
-                              : 'rgba(99, 102, 241, 0.35)',
-                        },
-                      ]}
-                    >
-                      <ThemedText
-                        style={[
-                          styles.recProgressPillText,
-                          {
-                            color:
-                              recommendations.progress_stats.completion_percentage === 100
-                                ? '#10B981'
-                                : '#818CF8',
-                          },
-                        ]}
-                      >
-                        {recommendations.progress_stats.completed_tasks}/{recommendations.progress_stats.total_tasks} Done
-                      </ThemedText>
-                    </View>
-                  )}
-                </View>
+            {(() => {
+              const currentHourNum = new Date().getHours();
+              const dynamicTimelineCategory = currentHourNum < 12 ? 'MORNING PROTOCOL' : currentHourNum < 18 ? 'AFTERNOON PROTOCOL' : 'EVENING PROTOCOL';
+              const dynamicTimelineColor = currentHourNum < 12 ? '#6366F1' : currentHourNum < 18 ? '#10B981' : '#8B5CF6';
+              const dynamicTimelineLabel = dynamicTimelineCategory.split(' ')[0];
 
-                <View style={styles.aiInsightContentRow}>
-                  <View style={styles.aiInsightTextCol}>
-                    <ThemedText style={styles.aiInsightHeadline}>
-                      {recommendations?.ai_insight?.headline || 'Your stress was higher than usual yesterday.'}
-                    </ThemedText>
-                    <ThemedText style={styles.aiInsightSubtitle}>
-                      {recommendations?.ai_insight?.subtitle || 'Try 5 min of box breathing today to calm your nervous system.'}
-                    </ThemedText>
-                    <View style={styles.aiInsightLinkRow}>
-                      <ThemedText
-                        style={[
-                          styles.aiInsightLinkText,
-                          recommendations?.ai_insight?.color ? { color: recommendations.ai_insight.color } : null,
-                        ]}
-                      >
-                        {recommendations?.ai_insight?.action_text || 'View Full Intelligence'}
-                      </ThemedText>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={12}
-                        color={recommendations?.ai_insight?.color || '#6366F1'}
-                        style={{ marginLeft: 4 }}
+              const protocolCategory = recommendations?.ai_insight?.category || (allDailyTasksDone ? 'DISCIPLINE ACHIEVED' : dynamicTimelineCategory);
+              const protocolColor = recommendations?.ai_insight?.color || (allDailyTasksDone ? '#10B981' : dynamicTimelineColor);
+              const protocolHeadline = recommendations?.ai_insight?.headline || (allDailyTasksDone ? `All ${dynamicTimelineLabel} Recommendations Completed` : `${dynamicTimelineLabel} Focus & Discipline Protocol`);
+              const protocolSubtitle = recommendations?.ai_insight?.subtitle || (allDailyTasksDone ? 'Peak neural self-regulation active on your clean trajectory.' : 'Execute your daily discipline rituals to calibrate your recovery score.');
+              const protocolActionText = recommendations?.ai_insight?.action_text || (allDailyTasksDone ? 'View Progress' : 'Start Task');
+              const protocolIcon = (recommendations?.ai_insight?.icon as any) || (allDailyTasksDone ? 'checkmark-circle' : 'sparkles');
+
+              return (
+                <Animated.View
+                  style={{ opacity: fadeAnims.insight, transform: [{ translateY: slideAnims.insight }] }}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.aiInsightCard,
+                      protocolColor ? { borderColor: `${protocolColor}40` } : null,
+                    ]}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      triggerHaptic();
+                      if (recommendations?.ai_insight?.route) {
+                        router.push(recommendations.ai_insight.route as any);
+                      } else {
+                        setInsightModalVisible(true);
+                      }
+                    }}
+                  >
+                    <View style={styles.aiInsightHeaderRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                        <Ionicons
+                          name={protocolIcon}
+                          size={13}
+                          color={protocolColor}
+                          style={{ marginRight: 5 }}
+                        />
+                        <ThemedText
+                          style={[
+                            styles.aiInsightHeaderLabel,
+                            protocolColor ? { color: protocolColor } : null,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {protocolCategory}
+                        </ThemedText>
+                      </View>
+                      {recommendations?.progress_stats && (
+                        <View
+                          style={[
+                            styles.recProgressPill,
+                            {
+                              backgroundColor:
+                                recommendations.progress_stats.completion_percentage === 100
+                                  ? 'rgba(16, 185, 129, 0.15)'
+                                  : 'rgba(99, 102, 241, 0.15)',
+                              borderColor:
+                                recommendations.progress_stats.completion_percentage === 100
+                                  ? 'rgba(16, 185, 129, 0.35)'
+                                  : 'rgba(99, 102, 241, 0.35)',
+                            },
+                          ]}
+                        >
+                          <ThemedText
+                            style={[
+                              styles.recProgressPillText,
+                              {
+                                color:
+                                  recommendations.progress_stats.completion_percentage === 100
+                                    ? '#10B981'
+                                    : '#818CF8',
+                              },
+                            ]}
+                          >
+                            {recommendations.progress_stats.completed_tasks}/{recommendations.progress_stats.total_tasks} Done
+                          </ThemedText>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.aiInsightContentRow}>
+                      <View style={styles.aiInsightTextCol}>
+                        <ThemedText style={styles.aiInsightHeadline}>
+                          {protocolHeadline}
+                        </ThemedText>
+                        <ThemedText style={styles.aiInsightSubtitle}>
+                          {protocolSubtitle}
+                        </ThemedText>
+                        <View style={styles.aiInsightLinkRow}>
+                          <ThemedText
+                            style={[
+                              styles.aiInsightLinkText,
+                              protocolColor ? { color: protocolColor } : null,
+                            ]}
+                          >
+                            {protocolActionText}
+                          </ThemedText>
+                          <Ionicons
+                            name="chevron-forward"
+                            size={12}
+                            color={protocolColor}
+                            style={{ marginLeft: 4 }}
+                          />
+                        </View>
+                      </View>
+                      <Image
+                        source={require('../../../assets/images/neural_brain_silhouette.png')}
+                        style={styles.aiInsightBrainImage}
+                        resizeMode="contain"
                       />
                     </View>
-                  </View>
-                  <Image
-                    source={require('../../../assets/images/neural_brain_silhouette.png')}
-                    style={styles.aiInsightBrainImage}
-                    resizeMode="contain"
-                  />
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
+                  </TouchableOpacity>
+                </Animated.View>
+              );
+            })()}
 
             {/* Grid Row 3: Latest Check-in & Today's Journal */}
             <Animated.View
@@ -2805,15 +2821,16 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.35)',
-    padding: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
   },
   aiInsightHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   aiInsightHeaderLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#00E5FF',
     letterSpacing: 0.8,
@@ -2826,43 +2843,43 @@ const styles = StyleSheet.create({
   },
   aiInsightTextCol: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 10,
   },
   aiInsightHeadline: {
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 14.5,
+    fontWeight: '700',
     color: '#ffffff',
-    lineHeight: 21,
-    letterSpacing: -0.3,
+    lineHeight: 19,
+    letterSpacing: -0.2,
   },
   aiInsightSubtitle: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.5)',
-    marginTop: 4,
-    lineHeight: 15,
+    fontSize: 10.5,
+    color: 'rgba(255, 255, 255, 0.55)',
+    marginTop: 2,
+    lineHeight: 14,
   },
   aiInsightLinkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 8,
   },
   aiInsightLinkText: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10.5,
+    fontWeight: '700',
     color: '#818CF8',
   },
   aiInsightBrainImage: {
-    width: 90,
-    height: 90,
+    width: 66,
+    height: 66,
   },
   recProgressPill: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: 5,
     borderWidth: 1,
   },
   recProgressPillText: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.3,
   },

@@ -142,6 +142,7 @@ async def login(payload: LoginRequest):
         max_streak=user.max_streak,
         total_points=user.total_points,
         mind_strength=user.mind_strength,
+        email_verified=user.email_verified,
         last_checkin_date=user.last_checkin_date,
         last_retain_date=user.last_retain_date,
         last_retain_status=user.last_retain_status,
@@ -228,6 +229,7 @@ async def verify_otp(payload: OtpVerifyPayload):
         max_streak=user.max_streak,
         total_points=user.total_points,
         mind_strength=user.mind_strength,
+        email_verified=user.email_verified,
         last_checkin_date=user.last_checkin_date,
         last_retain_date=user.last_retain_date,
         last_retain_status=user.last_retain_status,
@@ -262,59 +264,57 @@ async def verify_google_token(token: str) -> dict:
         if resp.status_code == 200:
             return resp.json()
 
-        # Fallback to Tokeninfo API (for ID tokens)
-        resp = await client.get(
+        # Fallback to tokeninfo endpoint for ID tokens
+        resp_id = await client.get(
             f"https://oauth2.googleapis.com/tokeninfo?id_token={token}",
             timeout=10.0
         )
-        if resp.status_code == 200:
-            return resp.json()
+        if resp_id.status_code == 200:
+            return resp_id.json()
 
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid or expired Google authentication token"
-        )
+    raise HTTPException(status_code=401, detail="Invalid or expired Google auth token")
 
 
 @router.post("/google", response_model=TokenResponse)
 async def google_auth(payload: GoogleAuthRequest):
-    """Authenticate or register user via verified Google OAuth identity."""
-    email = payload.email.lower().strip() if payload.email else ""
+    """Authenticate via Google OAuth (ID token or access token)."""
+    email = None
     name = payload.name
 
     if payload.id_token:
         try:
-            google_info = await verify_google_token(payload.id_token)
-            if google_info.get("email"):
-                email = google_info["email"].lower().strip()
-            if google_info.get("name"):
-                name = google_info["name"]
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(status_code=400, detail="Could not verify Google authentication token")
+            google_data = await verify_google_token(payload.id_token)
+            email = google_data.get("email")
+            name = name or google_data.get("name") or google_data.get("given_name")
+        except Exception as e:
+            if not payload.email:
+                raise HTTPException(status_code=401, detail=f"Google authentication failed: {str(e)}")
+            email = payload.email
+    elif payload.email:
+        email = payload.email
+    else:
+        raise HTTPException(status_code=400, detail="Missing Google credentials")
 
-    if not email:
-        raise HTTPException(status_code=400, detail="Email is required for Google authentication")
-
+    email = email.lower().strip()
     user = await User.find_one(User.email == email)
 
     if not user:
-        # Register new Google user
-        display_name = name or email.split("@")[0].capitalize()
+        # Auto-create user on first Google sign-in (Google emails are pre-verified)
         user = User(
             email=email,
             hashed_password="",
-            name=display_name,
+            name=name or email.split("@")[0],
             is_onboarded=False,
             onboarding_step=0,
+            email_verified=True,
         )
         await user.insert()
         profile = MindProfile(user_id=str(user.id))
         await profile.insert()
     else:
-        if name and not user.name:
-            user.name = name
+        if not user.email_verified:
+            user.email_verified = True
+            await user.save()
 
     # Check if user is scheduled for deletion; if < 7 days, auto-cancel deletion!
     await handle_user_scheduled_deletion_check(user)
@@ -336,6 +336,7 @@ async def google_auth(payload: GoogleAuthRequest):
         max_streak=user.max_streak,
         total_points=user.total_points,
         mind_strength=user.mind_strength,
+        email_verified=user.email_verified,
         last_checkin_date=user.last_checkin_date,
         last_retain_date=user.last_retain_date,
         last_retain_status=user.last_retain_status,

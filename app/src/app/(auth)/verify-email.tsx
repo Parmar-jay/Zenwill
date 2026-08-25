@@ -70,7 +70,12 @@ export default function VerifyEmailScreen() {
 
     try {
       await verifyOtp(targetEmail, code, targetName);
-      router.replace('/(auth)/create-profile' as any);
+      const { isOnboarded } = useAuthStore.getState();
+      if (isOnboarded) {
+        router.replace('/(tabs)/home' as any);
+      } else {
+        router.replace('/(auth)/create-profile' as any);
+      }
     } catch (err: any) {
       setLocalError(err?.detail || err?.message || 'Invalid OTP code. Please try again.');
     } finally {
