@@ -105,6 +105,9 @@ async def register(payload: RegisterRequest):
 async def login(payload: LoginRequest):
     email = payload.email.lower().strip()
     user = await User.find_one(User.email == email)
+    if not user:
+        import re
+        user = await User.find_one({"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
 
     if not user:
         raise HTTPException(status_code=404, detail="No account found with this email address.")
@@ -112,7 +115,13 @@ async def login(payload: LoginRequest):
         raise HTTPException(status_code=401, detail="Incorrect password. Please check and try again.")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is deactivated. Please contact support.")
-    if not user.email_verified:
+
+    # Auto-verify existing established users who already completed onboarding or have a streak
+    if (getattr(user, "is_onboarded", False) or getattr(user, "streak", 0) > 0) and not getattr(user, "email_verified", False):
+        user.email_verified = True
+        await user.save()
+
+    if not getattr(user, "email_verified", False):
         # Generate new OTP code and send to verify
         otp_code = generate_otp_code()
         user.otp_code = otp_code

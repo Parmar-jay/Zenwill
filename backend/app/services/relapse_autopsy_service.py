@@ -157,7 +157,7 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
         profile.updated_at = datetime.utcnow()
         await profile.save()
 
-    # 6. Update or Create Today's DailyCheckin to mark relapse_occurred = True
+    # 6. If user ALREADY completed a real DailyCheckin today, update relapse_occurred = True on it
     today_checkin = await DailyCheckin.find_one(
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]},
         DailyCheckin.date == today
@@ -168,21 +168,6 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
         if not today_checkin.primary_triggers:
             today_checkin.primary_triggers = [emotional_precursor]
         await today_checkin.save()
-    else:
-        new_checkin = DailyCheckin(
-            user_id=user_id_str,
-            date=today,
-            mood="Neutral",
-            energy_score=4,
-            stress_score=7,
-            sleep_duration=6.5,
-            sleep_quality=5,
-            urge_intensity=8,
-            primary_triggers=[emotional_precursor],
-            action_taken="Yes",
-            relapse_occurred=True,
-        )
-        await new_checkin.insert()
 
     return {
         "success": True,

@@ -26,23 +26,45 @@ export interface ApiError {
 const TOKEN_KEY = 'zenwill_access_token';
 const REFRESH_KEY = 'zenwill_refresh_token';
 
+let memoryAccessToken: string | null = null;
+let memoryRefreshToken: string | null = null;
+
+// Pre-hydrate memory tokens from AsyncStorage immediately
+AsyncStorage.getItem(TOKEN_KEY).then((token) => {
+    if (token) memoryAccessToken = token;
+}).catch(() => {});
+AsyncStorage.getItem(REFRESH_KEY).then((token) => {
+    if (token) memoryRefreshToken = token;
+}).catch(() => {});
+
 export const TokenStorage = {
     async getAccessToken(): Promise<string | null> {
-        return AsyncStorage.getItem(TOKEN_KEY);
+        if (memoryAccessToken) return memoryAccessToken;
+        const token = await AsyncStorage.getItem(TOKEN_KEY);
+        if (token) memoryAccessToken = token;
+        return token;
     },
     async getRefreshToken(): Promise<string | null> {
-        return AsyncStorage.getItem(REFRESH_KEY);
+        if (memoryRefreshToken) return memoryRefreshToken;
+        const token = await AsyncStorage.getItem(REFRESH_KEY);
+        if (token) memoryRefreshToken = token;
+        return token;
     },
     async setTokens(access: string, refresh: string): Promise<void> {
+        memoryAccessToken = access;
+        memoryRefreshToken = refresh;
         await AsyncStorage.multiSet([
             [TOKEN_KEY, access],
             [REFRESH_KEY, refresh],
         ]);
     },
     async setAccessToken(access: string): Promise<void> {
+        memoryAccessToken = access;
         await AsyncStorage.setItem(TOKEN_KEY, access);
     },
     async clearTokens(): Promise<void> {
+        memoryAccessToken = null;
+        memoryRefreshToken = null;
         await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY]);
     },
 };

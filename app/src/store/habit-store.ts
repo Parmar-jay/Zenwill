@@ -98,18 +98,22 @@ export const useHabitStore = create<HabitState>()(
       logDay: (retained: boolean) => {
         const today = getTodayDateString();
         set((state) => {
-          if (state.lastLoggedDate === today) {
+          // If already logged today with the exact same status, do nothing
+          if (state.lastLoggedDate === today && state.lastLoggedStatus === (retained ? 'retained' : 'relapsed')) {
             return {};
           }
           let nextStreak = state.streak;
           let nextStrength = state.mindStrength;
 
           if (retained) {
-            nextStreak += 1;
-            nextStrength = Math.min(nextStrength + 50, 1000);
+            // Only increment streak if not already logged today
+            if (state.lastLoggedDate !== today) {
+              nextStreak += 1;
+              nextStrength = Math.min(nextStrength + 50, 1000);
+            }
           } else {
             nextStreak = 0;
-            nextStrength = 0; // Start from scratch on relapse
+            nextStrength = 0; // Reset streak immediately on relapse
           }
 
           const newHistory = [

@@ -162,6 +162,9 @@ export default function RelapseAutopsyScreen() {
     try {
       triggerHaptic();
       setIsSubmitting(true);
+      // Immediately log relapse optimistically in habitStore so streak and badges update in real-time
+      useHabitStore.getState().logDay(false);
+
       const result = await analyticsApi.submitRelapseAutopsy({
         first_compromise_domino: selectedDomino,
         emotional_precursor: selectedEmotion.toLowerCase(),
@@ -173,6 +176,7 @@ export default function RelapseAutopsyScreen() {
       setStep(4);
     } catch (e) {
       // fallback result with actual user streak context if offline
+      useHabitStore.getState().logDay(false);
       const dom = DOMINO_OPTIONS.find((d) => d.id === selectedDomino);
       setAutopsyResult({
         success: true,

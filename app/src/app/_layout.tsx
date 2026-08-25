@@ -73,7 +73,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       }
     } else {
       // Authenticated users
-      if (!isEmailVerified) {
+      const isVerifiedOrEstablished = isEmailVerified || isOnboarded || !!user?.emailVerified;
+      if (!isVerifiedOrEstablished) {
         // Email NOT verified -> user MUST verify email first before accessing the app!
         if (secondSegment !== 'verify-email') {
           router.replace({

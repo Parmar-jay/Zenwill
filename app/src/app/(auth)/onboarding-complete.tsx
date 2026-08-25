@@ -59,6 +59,7 @@ export default function AuthOnboardingCompleteScreen() {
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: (evt) => {
         setScrollEnabled(false);
         const { locationX, locationY } = evt.nativeEvent;
@@ -245,6 +246,16 @@ export default function AuthOnboardingCompleteScreen() {
                   <View
                     ref={canvasRef}
                     style={[styles.canvasSquareWrapper, { touchAction: 'none' } as any]}
+                    onTouchStart={(e) => {
+                      setScrollEnabled(false);
+                      e.stopPropagation?.();
+                    }}
+                    onTouchEnd={() => {
+                      setScrollEnabled(true);
+                    }}
+                    onTouchCancel={() => {
+                      setScrollEnabled(true);
+                    }}
                     onLayout={(e) => {
                       const { width, height } = e.nativeEvent.layout;
                       if (width > 0 && height > 0) {

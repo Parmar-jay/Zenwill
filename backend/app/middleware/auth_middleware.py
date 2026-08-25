@@ -31,7 +31,7 @@ async def get_current_user(
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
 
-    if not user.email_verified:
+    if not getattr(user, "email_verified", False) and not getattr(user, "is_onboarded", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="email_unverified",
