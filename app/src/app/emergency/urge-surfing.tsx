@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -10,7 +10,7 @@ import {
   TextInput,
   Modal,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,6 +38,8 @@ export default function EmergencyUrgeSurfingScreen() {
   const router = useRouter();
   const [secondsRemaining, setSecondsRemaining] = useState<number>(90);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
+  const isMountedRef = useRef<boolean>(true);
+  const timerRef = useRef<any>(null);
 
   // Feedback State
   const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
@@ -74,23 +76,43 @@ export default function EmergencyUrgeSurfingScreen() {
     'Habitual Routine',
   ];
 
+  // Stop background timer and modal if screen loses focus or unmounts
+  useFocusEffect(
+    useCallback(() => {
+      isMountedRef.current = true;
+      return () => {
+        isMountedRef.current = false;
+        setIsTimerRunning(false);
+        if (timerRef.current) clearInterval(timerRef.current);
+      };
+    }, [])
+  );
+
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (isTimerRunning && secondsRemaining > 0) {
-      interval = setInterval(() => {
-        setSecondsRemaining((prev) => {
-          if (prev <= 1) {
-            setIsTimerRunning(false);
+    if (!isTimerRunning) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+
+    timerRef.current = setInterval(() => {
+      setSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          setIsTimerRunning(false);
+          if (isMountedRef.current) {
             triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
             setShowFeedbackModal(true);
-            return 0;
           }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, secondsRemaining]);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isTimerRunning]);
 
   useEffect(() => {
     if (isTimerRunning) {
@@ -136,44 +158,47 @@ export default function EmergencyUrgeSurfingScreen() {
     setIsSubmitting(true);
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
 
-    // 1. Increment local urge counter immediately (+1)
+    // 1. Increment local urge counter & missions immediately (instant feedback)
     useHabitStore.getState().incrementUrgeCount();
-
-    // 2. Persist feedback and session to backend pipeline
-    try {
-      await analyticsApi.completeEmergency({
-        session_id: 'surge_' + Date.now(),
-        techniques_used: ['Urge Surfing', selectedInfluence],
-        outcome: 'resisted',
-        was_effective: wasEffective,
-        main_influence: selectedInfluence,
-        trigger_reason: selectedTrigger,
-        urge_intensity_before: intensityBefore,
-        urge_intensity_after: intensityAfter,
-        thought_note: thoughtNote || 'Completed 90-second Urge Surfing Wave',
-        most_helpful_technique: selectedInfluence,
-      });
-
-      await analyticsApi.logEvent({
-        event_type: 'urge_surfing_completed',
-        trigger_context: selectedTrigger,
-        outcome: 'resisted',
-        intensity: intensityBefore,
-        metadata: {
-          was_effective: wasEffective,
-          main_influence: selectedInfluence,
-          intensity_after: intensityAfter,
-          thought_note: thoughtNote,
-        },
-      });
-    } catch (err) {
-      console.warn('Urge surfing logging warning (offline):', err);
-    }
-
-    // 3. Mark rescue mission completed & sync database state
     useDailyMissionStore.getState().completeTask('rescue');
-    useHabitStore.getState().syncFromDatabase().catch(() => {});
 
+    // 2. Fire backend logging in parallel in the background
+    const bgSync = async () => {
+      try {
+        await Promise.all([
+          analyticsApi.completeEmergency({
+            session_id: 'surge_' + Date.now(),
+            techniques_used: ['Urge Surfing', selectedInfluence],
+            outcome: 'resisted',
+            was_effective: wasEffective,
+            main_influence: selectedInfluence,
+            trigger_reason: selectedTrigger,
+            urge_intensity_before: intensityBefore,
+            urge_intensity_after: intensityAfter,
+            thought_note: thoughtNote || 'Completed 90-second Urge Surfing Wave',
+            most_helpful_technique: selectedInfluence,
+          }),
+          analyticsApi.logEvent({
+            event_type: 'urge_surfing_completed',
+            trigger_context: selectedTrigger,
+            outcome: 'resisted',
+            intensity: intensityBefore,
+            metadata: {
+              was_effective: wasEffective,
+              main_influence: selectedInfluence,
+              intensity_after: intensityAfter,
+              thought_note: thoughtNote,
+            },
+          }),
+        ]);
+        useHabitStore.getState().syncFromDatabase().catch(() => {});
+      } catch (err) {
+        console.warn('Urge surfing logging warning (offline):', err);
+      }
+    };
+    bgSync();
+
+    // 3. Immediately close modal and navigate with zero delay
     setIsSubmitting(false);
     setShowFeedbackModal(false);
     router.navigate('/(tabs)/progress' as any);

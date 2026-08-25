@@ -45,15 +45,12 @@ export default function DirectMessageScreen() {
   const rawTargetName = (searchParams.user_name as string) || (searchParams.username as string) || '';
 
   const getCleanName = (raw: string) => {
-    if (!raw || !raw.trim()) return 'Former Member';
+    if (!raw || !raw.trim()) return 'Operative';
     const v = raw.trim();
-    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_') || v.toLowerCase() === 'operative') {
-      return 'Former Member';
-    }
     if (v.includes('@')) {
       return v.split('@')[0];
     }
-    return v.split(' ')[0];
+    return v;
   };
 
   const [targetDisplayName, setTargetDisplayName] = useState<string>(getCleanName(rawTargetName));
@@ -389,35 +386,32 @@ export default function DirectMessageScreen() {
                 },
               ]}
             >
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  { height: inputHeight }
-                ]}
-                placeholder="Type a message..."
-                placeholderTextColor="rgba(255, 255, 255, 0.45)"
-                value={inputText}
-                onChangeText={handleInputChange}
-                onFocus={() => {
-                  setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
-                }}
-                multiline={true}
-                maxLength={1000}
-                cursorColor="#00E5FF"
-                selectionColor="rgba(0, 229, 255, 0.35)"
-                underlineColorAndroid="transparent"
-              />
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Type a message..."
+                  placeholderTextColor="rgba(255, 255, 255, 0.45)"
+                  value={inputText}
+                  onChangeText={handleInputChange}
+                  onFocus={() => {
+                    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+                  }}
+                  multiline={true}
+                  maxLength={1000}
+                  cursorColor="#00E5FF"
+                  selectionColor="rgba(0, 229, 255, 0.35)"
+                  underlineColorAndroid="transparent"
+                />
 
-              <TouchableOpacity
-                style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
-                activeOpacity={0.8}
-                disabled={!inputText.trim() || isSending}
-                onPress={handleSend}
-              >
-                <Ionicons name="arrow-up" size={18} color="#000000" />
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity
+                  style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
+                  activeOpacity={0.8}
+                  disabled={!inputText.trim() || isSending}
+                  onPress={handleSend}
+                >
+                  <Ionicons name="arrow-up" size={18} color="#000000" />
+                </TouchableOpacity>
+              </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -690,13 +684,13 @@ const styles = StyleSheet.create({
   },
   inputWrapper: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     backgroundColor: '#0C1322',
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: 'rgba(0, 229, 255, 0.45)',
     paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 4 : 2,
+    paddingVertical: Platform.OS === 'ios' ? 6 : 4,
     minHeight: 46,
   },
   textInput: {
@@ -704,10 +698,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14.5,
     lineHeight: 20,
-    minHeight: 38,
-    maxHeight: 120,
+    minHeight: 34,
+    maxHeight: 110,
     textAlignVertical: 'center',
-    paddingVertical: Platform.OS === 'web' ? 8 : (Platform.OS === 'ios' ? 8 : 4),
+    paddingVertical: Platform.OS === 'web' ? 6 : (Platform.OS === 'ios' ? 6 : 4),
     paddingRight: 8,
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },
@@ -719,7 +713,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
-    alignSelf: 'center',
+    marginBottom: Platform.OS === 'ios' ? 2 : 3,
   },
   sendBtnDisabled: {
     opacity: 0.35,

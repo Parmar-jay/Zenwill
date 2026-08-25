@@ -188,9 +188,12 @@ export const useHabitStore = create<HabitState>()(
               let statusToKeep: 'retained' | 'relapsed' | null = null;
               let dateToKeep: string | null = null;
 
-              if (lastRetainDate === today) {
+              if (state.lastLoggedDate === today && state.lastLoggedStatus) {
                 dateToKeep = today;
-                statusToKeep = (lastRetainStatus as 'retained' | 'relapsed') || currentStatus || 'retained';
+                statusToKeep = state.lastLoggedStatus;
+              } else if (lastRetainDate === today) {
+                dateToKeep = today;
+                statusToKeep = (lastRetainStatus as 'retained' | 'relapsed') || 'retained';
               } else if (state.lastLoggedDate === today) {
                 dateToKeep = today;
                 statusToKeep = currentStatus || (todayHistory ? (todayHistory.status as 'retained' | 'relapsed') : null);
@@ -207,8 +210,13 @@ export const useHabitStore = create<HabitState>()(
                 }));
               }
 
+              // Keep higher streak if locally logged today as retained
+              const resolvedStreak = (dateToKeep === today && statusToKeep === 'retained')
+                ? Math.max(liveStreak, state.streak)
+                : (statusToKeep === 'relapsed' ? 0 : liveStreak);
+
               return {
-                streak: liveStreak,
+                streak: resolvedStreak,
                 mindStrength: liveStrength,
                 lastLoggedDate: dateToKeep,
                 lastLoggedStatus: statusToKeep,

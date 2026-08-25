@@ -152,8 +152,9 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
     # 5. Also sync MindProfile if exists
     profile = await MindProfile.find_one({"user_id": user_id_str})
     if profile:
-        profile.current_streak = 0
-        profile.relapse_count = (profile.relapse_count or 0) + 1
+        profile.current_flow = 0
+        profile.last_relapse_at = datetime.utcnow()
+        profile.updated_at = datetime.utcnow()
         await profile.save()
 
     # 6. Update or Create Today's DailyCheckin to mark relapse_occurred = True

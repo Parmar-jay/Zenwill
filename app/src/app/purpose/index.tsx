@@ -1,20 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
   View,
   Platform,
-  Modal,
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
   Keyboard,
-  StatusBar,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -55,6 +53,8 @@ const EMPTY_PURPOSES: PurposeData = {
 
 export default function PurposeSingleScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const [purposes, setPurposes] = useState<PurposeData>(EMPTY_PURPOSES);
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -62,11 +62,29 @@ export default function PurposeSingleScreen() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string>('');
-
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
 
   // Fetch real user purpose data from backend & storage
   useEffect(() => {
     loadPurposes();
+
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
   const loadPurposes = async () => {
@@ -108,12 +126,14 @@ export default function PurposeSingleScreen() {
 
   const handleCancelEdit = () => {
     triggerHaptic();
+    Keyboard.dismiss();
     setTempPurposes({ ...purposes });
     setIsEditing(false);
   };
 
   const handleSavePurposes = async () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    Keyboard.dismiss();
     setIsSaving(true);
 
     const updatedData: PurposeData = {
@@ -139,8 +159,8 @@ export default function PurposeSingleScreen() {
       setTimeout(() => setToastMessage(''), 3500);
       setIsEditing(false);
     } catch (err) {
-      console.log('[Purpose] API save note:', err);
-      setToastMessage('Saved locally.');
+      console.log('[Purpose] Save error:', err);
+      setToastMessage('Purposes saved offline.');
       setTimeout(() => setToastMessage(''), 3500);
       setIsEditing(false);
     } finally {
@@ -155,7 +175,7 @@ export default function PurposeSingleScreen() {
 
   return (
     <LinearGradient
-      colors={['#000000', '#000000', '#000000']}
+      colors={['#050002', '#0A0507', '#000000']}
       style={styles.gradientBg}
     >
       <Stack.Screen options={{ headerShown: false }} />
@@ -190,280 +210,272 @@ export default function PurposeSingleScreen() {
             <View style={{ width: 36 }} />
           </View>
 
-          <PageEntrance style={{ flex: 1 }}>
+          <View style={[styles.mainContentWrapper, { paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
             <ScrollView
-              contentContainerStyle={styles.scrollContent}
+              ref={scrollViewRef}
+              style={{ flex: 1 }}
+              contentContainerStyle={[
+                styles.scrollContent,
+                { paddingBottom: isEditing ? 30 : 50 },
+              ]}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
-              automaticallyAdjustKeyboardInsets={true}
             >
-            {/* Toast Notification */}
-            {toastMessage !== '' && (
-              <View style={styles.toastCard}>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#EF4444" />
-                <ThemedText style={styles.toastText}>{toastMessage}</ThemedText>
-              </View>
-            )}
+              {/* Toast Notification */}
+              {toastMessage !== '' && (
+                <View style={styles.toastCard}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color="#EF4444" />
+                  <ThemedText style={styles.toastText}>{toastMessage}</ThemedText>
+                </View>
+              )}
 
-            {/* Hero Banner Card */}
-            <View style={styles.heroBannerCard}>
-              <LinearGradient
-                colors={['rgba(239, 68, 68, 0.15)', 'rgba(0, 229, 255, 0.08)', 'rgba(0, 0, 0, 0.85)']}
-                style={styles.heroGradient}
-              >
-                <View style={styles.heroBadgeRow}>
-                  <View style={styles.heroBadge}>
-                    <Ionicons name="flame" size={12} color="#EF4444" />
-                    <ThemedText style={styles.heroBadgeText}>WISDOM & SOUL</ThemedText>
+              {/* Hero Banner Card */}
+              <View style={styles.heroBannerCard}>
+                <LinearGradient
+                  colors={['rgba(239, 68, 68, 0.15)', 'rgba(0, 229, 255, 0.08)', 'rgba(0, 0, 0, 0.85)']}
+                  style={styles.heroGradient}
+                >
+                  <View style={styles.heroBadgeRow}>
+                    <View style={styles.heroBadge}>
+                      <Ionicons name="flame" size={12} color="#EF4444" />
+                      <ThemedText style={styles.heroBadgeText}>WISDOM & SOUL</ThemedText>
+                    </View>
+
+                    <View style={styles.syncPill}>
+                      <Ionicons name="shield-checkmark" size={10} color="#34D399" />
+                      <ThemedText style={styles.syncText}>SAVED & SYNCED</ThemedText>
+                    </View>
                   </View>
 
-                  {isLoading ? (
-                    <ActivityIndicator size="small" color="#EF4444" />
-                  ) : (
-                    <View style={styles.syncPill}>
-                      <Ionicons name="cloud-done" size={11} color="#34D399" />
-                      <ThemedText style={styles.syncText}>
-                        {hasAnyPurpose ? 'Synced' : 'Ready'}
-                      </ThemedText>
+                  <ThemedText style={styles.heroTitle}>Your 3 Core Life Purposes</ThemedText>
+
+                  <ThemedText style={styles.heroSubText}>
+                    Define the 3 pillar purpose statements that lift your wisdom, anchor your soul, and guide your daily decisions.
+                  </ThemedText>
+                </LinearGradient>
+              </View>
+
+              {/* ========================================================== */}
+              {/* THE 3 LIFE PURPOSE PILLARS CARDS (VIEW / EDIT INLINE) */}
+              {/* ========================================================== */}
+              <View style={styles.pillarsContainer}>
+
+                {/* PILLAR 1: WISDOM & MIND (RED) */}
+                <View style={styles.pillarCard}>
+                  <LinearGradient
+                    colors={['rgba(239, 68, 68, 0.3)', 'rgba(14, 10, 12, 0.95)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.pillarBorderGradient}
+                  >
+                    <View style={styles.pillarInner}>
+                      <View style={styles.pillarHeaderRow}>
+                        <View style={styles.pillarIconBox1}>
+                          <Ionicons name="bulb" size={16} color="#EF4444" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.pillarNumberText}>PILLAR #1</ThemedText>
+                          <ThemedText style={styles.pillarTitle1}>Wisdom of Thought & Mind</ThemedText>
+                        </View>
+                        {isEditing && (
+                          <ThemedText style={styles.charCount}>
+                            {tempPurposes.purpose_1.length}/200
+                          </ThemedText>
+                        )}
+                        <View style={styles.pillarChip1}>
+                          <ThemedText style={styles.pillarChipText1}>MIND</ThemedText>
+                        </View>
+                      </View>
+
+                      {isEditing ? (
+                        <View style={styles.inputGroup}>
+                          <TextInput
+                            style={styles.textInputArea}
+                            multiline
+                            maxLength={200}
+                            value={tempPurposes.purpose_1}
+                            onFocus={() => {
+                              setTimeout(() => scrollViewRef.current?.scrollTo({ y: 80, animated: true }), 200);
+                            }}
+                            onChangeText={(val) =>
+                              setTempPurposes((prev) => ({ ...prev, purpose_1: val }))
+                            }
+                            placeholder="Write your 1st purpose for mental clarity and wisdom..."
+                            placeholderTextColor="rgba(255, 255, 255, 0.38)"
+                            cursorColor="#EF4444"
+                            selectionColor="rgba(239, 68, 68, 0.4)"
+                          />
+                          <ThemedText style={styles.promptHint}>
+                            Prompt: What standard of wisdom & mental focus elevates your mind?
+                          </ThemedText>
+                        </View>
+                      ) : (
+                        <TouchableOpacity activeOpacity={0.88} onPress={handleStartEdit}>
+                          {purposes.purpose_1.trim() !== '' ? (
+                            <ThemedText style={styles.purposeContentText}>
+                              &quot;{purposes.purpose_1}&quot;
+                            </ThemedText>
+                          ) : (
+                            <View style={styles.emptyPromptBox}>
+                              <Ionicons name="add-circle-outline" size={16} color="#EF4444" />
+                              <ThemedText style={styles.emptyPromptText}>
+                                Tap to write Purpose #1 (Wisdom & Mind)
+                              </ThemedText>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      )}
                     </View>
-                  )}
+                  </LinearGradient>
                 </View>
 
-                <ThemedText style={styles.heroTitle}>
-                  {isEditing
-                    ? 'Writing Your 3 Core Life Purposes'
-                    : hasAnyPurpose
-                    ? 'Your Defined Life Purposes'
-                    : 'Write Your 3 Core Life Purposes'}
-                </ThemedText>
-
-                <ThemedText style={styles.heroSubText}>
-                  Define the 3 pillar purpose statements that lift your wisdom, anchor your soul, and guide your daily decisions.
-                </ThemedText>
-              </LinearGradient>
-            </View>
-
-            {/* ========================================================== */}
-            {/* THE 3 LIFE PURPOSE PILLARS CARDS (VIEW / EDIT INLINE) */}
-            {/* ========================================================== */}
-            <View style={styles.pillarsContainer}>
-
-              {/* PILLAR 1: WISDOM & MIND (RED) */}
-              <View style={styles.pillarCard}>
-                <LinearGradient
-                  colors={['rgba(239, 68, 68, 0.3)', 'rgba(14, 10, 12, 0.95)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.pillarBorderGradient}
-                >
-                  <View style={styles.pillarInner}>
-                    <View style={styles.pillarHeaderRow}>
-                      <View style={styles.pillarIconBox1}>
-                        <Ionicons name="bulb" size={16} color="#EF4444" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <ThemedText style={styles.pillarNumberText}>PILLAR #1</ThemedText>
-                        <ThemedText style={styles.pillarTitle1}>Wisdom of Thought & Mind</ThemedText>
-                      </View>
-                      {isEditing && (
-                        <ThemedText style={styles.charCount}>
-                          {tempPurposes.purpose_1.length}/200
-                        </ThemedText>
-                      )}
-                      <View style={styles.pillarChip1}>
-                        <ThemedText style={styles.pillarChipText1}>MIND</ThemedText>
-                      </View>
-                    </View>
-
-                    {isEditing ? (
-                      <View style={styles.inputGroup}>
-                        <TextInput
-                          style={styles.textInputArea}
-                          multiline
-                          maxLength={200}
-                          value={tempPurposes.purpose_1}
-                          onChangeText={(val) =>
-                            setTempPurposes((prev) => ({ ...prev, purpose_1: val }))
-                          }
-                          placeholder="Write your 1st purpose for mental clarity and wisdom..."
-                          placeholderTextColor="rgba(255, 255, 255, 0.38)"
-                          cursorColor="#EF4444"
-                          selectionColor="rgba(239, 68, 68, 0.4)"
-                        />
-                        <ThemedText style={styles.promptHint}>
-                          Prompt: What standard of wisdom & mental focus elevates your mind?
-                        </ThemedText>
-                      </View>
-                    ) : (
-                      <TouchableOpacity activeOpacity={0.88} onPress={handleStartEdit}>
-                        {purposes.purpose_1.trim() !== '' ? (
-                          <ThemedText style={styles.purposeContentText}>
-                            "{purposes.purpose_1}"
+                {/* PILLAR 2: SOUL & SPIRIT (CYAN) */}
+                <View style={styles.pillarCard}>
+                  <LinearGradient
+                    colors={['rgba(0, 229, 255, 0.25)', 'rgba(10, 14, 16, 0.95)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.pillarBorderGradient}
+                  >
+                    <View style={styles.pillarInner}>
+                      <View style={styles.pillarHeaderRow}>
+                        <View style={styles.pillarIconBox2}>
+                          <Ionicons name="sparkles" size={16} color="#00E5FF" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.pillarNumberText}>PILLAR #2</ThemedText>
+                          <ThemedText style={styles.pillarTitle2}>Spiritual Inner Alignment</ThemedText>
+                        </View>
+                        {isEditing && (
+                          <ThemedText style={styles.charCount}>
+                            {tempPurposes.purpose_2.length}/200
                           </ThemedText>
-                        ) : (
-                          <View style={styles.emptyPromptBox}>
-                            <Ionicons name="add-circle-outline" size={16} color="#EF4444" />
-                            <ThemedText style={styles.emptyPromptText}>
-                              Tap to write Purpose #1 (Wisdom & Mind)
-                            </ThemedText>
-                          </View>
                         )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </LinearGradient>
+                        <View style={styles.pillarChip2}>
+                          <ThemedText style={styles.pillarChipText2}>SOUL</ThemedText>
+                        </View>
+                      </View>
+
+                      {isEditing ? (
+                        <View style={styles.inputGroup}>
+                          <TextInput
+                            style={styles.textInputArea}
+                            multiline
+                            maxLength={200}
+                            value={tempPurposes.purpose_2}
+                            onFocus={() => {
+                              setTimeout(() => scrollViewRef.current?.scrollTo({ y: 220, animated: true }), 200);
+                            }}
+                            onChangeText={(val) =>
+                              setTempPurposes((prev) => ({ ...prev, purpose_2: val }))
+                            }
+                            placeholder="Write your 2nd purpose for spiritual peace and soul..."
+                            placeholderTextColor="rgba(255, 255, 255, 0.38)"
+                            cursorColor="#00E5FF"
+                            selectionColor="rgba(0, 229, 255, 0.4)"
+                          />
+                          <ThemedText style={styles.promptHint}>
+                            Prompt: What spiritual value or inner peace anchors your soul?
+                          </ThemedText>
+                        </View>
+                      ) : (
+                        <TouchableOpacity activeOpacity={0.88} onPress={handleStartEdit}>
+                          {purposes.purpose_2.trim() !== '' ? (
+                            <ThemedText style={styles.purposeContentText}>
+                              &quot;{purposes.purpose_2}&quot;
+                            </ThemedText>
+                          ) : (
+                            <View style={styles.emptyPromptBox}>
+                              <Ionicons name="add-circle-outline" size={16} color="#00E5FF" />
+                              <ThemedText style={styles.emptyPromptText}>
+                                Tap to write Purpose #2 (Soul & Spirit)
+                              </ThemedText>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </LinearGradient>
+                </View>
+
+                {/* PILLAR 3: NOBLE ACTION & LEGACY (MAGENTA) */}
+                <View style={styles.pillarCard}>
+                  <LinearGradient
+                    colors={['rgba(232, 121, 249, 0.25)', 'rgba(14, 10, 16, 0.95)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.pillarBorderGradient}
+                  >
+                    <View style={styles.pillarInner}>
+                      <View style={styles.pillarHeaderRow}>
+                        <View style={styles.pillarIconBox3}>
+                          <Ionicons name="heart" size={16} color="#E879F9" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={styles.pillarNumberText}>PILLAR #3</ThemedText>
+                          <ThemedText style={styles.pillarTitle3}>Noble Action & Legacy</ThemedText>
+                        </View>
+                        {isEditing && (
+                          <ThemedText style={styles.charCount}>
+                            {tempPurposes.purpose_3.length}/200
+                          </ThemedText>
+                        )}
+                        <View style={styles.pillarChip3}>
+                          <ThemedText style={styles.pillarChipText3}>LEGACY</ThemedText>
+                        </View>
+                      </View>
+
+                      {isEditing ? (
+                        <View style={styles.inputGroup}>
+                          <TextInput
+                            style={styles.textInputArea}
+                            multiline
+                            maxLength={200}
+                            value={tempPurposes.purpose_3}
+                            onFocus={() => {
+                              setTimeout(() => scrollViewRef.current?.scrollTo({ y: 380, animated: true }), 200);
+                            }}
+                            onChangeText={(val) =>
+                              setTempPurposes((prev) => ({ ...prev, purpose_3: val }))
+                            }
+                            placeholder="Write your 3rd purpose for action, family & legacy..."
+                            placeholderTextColor="rgba(255, 255, 255, 0.38)"
+                            cursorColor="#E879F9"
+                            selectionColor="rgba(232, 121, 249, 0.4)"
+                          />
+                          <ThemedText style={styles.promptHint}>
+                            Prompt: How will your daily actions uplift family & community?
+                          </ThemedText>
+                        </View>
+                      ) : (
+                        <TouchableOpacity activeOpacity={0.88} onPress={handleStartEdit}>
+                          {purposes.purpose_3.trim() !== '' ? (
+                            <ThemedText style={styles.purposeContentText}>
+                              &quot;{purposes.purpose_3}&quot;
+                            </ThemedText>
+                          ) : (
+                            <View style={styles.emptyPromptBox}>
+                              <Ionicons name="add-circle-outline" size={16} color="#E879F9" />
+                              <ThemedText style={styles.emptyPromptText}>
+                                Tap to write Purpose #3 (Action & Legacy)
+                              </ThemedText>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </LinearGradient>
+                </View>
+
               </View>
 
-              {/* PILLAR 2: SOUL & SPIRIT (CYAN) */}
-              <View style={styles.pillarCard}>
-                <LinearGradient
-                  colors={['rgba(0, 229, 255, 0.25)', 'rgba(10, 14, 16, 0.95)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.pillarBorderGradient}
-                >
-                  <View style={styles.pillarInner}>
-                    <View style={styles.pillarHeaderRow}>
-                      <View style={styles.pillarIconBox2}>
-                        <Ionicons name="sparkles" size={16} color="#00E5FF" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <ThemedText style={styles.pillarNumberText}>PILLAR #2</ThemedText>
-                        <ThemedText style={styles.pillarTitle2}>Spiritual Inner Alignment</ThemedText>
-                      </View>
-                      {isEditing && (
-                        <ThemedText style={styles.charCount}>
-                          {tempPurposes.purpose_2.length}/200
-                        </ThemedText>
-                      )}
-                      <View style={styles.pillarChip2}>
-                        <ThemedText style={styles.pillarChipText2}>SOUL</ThemedText>
-                      </View>
-                    </View>
-
-                    {isEditing ? (
-                      <View style={styles.inputGroup}>
-                        <TextInput
-                          style={styles.textInputArea}
-                          multiline
-                          maxLength={200}
-                          value={tempPurposes.purpose_2}
-                          onChangeText={(val) =>
-                            setTempPurposes((prev) => ({ ...prev, purpose_2: val }))
-                          }
-                          placeholder="Write your 2nd purpose for spiritual peace and soul..."
-                          placeholderTextColor="rgba(255, 255, 255, 0.38)"
-                          cursorColor="#00E5FF"
-                          selectionColor="rgba(0, 229, 255, 0.4)"
-                        />
-                        <ThemedText style={styles.promptHint}>
-                          Prompt: What spiritual value or inner peace anchors your soul?
-                        </ThemedText>
-                      </View>
-                    ) : (
-                      <TouchableOpacity activeOpacity={0.88} onPress={handleStartEdit}>
-                        {purposes.purpose_2.trim() !== '' ? (
-                          <ThemedText style={styles.purposeContentText}>
-                            "{purposes.purpose_2}"
-                          </ThemedText>
-                        ) : (
-                          <View style={styles.emptyPromptBox}>
-                            <Ionicons name="add-circle-outline" size={16} color="#00E5FF" />
-                            <ThemedText style={styles.emptyPromptText}>
-                              Tap to write Purpose #2 (Soul & Spirit)
-                            </ThemedText>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </LinearGradient>
-              </View>
-
-              {/* PILLAR 3: NOBLE ACTION & LEGACY (MAGENTA) */}
-              <View style={styles.pillarCard}>
-                <LinearGradient
-                  colors={['rgba(232, 121, 249, 0.25)', 'rgba(14, 10, 16, 0.95)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.pillarBorderGradient}
-                >
-                  <View style={styles.pillarInner}>
-                    <View style={styles.pillarHeaderRow}>
-                      <View style={styles.pillarIconBox3}>
-                        <Ionicons name="heart" size={16} color="#E879F9" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <ThemedText style={styles.pillarNumberText}>PILLAR #3</ThemedText>
-                        <ThemedText style={styles.pillarTitle3}>Noble Action & Legacy</ThemedText>
-                      </View>
-                      {isEditing && (
-                        <ThemedText style={styles.charCount}>
-                          {tempPurposes.purpose_3.length}/200
-                        </ThemedText>
-                      )}
-                      <View style={styles.pillarChip3}>
-                        <ThemedText style={styles.pillarChipText3}>LEGACY</ThemedText>
-                      </View>
-                    </View>
-
-                    {isEditing ? (
-                      <View style={styles.inputGroup}>
-                        <TextInput
-                          style={styles.textInputArea}
-                          multiline
-                          maxLength={200}
-                          value={tempPurposes.purpose_3}
-                          onChangeText={(val) =>
-                            setTempPurposes((prev) => ({ ...prev, purpose_3: val }))
-                          }
-                          placeholder="Write your 3rd purpose for action, family & legacy..."
-                          placeholderTextColor="rgba(255, 255, 255, 0.38)"
-                          cursorColor="#E879F9"
-                          selectionColor="rgba(232, 121, 249, 0.4)"
-                        />
-                        <ThemedText style={styles.promptHint}>
-                          Prompt: How will your daily actions uplift family & community?
-                        </ThemedText>
-                      </View>
-                    ) : (
-                      <TouchableOpacity activeOpacity={0.88} onPress={handleStartEdit}>
-                        {purposes.purpose_3.trim() !== '' ? (
-                          <ThemedText style={styles.purposeContentText}>
-                            "{purposes.purpose_3}"
-                          </ThemedText>
-                        ) : (
-                          <View style={styles.emptyPromptBox}>
-                            <Ionicons name="add-circle-outline" size={16} color="#E879F9" />
-                            <ThemedText style={styles.emptyPromptText}>
-                              Tap to write Purpose #3 (Action & Legacy)
-                            </ThemedText>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </LinearGradient>
-              </View>
-
-            </View>
-
-            {/* ACTION BUTTONS (SAVE / CANCEL / EDIT) */}
-            {isEditing ? (
-              <View style={styles.actionRowContainer}>
-                <TouchableOpacity
-                  style={styles.cancelBtnInline}
-                  onPress={handleCancelEdit}
-                >
-                  <ThemedText style={styles.cancelBtnInlineText}>Cancel</ThemedText>
-                </TouchableOpacity>
-
+              {/* Normal Edit Button when NOT editing */}
+              {!isEditing && (
                 <TouchableOpacity
                   activeOpacity={0.88}
-                  style={styles.saveActionBtn}
-                  disabled={isSaving}
-                  onPress={handleSavePurposes}
+                  style={styles.editActionBtn}
+                  onPress={handleStartEdit}
                 >
                   <LinearGradient
                     colors={['#EF4444', '#DC2626', '#B91C1C']}
@@ -471,40 +483,64 @@ export default function PurposeSingleScreen() {
                     end={{ x: 1, y: 0 }}
                     style={styles.editActionGradient}
                   >
-                    {isSaving ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Ionicons name="checkmark-circle-outline" size={17} color="#FFFFFF" />
-                        <ThemedText style={styles.editActionBtnText}>
-                          Save 3 Life Purposes
-                        </ThemedText>
-                      </>
-                    )}
+                    <Ionicons name="create-outline" size={16} color="#FFFFFF" />
+                    <ThemedText style={styles.editActionBtnText}>
+                      {hasAnyPurpose ? 'Edit My 3 Life Purposes' : 'Write My 3 Life Purposes'}
+                    </ThemedText>
                   </LinearGradient>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.88}
-                style={styles.editActionBtn}
-                onPress={handleStartEdit}
-              >
-                <LinearGradient
-                  colors={['#EF4444', '#DC2626', '#B91C1C']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.editActionGradient}
-                >
-                  <Ionicons name="create-outline" size={16} color="#FFFFFF" />
-                  <ThemedText style={styles.editActionBtnText}>
-                    {hasAnyPurpose ? 'Edit My 3 Life Purposes' : 'Write My 3 Life Purposes'}
-                  </ThemedText>
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
+              )}
             </ScrollView>
-          </PageEntrance>
+
+            {/* Bottom Action Bar Docked Directly Above Gboard */}
+            {isEditing && (
+              <View
+                style={[
+                  styles.floatingBottomBar,
+                  {
+                    paddingBottom: keyboardHeight > 0
+                      ? 8
+                      : Math.max(8, insets.bottom),
+                  },
+                ]}
+              >
+                <View style={styles.floatingBarInner}>
+                  <TouchableOpacity
+                    style={styles.cancelBtnInline}
+                    activeOpacity={0.7}
+                    onPress={handleCancelEdit}
+                  >
+                    <ThemedText style={styles.cancelBtnInlineText}>Cancel</ThemedText>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.88}
+                    style={styles.saveActionBtn}
+                    disabled={isSaving}
+                    onPress={handleSavePurposes}
+                  >
+                    <LinearGradient
+                      colors={['#EF4444', '#DC2626', '#B91C1C']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.editActionGradient}
+                    >
+                      {isSaving ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle-outline" size={17} color="#FFFFFF" />
+                          <ThemedText style={styles.editActionBtnText}>
+                            Save 3 Life Purposes
+                          </ThemedText>
+                        </>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
@@ -514,6 +550,7 @@ export default function PurposeSingleScreen() {
 const styles = StyleSheet.create({
   gradientBg: { flex: 1 },
   safeArea: { flex: 1 },
+  mainContentWrapper: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -547,33 +584,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: -0.2,
-  },
-  editBtnHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  editBtnHeaderText: {
-    fontFamily,
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#EF4444',
-  },
-  cancelBtnHeader: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  cancelBtnHeaderText: {
-    fontFamily,
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#9CA3AF',
   },
   scrollContent: {
     paddingHorizontal: 12,
@@ -704,7 +714,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 6,
-    backgroundColor: 'rgba(232, 121, 249, 0.15)',
+    backgroundColor: 'rgba(232, 121, 249, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -712,254 +722,173 @@ const styles = StyleSheet.create({
     fontFamily,
     fontSize: 8.5,
     fontWeight: '700',
-    color: '#71717A',
+    color: '#9CA3AF',
     letterSpacing: 0.8,
   },
   pillarTitle1: {
     fontFamily,
     fontSize: 13,
     fontWeight: '700',
-    color: '#EF4444',
+    color: '#FFFFFF',
   },
   pillarTitle2: {
     fontFamily,
     fontSize: 13,
     fontWeight: '700',
-    color: '#00E5FF',
+    color: '#FFFFFF',
   },
   pillarTitle3: {
     fontFamily,
     fontSize: 13,
     fontWeight: '700',
-    color: '#E879F9',
+    color: '#FFFFFF',
+  },
+  charCount: {
+    fontFamily,
+    fontSize: 10,
+    color: '#6B7280',
+    marginRight: 4,
   },
   pillarChip1: {
-    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   pillarChipText1: {
     fontFamily,
-    fontSize: 8.5,
+    fontSize: 9,
     fontWeight: '700',
     color: '#EF4444',
   },
   pillarChip2: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.28)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   pillarChipText2: {
     fontFamily,
-    fontSize: 8.5,
+    fontSize: 9,
     fontWeight: '700',
     color: '#00E5FF',
   },
   pillarChip3: {
     backgroundColor: 'rgba(232, 121, 249, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(232, 121, 249, 0.3)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   pillarChipText3: {
     fontFamily,
-    fontSize: 8.5,
+    fontSize: 9,
     fontWeight: '700',
     color: '#E879F9',
+  },
+  inputGroup: {
+    gap: 4,
+  },
+  textInputArea: {
+    fontFamily,
+    fontSize: 13,
+    color: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 65,
+    textAlignVertical: 'top',
+    lineHeight: 18,
+  },
+  promptHint: {
+    fontFamily,
+    fontSize: 10,
+    color: '#6B7280',
+    fontStyle: 'italic',
   },
   purposeContentText: {
     fontFamily,
     fontSize: 12.5,
-    fontWeight: '600',
-    color: '#F4F4F5',
+    color: '#E5E7EB',
+    lineHeight: 18,
     fontStyle: 'italic',
-    lineHeight: 17,
   },
   emptyPromptBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   emptyPromptText: {
     fontFamily,
-    fontSize: 11.5,
-    color: '#71717A',
-    fontStyle: 'italic',
-  },
-
-  /* INPUT AREA STYLES FOR INLINE EDITING */
-  inputGroup: {
-    gap: 4,
-    marginTop: 2,
-  },
-  textInputArea: {
-    fontFamily,
-    backgroundColor: '#0F0B0D',
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 21,
-    minHeight: 70,
-    maxHeight: 140,
-    textAlignVertical: 'top',
-  },
-  promptHint: {
-    fontFamily,
-    fontSize: 9.5,
-    color: '#71717A',
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  charCount: {
-    fontFamily,
-    fontSize: 9.5,
-    color: '#71717A',
-  },
-
-  /* ACTION BUTTONS */
-  actionRowContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 2,
-  },
-  cancelBtnInline: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelBtnInlineText: {
-    fontFamily,
-    color: '#9CA3AF',
-    fontSize: 12.5,
-    fontWeight: '600',
-  },
-  saveActionBtn: {
-    flex: 1,
-    borderRadius: 8,
-    overflow: 'hidden',
+    fontSize: 12,
+    color: '#6B7280',
   },
   editActionBtn: {
-    borderRadius: 8,
+    borderRadius: 10,
     overflow: 'hidden',
-    marginTop: 2,
+    marginTop: 4,
   },
   editActionGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
     gap: 6,
-    paddingVertical: 10,
-    borderRadius: 8,
   },
   editActionBtnText: {
     fontFamily,
-    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
-  },
-
-  /* AI SYNC EXPLAINER */
-  aiSyncCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(18, 14, 16, 0.8)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-    padding: 10,
-  },
-  aiSyncTitle: {
-    fontFamily,
-    fontSize: 12,
-    fontWeight: '700',
     color: '#FFFFFF',
-  },
-  aiSyncSub: {
-    fontFamily,
-    fontSize: 10.5,
-    color: '#71717A',
-    marginTop: 1,
+    letterSpacing: 0.2,
   },
 
-  /* MODAL */
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.88)',
-    justifyContent: 'flex-end',
-  },
-  drawerHandle: {
-    width: 32,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignSelf: 'center',
-  },
-  explainerModalContent: {
+  /* DOCKED ACTION BAR MATCHING COMMUNITY */
+  floatingBottomBar: {
     backgroundColor: '#0A0608',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(239, 68, 68, 0.25)',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+  },
+  floatingBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
   },
-  modalHeader: {
-    flexDirection: 'row',
+  cancelBtnInline: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
-    gap: 8,
-  },
-  modalTitleText: {
-    fontFamily,
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  explainerBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: 'rgba(24, 20, 22, 0.6)',
-    borderRadius: 8,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-    padding: 10,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  explainerBoxTitle: {
+  cancelBtnInlineText: {
     fontFamily,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#EF4444',
-  },
-  explainerBoxDesc: {
-    fontFamily,
-    fontSize: 10.5,
-    color: '#9CA3AF',
-    lineHeight: 14,
-    marginTop: 1,
-  },
-  explainerCloseBtn: {
-    backgroundColor: '#EF4444',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  explainerCloseText: {
-    fontFamily,
-    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  saveActionBtn: {
+    flex: 2,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
 });

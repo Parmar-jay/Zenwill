@@ -96,31 +96,88 @@ async def get_world_chat_messages(limit: int = 50):
         messages = await CommunityMessage.find_all().sort("-created_at").limit(limit).to_list()
         messages.sort(key=lambda m: m.created_at)
 
-        # Batch lookup users in a single query for maximum speed
-        user_ids = [m.user_id for m in messages if m.user_id]
+        # Comprehensive batch lookup: map users by ObjectId, id string, email, and name
+        raw_ids = []
+        user_ids = []
+        emails = []
+        names = []
+
+        from bson import ObjectId
+
+        for m in messages:
+            uid = (m.user_id or "").strip()
+            if uid and uid not in ["user_guest", "user_current", "operative"]:
+                user_ids.append(uid)
+                if "@" in uid:
+                    emails.append(uid.lower())
+                else:
+                    try:
+                        raw_ids.append(ObjectId(uid))
+                    except Exception:
+                        pass
+            auth_name = (m.author_name or "").strip()
+            if auth_name and auth_name not in ["Operative", "You"]:
+                names.append(auth_name)
+
         users_map = {}
+        query_clauses = []
+        if raw_ids:
+            query_clauses.append({"_id": {"$in": raw_ids}})
         if user_ids:
+            query_clauses.append({"id": {"$in": user_ids}})
+        if emails:
+            query_clauses.append({"email": {"$in": emails}})
+        if names:
+            query_clauses.append({"name": {"$in": names}})
+
+        if query_clauses:
             try:
-                db_users = await User.find({"$or": [{"id": {"$in": user_ids}}, {"email": {"$in": user_ids}}]}).to_list()
+                db_users = await User.find({"$or": query_clauses}).to_list()
                 for u in db_users:
-                    users_map[str(u.id)] = u
+                    u_id_str = str(u.id)
+                    users_map[u_id_str] = u
+                    users_map[u_id_str.lower()] = u
+                    if hasattr(u, "_id") and u._id:
+                        users_map[str(u._id)] = u
+                        users_map[str(u._id).lower()] = u
                     if u.email:
-                        users_map[u.email] = u
-            except Exception:
-                pass
+                        users_map[u.email.lower()] = u
+                    if u.name:
+                        users_map[u.name.strip()] = u
+                        users_map[u.name.strip().lower()] = u
+            except Exception as err:
+                print(f"[ZenWill Community] Live User DB batch lookup notice: {err}")
 
         result = []
         for m in messages:
+            # Default to message payload fallback
             streak = m.author_streak or 0
-            name = m.author_name
-            
-            db_u = users_map.get(m.user_id)
-            if db_u:
-                if db_u.streak is not None:
-                    streak = db_u.streak
-                if db_u.name and db_u.name.strip() and not is_invalid_user_identifier(db_u.name):
-                    name = db_u.name.split(" ")[0]
+            name = m.author_name or "Operative"
 
+            # Check live MongoDB user document by ID, email, or author name
+            db_u = (
+                users_map.get(m.user_id)
+                or users_map.get((m.user_id or "").lower())
+                or users_map.get(m.author_name)
+                or users_map.get((m.author_name or "").strip())
+                or users_map.get((m.author_name or "").strip().lower())
+            )
+
+            if db_u:
+                # Always prioritize the live up-to-date streak directly from the User database
+                if db_u.streak is not None and db_u.streak >= 0:
+                    streak = db_u.streak
+                if db_u.name and db_u.name.strip():
+                    name = db_u.name.strip()
+                elif db_u.email:
+                    name = db_u.email.split("@")[0].strip()
+
+            if "@" in name:
+                name = name.split("@")[0].strip()
+            if not name:
+                name = "Operative"
+
+            # Compute current live rank tier and badge from the updated database streak
             rank_tier, rank_badge = get_rank_info_for_days(streak)
 
             result.append(
@@ -566,35 +623,46 @@ async def delete_dm_conversation(
         raise HTTPException(status_code=401, detail="Authentication required to delete direct messages.")
 
     user_id_str = str(current_user.id)
-    user_email_str = current_user.email or ""
-    my_ids = [user_id_str]
+    user_email_str = (current_user.email or "").strip().lower()
+    user_name_str = (current_user.name or "").strip()
+    my_ids = [user_id_str, "user_current"]
     if user_email_str:
         my_ids.append(user_email_str)
+    if user_name_str:
+        my_ids.append(user_name_str)
 
-    target_id = target_user_identifier
-    target_ids = [target_id]
+    target_id = target_user_identifier.strip()
+    target_ids = [target_id, target_id.lower()]
 
     try:
+        from bson import ObjectId
+        t_user = None
         if "@" in target_id:
-            t_user = await User.find_one({"email": target_id})
-            if t_user:
-                target_ids.append(str(t_user.id))
+            t_user = await User.find_one({"email": {"$regex": f"^{target_id}$", "$options": "i"}})
         else:
             try:
-                from bson import ObjectId
                 t_user = await User.find_one({"_id": ObjectId(target_id)})
-                if t_user and t_user.email:
-                    target_ids.append(t_user.email)
             except Exception:
                 pass
-    except Exception:
-        pass
+            if not t_user:
+                t_user = await User.find_one({"$or": [{"name": target_id}, {"id": target_id}, {"email": target_id}]})
+
+        if t_user:
+            target_ids.append(str(t_user.id))
+            if t_user.email:
+                target_ids.append(t_user.email.lower())
+            if t_user.name:
+                target_ids.append(t_user.name)
+    except Exception as e:
+        print(f"[ZenWill DM API Warning] Target lookup notice: {e}")
 
     try:
         delete_result = await DirectMessage.find({
             "$or": [
                 {"sender_id": {"$in": my_ids}, "receiver_id": {"$in": target_ids}},
                 {"sender_id": {"$in": target_ids}, "receiver_id": {"$in": my_ids}},
+                {"sender_name": {"$in": my_ids}, "receiver_name": {"$in": target_ids}},
+                {"sender_name": {"$in": target_ids}, "receiver_name": {"$in": my_ids}},
             ]
         }).delete()
 
@@ -609,41 +677,61 @@ async def delete_dm_conversation(
 
 
 @router.get("/users/search")
-async def search_operatives(q: str = Query(..., min_length=1)):
-    """Search registered users / operatives by username or display name."""
+async def search_operatives(
+    q: str = Query(..., min_length=1),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    """Search registered users directly from the User collection by name or email."""
     try:
-        users = await User.find(
-            {"name": {"$regex": q, "$options": "i"}}
-        ).limit(10).to_list()
+        query_str = q.strip()
+        if not query_str:
+            return []
 
-        results = [
+        # Query real users from database matching name or email prefix
+        db_users = await User.find(
             {
-                "id": str(u.id),
-                "name": u.name or "Operative",
-                "username": (u.name or "operative").lower().replace(" ", "_"),
-                "badge": "🛡️",
+                "$and": [
+                    {"is_active": True},
+                    {"is_scheduled_for_deletion": {"$ne": True}},
+                    {
+                        "$or": [
+                            {"name": {"$regex": query_str, "$options": "i"}},
+                            {"email": {"$regex": query_str, "$options": "i"}},
+                        ]
+                    },
+                ]
             }
-            for u in users
-        ]
+        ).limit(20).to_list()
 
-        # Also search CommunityMessage senders if user list is small
-        if len(results) < 5:
-            c_msgs = await CommunityMessage.find(
-                {"author_name": {"$regex": q, "$options": "i"}}
-            ).limit(10).to_list()
+        current_user_id = str(current_user.id) if current_user else None
+        current_user_email = (current_user.email or "").lower() if current_user else None
 
-            existing_names = {r["name"] for r in results}
-            for m in c_msgs:
-                if m.author_name and m.author_name not in existing_names:
-                    existing_names.add(m.author_name)
-                    results.append({
-                        "id": m.user_id or f"user_{m.author_name.lower()}",
-                        "name": m.author_name,
-                        "username": m.author_name.lower().replace(" ", "_"),
-                        "badge": m.author_badge or "⚔️",
-                    })
+        results = []
+        for u in db_users:
+            u_id = str(u.id)
+            u_email = (u.email or "").lower()
+
+            # Exclude current user from their own search
+            if current_user_id and u_id == current_user_id:
+                continue
+            if current_user_email and u_email == current_user_email:
+                continue
+
+            streak_days = u.streak or 0
+            rank_tier, badge = get_rank_info_for_days(streak_days)
+            display_name = u.name or (u_email.split("@")[0] if u_email else "Operative")
+            username = (u.name or (u_email.split("@")[0] if u_email else "operative")).lower().replace(" ", "_")
+
+            results.append({
+                "id": u_id,
+                "name": display_name,
+                "username": username,
+                "badge": badge,
+                "rank": rank_tier,
+                "streak": streak_days,
+            })
 
         return results
     except Exception as e:
-        print(f"[ZenWill DM Search Warning] search_operatives error ({e}).")
+        print(f"[ZenWill User Search Error] search_operatives error ({e}).")
         return []

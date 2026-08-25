@@ -130,56 +130,56 @@ export default function JournalIndexScreen() {
       return;
     }
 
-    try {
-      setIsSubmitting(true);
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    const tempId = `temp-journal-${Date.now()}`;
+    const nowIso = new Date().toISOString();
+    const newEntry: JournalEntry = {
+      id: tempId,
+      user_id: 'user_me',
+      author_name: 'Operative',
+      title: newTitle.trim() || 'Reflection',
+      content: trimmedContent,
+      mood_tag: selectedMood,
+      emotional_tags: [selectedMood],
+      is_private: !isPublic,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
 
-      const payload = {
-        title: newTitle.trim() || undefined,
-        content: trimmedContent,
-        mood_tag: selectedMood,
-        emotional_tags: [selectedMood],
-        is_private: !isPublic,
-      };
-
-      const created = await journalApi.createEntry(payload);
-
-      if (created && created.id) {
-        // Prepend to myEntries
-        setMyEntries((prev) => [created, ...prev.filter((e) => e.id !== created.id)]);
-
-        // Prepend to communityEntries if public
-        if (isPublic) {
-          setCommunityEntries((prev) => [created, ...prev.filter((e) => e.id !== created.id).slice(0, 4)]);
-        }
-
-        // Complete mission task and sync habit store
-        useDailyMissionStore.getState().completeTask('journal');
-        useHabitStore.getState().syncFromDatabase().catch(() => {});
-
-        // Reset form & close modal
-        setNewTitle('');
-        setNewContent('');
-        setSelectedMood('Reflective');
-        setIsPublic(true);
-        setIsWriteModalOpen(false);
-
-        triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-      } else {
-
-        throw new Error('Invalid response from server');
-      }
-    } catch (error: any) {
-      console.error('Error creating journal entry:', error);
-      const errMsg = error?.message || 'Failed to save reflection to database. Please check your connection.';
-      if (Platform.OS === 'web') {
-        alert(errMsg);
-      } else {
-        Alert.alert('Save Error', errMsg);
-      }
-    } finally {
-      setIsSubmitting(false);
+    // 1. Optimistically update local entries & complete mission immediately
+    setMyEntries((prev) => [newEntry, ...prev]);
+    if (isPublic) {
+      setCommunityEntries((prev) => [newEntry, ...prev.slice(0, 4)]);
     }
+    useDailyMissionStore.getState().completeTask('journal');
+
+    // 2. Reset form & close modal instantly (zero delay)
+    setNewTitle('');
+    setNewContent('');
+    setSelectedMood('Reflective');
+    setIsPublic(true);
+    setIsWriteModalOpen(false);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+
+    // 3. Fire backend API in background
+    const payload = {
+      title: newTitle.trim() || undefined,
+      content: trimmedContent,
+      mood_tag: selectedMood,
+      emotional_tags: [selectedMood],
+      is_private: !isPublic,
+    };
+
+    journalApi.createEntry(payload)
+      .then((created) => {
+        if (created && created.id) {
+          setMyEntries((prev) => prev.map((e) => (e.id === tempId ? created : e)));
+          if (isPublic) {
+            setCommunityEntries((prev) => prev.map((e) => (e.id === tempId ? created : e)));
+          }
+          useHabitStore.getState().syncFromDatabase().catch(() => {});
+        }
+      })
+      .catch((err) => console.log('Journal background sync warning:', err));
   };
 
   // Filter personal entries

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -16,6 +16,7 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -26,7 +27,16 @@ import * as Haptics from 'expo-haptics';
 import { useHabitStore } from '@/store/habit-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
 import { useAuthStore } from '@/store/auth-store';
-import { communityApi, WorldChatMessage, ConversationSummaryItem } from '@/services/community-api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  communityApi,
+  WorldChatMessage,
+  ConversationSummaryItem,
+  UserSearchResult,
+  getCachedMessages,
+  getCachedDmConversations,
+  getDeletedConvIds,
+} from '@/services/community-api';
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -72,6 +82,83 @@ export const getGamifiedRank = (days: number): GamifiedRank => {
   return found || GAMIFIED_RANKS[GAMIFIED_RANKS.length - 1];
 };
 
+const getCleanUserName = (name: string) => {
+  if (!name || !name.trim()) {
+    return 'Operative';
+  }
+  const clean = name.trim();
+  if (clean.includes('@')) {
+    return clean.split('@')[0];
+  }
+  return clean;
+};
+
+interface ChatMessageCardProps {
+  msg: WorldChatMessage;
+  isUserMsg: boolean;
+  userStreak: number;
+  onSelectUserForDm: (msg: WorldChatMessage) => void;
+  onLayout: (id: string, y: number) => void;
+}
+
+const ChatMessageCard = React.memo<ChatMessageCardProps>(({
+  msg,
+  isUserMsg,
+  userStreak,
+  onSelectUserForDm,
+  onLayout,
+}) => {
+  const streakDays = isUserMsg ? userStreak : (msg.author_streak ?? 0);
+  const rankDetails = useMemo(() => getGamifiedRank(streakDays), [streakDays]);
+
+  let medalIcon = rankDetails.badge;
+  if (msg.author_badge && msg.author_badge.trim() !== '' && msg.author_badge !== '🛡️') {
+    medalIcon = msg.author_badge;
+  }
+
+  const displayName = isUserMsg ? 'You' : getCleanUserName(msg.author_name);
+
+  return (
+    <View
+      onLayout={(e) => onLayout(msg.id, e.nativeEvent.layout.y)}
+      style={[styles.chatBubbleRow, isUserMsg ? styles.chatBubbleRowUser : styles.chatBubbleRowOther]}
+    >
+      <TouchableOpacity
+        activeOpacity={0.88}
+        onPress={() => {
+          if (!isUserMsg) {
+            triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+            onSelectUserForDm(msg);
+          }
+        }}
+        style={[styles.chatBubbleCard, isUserMsg ? styles.userBubbleCard : styles.otherBubbleCard]}
+      >
+        <View style={styles.chatAuthorHeader}>
+          <ThemedText style={[styles.chatAuthorName, isUserMsg && { color: '#00E5FF' }]} numberOfLines={1}>
+            {displayName}
+          </ThemedText>
+
+          <View style={[styles.streakMedalPill, { backgroundColor: `${rankDetails.color}1E`, borderColor: `${rankDetails.color}50` }]}>
+            <Text style={[styles.rankBadgeText, { color: rankDetails.color }]}>{msg.author_rank || rankDetails.name}</Text>
+            <Text style={styles.dotSeparator}>•</Text>
+            <Text style={styles.streakFlameText}>🔥 {streakDays}d</Text>
+            <Text style={styles.dotSeparator}>•</Text>
+            <Text style={styles.medalIconText}>{medalIcon}</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.chatMessageText, isUserMsg && styles.userMessageText]} selectable={true}>
+          {msg.content}
+        </Text>
+
+        <View style={styles.msgFooterRow}>
+          <Text style={styles.msgTimeText}>{msg.created_at || ''}</Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
 export default function CommunityWorldChatScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -96,10 +183,9 @@ export default function CommunityWorldChatScreen() {
   // Tab View Mode: 'world' or 'dms'
   const [activeTab, setActiveTab] = useState<'world' | 'dms'>('world');
 
-  // Messages State fetched from Database
-  const [messages, setMessages] = useState<WorldChatMessage[]>([]);
+  // Messages State hydrated instantly from cache (zero reload flicker)
+  const [messages, setMessages] = useState<WorldChatMessage[]>(() => getCachedMessages());
   const [inputText, setInputText] = useState<string>('');
-  const [inputHeight, setInputHeight] = useState<number>(40);
   const [isSending, setIsSending] = useState<boolean>(false);
 
   const myUserIds = useMemo(() => {
@@ -143,50 +229,72 @@ export default function CommunityWorldChatScreen() {
     }
   };
 
-  const isInvalidName = (name: string) => {
-    if (!name || !name.trim()) return true;
-    const v = name.trim();
-    if (v.startsWith('user_') || v.startsWith('usr_') || v.startsWith('guest_') || v.toLowerCase() === 'operative') {
-      return true;
-    }
-    return false;
-  };
-
-  const getCleanUserName = (name: string) => {
-    if (isInvalidName(name)) {
-      return 'Former Member';
-    }
-    if (name.includes('@')) {
-      return name.split('@')[0];
-    }
-    return name.split(' ')[0];
-  };
-
-  // Helper for dynamic input height calculation (ensures 100% clean collapse on backspace)
-  const getDynamicInputHeight = (text: string, measuredHeight?: number) => {
-    if (!text || text.trim() === '') return 40;
-    const numLines = text.split('\n').length;
-    if (numLines === 1 && text.length < 45) {
-      return 40;
-    }
-    if (measuredHeight && measuredHeight > 0 && numLines > 1) {
-      return Math.min(110, Math.max(40, measuredHeight));
-    }
-    const estimatedLines = Math.max(numLines, Math.ceil(text.length / 45));
-    if (estimatedLines <= 1) return 40;
-    return Math.min(110, Math.max(40, 20 + estimatedLines * 18));
-  };
-
   // One-Click DM Action Modal state
   const [selectedUserForDm, setSelectedUserForDm] = useState<WorldChatMessage | null>(null);
+
+  const handleSelectUserForDm = useCallback((msg: WorldChatMessage) => {
+    setSelectedUserForDm(msg);
+  }, []);
+
+  const handleRecordLayout = useCallback((id: string, y: number) => {
+    messageLayoutsRef.current[id] = y;
+  }, []);
 
   // Delete DM Confirmation Modal state
   const [deleteModalConv, setDeleteModalConv] = useState<ConversationSummaryItem | null>(null);
 
   // DM Conversations & Username Search State
-  const [dmConversations, setDmConversations] = useState<ConversationSummaryItem[]>([]);
+  const [dmConversations, setDmConversations] = useState<ConversationSummaryItem[]>(() => getCachedDmConversations());
   const [searchUsername, setSearchUsername] = useState<string>('');
-  const [searchResults, setSearchResults] = useState<Array<{ id: string; name: string; username: string; badge: string }>>([]);
+  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState<boolean>(false);
+  const searchTimeoutRef = useRef<any>(null);
+  const deletedConvIdsRef = useRef<Set<string>>(getDeletedConvIds());
+
+  // Last Seen Message Position Tracking State
+  const LAST_SEEN_STORAGE_KEY = '@zenwill_last_seen_world_msg_id_v2';
+  const [lastSeenMsgId, setLastSeenMsgId] = useState<string | null>(null);
+  const [unreadCountBelow, setUnreadCountBelow] = useState<number>(0);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
+  const isInitialScrollDoneRef = useRef<boolean>(false);
+  const messageLayoutsRef = useRef<{ [id: string]: number }>({});
+
+  useEffect(() => {
+    const initLastSeen = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(LAST_SEEN_STORAGE_KEY);
+        if (saved) {
+          setLastSeenMsgId(saved);
+        }
+      } catch (e) {}
+    };
+    initLastSeen();
+  }, []);
+
+  const handleSearchUsername = (text: string) => {
+    setSearchUsername(text);
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    const query = text.trim();
+    if (!query) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const results = await communityApi.searchOperatives(query);
+        setSearchResults(results || []);
+      } catch (err) {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 200);
+  };
 
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -194,6 +302,7 @@ export default function CommunityWorldChatScreen() {
   // 1-Click Direct Delete Conversation Handler
   const handleDeleteDmDirect = async (targetUserId: string) => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    deletedConvIdsRef.current.add(targetUserId);
     setDmConversations((prev) => prev.filter((c) => c.other_user_id !== targetUserId));
     try {
       await communityApi.deleteDmConversation(targetUserId);
@@ -251,7 +360,42 @@ export default function CommunityWorldChatScreen() {
           });
           return [...fetched, ...unconfirmedPrev];
         });
-        if (shouldScroll && activeTab === 'world') {
+
+        // First-time position restoration: scroll to where user last saw
+        if (!isInitialScrollDoneRef.current && fetched.length > 0 && activeTab === 'world') {
+          isInitialScrollDoneRef.current = true;
+          const savedLastSeen = await AsyncStorage.getItem(LAST_SEEN_STORAGE_KEY);
+          if (savedLastSeen) {
+            const lastSeenIndex = fetched.findIndex((m) => m.id === savedLastSeen);
+            if (lastSeenIndex !== -1 && lastSeenIndex < fetched.length - 1) {
+              const unreadCount = fetched.length - 1 - lastSeenIndex;
+              setUnreadCountBelow(unreadCount);
+              setShowScrollBottomBtn(true);
+              setLastSeenMsgId(savedLastSeen);
+
+              setTimeout(() => {
+                const targetY = messageLayoutsRef.current[savedLastSeen];
+                if (targetY !== undefined && targetY > 0) {
+                  scrollViewRef.current?.scrollTo({ y: Math.max(0, targetY - 40), animated: true });
+                } else {
+                  const estRatio = (lastSeenIndex + 0.5) / fetched.length;
+                  scrollViewRef.current?.scrollTo({ y: estRatio * 1600, animated: true });
+                }
+              }, 350);
+              return;
+            }
+          }
+
+          // If no unread or already at latest message:
+          requestAnimationFrame(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: false });
+          });
+          if (fetched.length > 0) {
+            const latestId = fetched[fetched.length - 1].id;
+            setLastSeenMsgId(latestId);
+            AsyncStorage.setItem(LAST_SEEN_STORAGE_KEY, latestId).catch(() => {});
+          }
+        } else if (shouldScroll && activeTab === 'world') {
           requestAnimationFrame(() => {
             scrollViewRef.current?.scrollToEnd({ animated: true });
           });
@@ -265,31 +409,48 @@ export default function CommunityWorldChatScreen() {
   const fetchDmConversations = async () => {
     try {
       const convs = await communityApi.getDmConversations();
-      if (convs) {
-        setDmConversations(convs);
+      if (convs && Array.isArray(convs)) {
+        // Filter out any locally deleted conversations so they never flicker back
+        const filtered = convs.filter((c) => !deletedConvIdsRef.current.has(c.other_user_id));
+        setDmConversations(filtered);
       }
     } catch (e) {
       console.log('Error fetching DM conversations:', e);
     }
   };
 
-  const handleSearchUsername = async (val: string) => {
-    setSearchUsername(val);
-    if (!val.trim()) {
-      setSearchResults([]);
-      return;
+
+  const handleChatScroll = (event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const isNearBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 120;
+
+    if (isNearBottom) {
+      setShowScrollBottomBtn(false);
+      setUnreadCountBelow(0);
+      if (messages.length > 0) {
+        const latestId = messages[messages.length - 1].id;
+        setLastSeenMsgId(latestId);
+        AsyncStorage.setItem(LAST_SEEN_STORAGE_KEY, latestId).catch(() => {});
+      }
+    } else {
+      setShowScrollBottomBtn(true);
     }
-    try {
-      const res = await communityApi.searchOperatives(val.trim());
-      setSearchResults(res || []);
-    } catch (e) {
-      console.log('Error searching operatives:', e);
+  };
+
+  const handleJumpToLatest = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+    setShowScrollBottomBtn(false);
+    setUnreadCountBelow(0);
+    if (messages.length > 0) {
+      const latestId = messages[messages.length - 1].id;
+      setLastSeenMsgId(latestId);
+      AsyncStorage.setItem(LAST_SEEN_STORAGE_KEY, latestId).catch(() => {});
     }
   };
 
   const handleInputChange = (text: string) => {
     setInputText(text);
-    setInputHeight(getDynamicInputHeight(text));
   };
 
   const handleSendMessage = async () => {
@@ -298,7 +459,6 @@ export default function CommunityWorldChatScreen() {
 
     const messageText = inputText.trim();
     setInputText('');
-    setInputHeight(40);
     setIsSending(true);
 
     const tempId = `temp-${Date.now()}`;
@@ -359,6 +519,7 @@ export default function CommunityWorldChatScreen() {
     if (!deleteModalConv) return;
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     const targetId = deleteModalConv.other_user_id;
+    deletedConvIdsRef.current.add(targetId);
     setDmConversations((prev) => prev.filter((c) => c.other_user_id !== targetId));
     setDeleteModalConv(null);
     try {
@@ -390,6 +551,7 @@ export default function CommunityWorldChatScreen() {
             activeOpacity={0.7}
             onPress={() => {
               triggerHaptic();
+              Keyboard.dismiss();
               if (router.canGoBack()) {
                 router.back();
               } else {
@@ -406,6 +568,7 @@ export default function CommunityWorldChatScreen() {
               style={[styles.tabBtn, activeTab === 'world' && styles.tabBtnActive]}
               onPress={() => {
                 triggerHaptic();
+                Keyboard.dismiss();
                 setActiveTab('world');
                 setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 50);
               }}
@@ -420,6 +583,7 @@ export default function CommunityWorldChatScreen() {
               style={[styles.tabBtn, activeTab === 'dms' && styles.tabBtnActive]}
               onPress={() => {
                 triggerHaptic();
+                Keyboard.dismiss();
                 setActiveTab('dms');
                 fetchDmConversations();
               }}
@@ -453,6 +617,8 @@ export default function CommunityWorldChatScreen() {
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode="interactive"
+                onScroll={handleChatScroll}
+                scrollEventThrottle={16}
               >
                 {messages.length === 0 ? (
                   <View style={styles.emptyChatState}>
@@ -463,63 +629,55 @@ export default function CommunityWorldChatScreen() {
                     </ThemedText>
                   </View>
                 ) : (
-                  messages.map((msg) => {
+                  messages.map((msg, index) => {
                     const isUserMsg = checkIsUserMsg(msg);
-                    const streakDays = isUserMsg ? userStreak : (msg.author_streak ?? 0);
-                    const rankDetails = getGamifiedRank(streakDays);
-
-                    let medalIcon = rankDetails.badge;
-                    if (msg.author_badge && msg.author_badge.trim() !== '' && msg.author_badge !== '🛡️') {
-                      medalIcon = msg.author_badge;
-                    }
-
-                    const displayName = isUserMsg
-                      ? 'You'
-                      : (msg.author_name && !isInvalidName(msg.author_name) ? msg.author_name.split(' ')[0] : 'Former Member');
+                    const prevMsg = index > 0 ? messages[index - 1] : null;
+                    const isFirstUnread = lastSeenMsgId && prevMsg && prevMsg.id === lastSeenMsgId && unreadCountBelow > 0;
 
                     return (
-                      <View
-                        key={msg.id}
-                        style={[styles.chatBubbleRow, isUserMsg ? styles.chatBubbleRowUser : styles.chatBubbleRowOther]}
-                      >
-                        {/* Tap message card to open One-Click DM modal */}
-                        <TouchableOpacity
-                          activeOpacity={0.88}
-                          onPress={() => {
-                            if (!isUserMsg) {
-                              triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-                              setSelectedUserForDm(msg);
-                            }
-                          }}
-                          style={[styles.chatBubbleCard, isUserMsg ? styles.userBubbleCard : styles.otherBubbleCard]}
-                        >
-                          <View style={styles.chatAuthorHeader}>
-                            <ThemedText style={[styles.chatAuthorName, isUserMsg && { color: '#00E5FF' }]} numberOfLines={1}>
-                              {displayName}
-                            </ThemedText>
-
-                            <View style={[styles.streakMedalPill, { backgroundColor: `${rankDetails.color}1E`, borderColor: `${rankDetails.color}50` }]}>
-                              <Text style={[styles.rankBadgeText, { color: rankDetails.color }]}>{msg.author_rank || rankDetails.name}</Text>
-                              <Text style={styles.dotSeparator}>•</Text>
-                              <Text style={styles.streakFlameText}>🔥 {streakDays}d</Text>
-                              <Text style={styles.dotSeparator}>•</Text>
-                              <Text style={styles.medalIconText}>{medalIcon}</Text>
+                      <React.Fragment key={msg.id}>
+                        {/* Clean Unread Messages Divider */}
+                        {isFirstUnread && (
+                          <View style={styles.unreadDividerContainer}>
+                            <View style={styles.unreadDividerLine} />
+                            <View style={styles.unreadDividerPill}>
+                              <Ionicons name="sparkles" size={10} color="#00E5FF" />
+                              <ThemedText style={styles.unreadDividerText}>NEW MESSAGES</ThemedText>
                             </View>
+                            <View style={styles.unreadDividerLine} />
                           </View>
+                        )}
 
-                          <Text style={[styles.chatMessageText, isUserMsg && styles.userMessageText]} selectable={true}>
-                            {msg.content}
-                          </Text>
-
-                          <View style={styles.msgFooterRow}>
-                            <Text style={styles.msgTimeText}>{msg.created_at || ''}</Text>
-                          </View>
-                        </TouchableOpacity>
-                      </View>
+                        <ChatMessageCard
+                          msg={msg}
+                          isUserMsg={isUserMsg}
+                          userStreak={userStreak}
+                          onSelectUserForDm={handleSelectUserForDm}
+                          onLayout={handleRecordLayout}
+                        />
+                      </React.Fragment>
                     );
                   })
                 )}
               </ScrollView>
+
+              {/* Floating Jump to Latest Button with Unread Count */}
+              {showScrollBottomBtn && (
+                <TouchableOpacity
+                  style={styles.floatingScrollBottomBtn}
+                  onPress={handleJumpToLatest}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="chevron-down" size={20} color="#000000" />
+                  {unreadCountBelow > 0 && (
+                    <View style={styles.floatingUnreadBadge}>
+                      <Text style={styles.floatingUnreadText}>
+                        {unreadCountBelow > 99 ? '99+' : unreadCountBelow}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
 
               {/* Floating Pill Message Input Bar matching WhatsApp smoothness */}
               <View
@@ -534,10 +692,7 @@ export default function CommunityWorldChatScreen() {
               >
                 <View style={styles.inputWrapper}>
                   <TextInput
-                    style={[
-                      styles.textInput,
-                      { height: inputHeight }
-                    ]}
+                    style={styles.textInput}
                     placeholder="Type a message..."
                     placeholderTextColor="rgba(255, 255, 255, 0.45)"
                     value={inputText}
@@ -575,12 +730,16 @@ export default function CommunityWorldChatScreen() {
               <Ionicons name="search-outline" size={16} color="#00E5FF" />
               <TextInput
                 style={styles.dmSearchInput}
-                placeholder="Search operative by username..."
+                placeholder="Search operative by name..."
                 placeholderTextColor="#64748B"
                 value={searchUsername}
                 onChangeText={handleSearchUsername}
+                autoCapitalize="none"
               />
-              {searchUsername !== '' && (
+              {searchLoading && (
+                <ActivityIndicator size="small" color="#00E5FF" style={{ marginRight: 4 }} />
+              )}
+              {searchUsername !== '' && !searchLoading && (
                 <TouchableOpacity onPress={() => handleSearchUsername('')}>
                   <Ionicons name="close-circle" size={16} color="#64748B" />
                 </TouchableOpacity>
@@ -595,8 +754,12 @@ export default function CommunityWorldChatScreen() {
               {searchUsername.trim() !== '' && (
                 <View style={{ gap: 8 }}>
                   <ThemedText style={styles.sectionHeaderTitle}>SEARCH RESULTS</ThemedText>
-                  {searchResults.length === 0 ? (
-                    <ThemedText style={styles.emptySearchText}>No operatives found matching "{searchUsername}"</ThemedText>
+                  {searchLoading ? (
+                    <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color="#00E5FF" />
+                    </View>
+                  ) : searchResults.length === 0 ? (
+                    <ThemedText style={styles.emptySearchText}>No registered operatives found matching "{searchUsername}"</ThemedText>
                   ) : (
                     searchResults.map((user) => (
                       <TouchableOpacity
@@ -605,11 +768,13 @@ export default function CommunityWorldChatScreen() {
                         onPress={() => handleOpenUserDm(user.id, user.name)}
                       >
                         <View style={styles.dmAvatarCircle}>
-                          <Text style={{ fontSize: 16 }}>{user.badge}</Text>
+                          <Text style={{ fontSize: 16 }}>{user.badge || '🛡️'}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
                           <ThemedText style={styles.dmUserName}>{user.name}</ThemedText>
-                          <ThemedText style={styles.dmUserSub}>@{user.username}</ThemedText>
+                          <ThemedText style={styles.dmUserSub}>
+                            {user.rank ? `${user.badge || '🛡️'} ${user.rank}` : `@${user.username}`} • 🔥 {user.streak ?? 0}d
+                          </ThemedText>
                         </View>
                         <Ionicons name="paper-plane-outline" size={16} color="#00E5FF" />
                       </TouchableOpacity>
@@ -925,13 +1090,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    maxWidth: '82%',
-    minWidth: 70,
+    maxWidth: '85%',
+    minWidth: 120,
     borderWidth: 1,
     gap: 4,
   },
   userBubbleCard: {
-    backgroundColor: 'rgba(6, 12, 22, 0.78)',
+    backgroundColor: 'rgba(6, 12, 22, 0.85)',
     borderColor: 'rgba(0, 229, 255, 0.35)',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
@@ -940,8 +1105,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   otherBubbleCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderBottomRightRadius: 16,
@@ -953,34 +1118,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+    marginBottom: 2,
   },
   chatAuthorName: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#38BDF8',
-    flex: 1,
+    flexShrink: 1,
+    marginRight: 4,
   },
   streakMedalPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
     borderWidth: 1,
+    flexShrink: 0,
   },
   rankBadgeText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
   streakFlameText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#F59E0B',
   },
   dotSeparator: {
-    fontSize: 9,
+    fontSize: 8.5,
     color: 'rgba(255,255,255,0.4)',
   },
   medalIconText: {
@@ -990,6 +1158,8 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     color: '#F1F5F9',
     lineHeight: 19,
+    textAlign: 'left',
+    flexWrap: 'wrap',
   },
   userMessageText: {
     color: '#FFFFFF',
@@ -1021,6 +1191,76 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#00E5FF',
   },
+  /* Unread Divider */
+  unreadDividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+  unreadDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(0, 229, 255, 0.25)',
+  },
+  unreadDividerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+  },
+  unreadDividerText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 0.5,
+  },
+
+  /* Floating Scroll to Latest Button */
+  floatingScrollBottomBtn: {
+    position: 'absolute',
+    right: 16,
+    bottom: 64,
+    backgroundColor: '#00E5FF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.45,
+    shadowRadius: 5,
+    elevation: 6,
+    zIndex: 99,
+  },
+  floatingUnreadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -4,
+    backgroundColor: '#EF4444',
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    minWidth: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#000000',
+  },
+  floatingUnreadText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
   inputContainer: {
     paddingHorizontal: 12,
     paddingTop: 8,

@@ -57,28 +57,32 @@ export default function EmergencyReflectionScreen() {
 
   const handleSubmit = async () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      await analyticsApi.completeEmergency({
-        session_id: 'emergency_' + Date.now(),
-        techniques_used: ['Mind Shield Breathing', 'Sensory Grounding'],
-        outcome: 'resisted',
-        user_feedback: reflectionText || 'User completed Mind Shield de-escalation protocol.',
-        most_helpful_technique: selectedTrigger,
-      });
 
-      await analyticsApi.logEvent({
-        event_type: 'emergency_reflection_submitted',
-        trigger_context: selectedTrigger,
-        outcome: 'resisted',
-        metadata: { reflection_text: reflectionText },
-      });
+    // 1. Mark task completed & navigate instantly
+    useDailyMissionStore.getState().completeTask('rescue');
+    router.navigate('/(tabs)/home' as any);
+
+    // 2. Fire backend logging in parallel in the background
+    try {
+      await Promise.all([
+        analyticsApi.completeEmergency({
+          session_id: 'emergency_' + Date.now(),
+          techniques_used: ['Mind Shield Breathing', 'Sensory Grounding'],
+          outcome: 'resisted',
+          user_feedback: reflectionText || 'User completed Mind Shield de-escalation protocol.',
+          most_helpful_technique: selectedTrigger,
+        }),
+        analyticsApi.logEvent({
+          event_type: 'emergency_reflection_submitted',
+          trigger_context: selectedTrigger,
+          outcome: 'resisted',
+          metadata: { reflection_text: reflectionText },
+        }),
+      ]);
+      useHabitStore.getState().syncFromDatabase().catch(() => {});
     } catch (err) {
       console.warn('Backend emergency save warning (offline mode):', err);
     }
-
-    useDailyMissionStore.getState().completeTask('rescue');
-    useHabitStore.getState().syncFromDatabase().catch(() => {});
-    router.navigate('/(tabs)/home' as any);
   };
 
 

@@ -1044,17 +1044,17 @@ export default function HomeScreen() {
                       ) : (
                         <View style={styles.loggedStatusBadgeRow}>
                           <Ionicons
-                            name={lastLoggedStatus === 'retained' && streak > 0 ? 'checkmark-circle' : 'alert-circle'}
+                            name={lastLoggedStatus === 'retained' ? 'checkmark-circle' : 'alert-circle'}
                             size={14}
-                            color={lastLoggedStatus === 'retained' && streak > 0 ? '#10B981' : '#FF4D4D'}
+                            color={lastLoggedStatus === 'retained' ? '#10B981' : '#FF4D4D'}
                           />
                           <ThemedText
                             style={[
                               styles.loggedStatusText,
-                              { color: lastLoggedStatus === 'retained' && streak > 0 ? '#10B981' : '#FF4D4D' },
+                              { color: lastLoggedStatus === 'retained' ? '#10B981' : '#FF4D4D' },
                             ]}
                           >
-                            {lastLoggedStatus === 'retained' && streak > 0 ? 'Retained Today' : 'Streak Reset'}
+                            {lastLoggedStatus === 'retained' ? 'Retained Today' : 'Streak Reset'}
                           </ThemedText>
                           <Ionicons name="lock-closed" size={11} color="rgba(255,255,255,0.4)" style={{ marginLeft: 4 }} />
                         </View>

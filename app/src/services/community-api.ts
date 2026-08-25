@@ -57,24 +57,73 @@ export interface ConversationSummaryItem {
   unread_count?: number;
 }
 
+export interface UserSearchResult {
+  id: string;
+  name: string;
+  username: string;
+  badge: string;
+  rank?: string;
+  streak?: number;
+}
+
 const STORAGE_CHAT_KEY = '@zenwill_world_group_chat_history_v1';
+const STORAGE_DM_KEY = '@zenwill_dm_conversations_cache_v1';
+
+let memoryCachedMessages: WorldChatMessage[] = [];
+let memoryCachedDmConversations: ConversationSummaryItem[] = [];
+let memoryDeletedConvIds: Set<string> = new Set();
+
+// Immediately hydrate cache from disk in background
+AsyncStorage.getItem(STORAGE_CHAT_KEY).then((cached) => {
+  if (cached && memoryCachedMessages.length === 0) {
+    try {
+      memoryCachedMessages = JSON.parse(cached);
+    } catch (e) {}
+  }
+});
+
+AsyncStorage.getItem(STORAGE_DM_KEY).then((cached) => {
+  if (cached && memoryCachedDmConversations.length === 0) {
+    try {
+      memoryCachedDmConversations = JSON.parse(cached);
+    } catch (e) {}
+  }
+});
+
+export const getCachedMessages = (): WorldChatMessage[] => memoryCachedMessages;
+export const setCachedMessages = (msgs: WorldChatMessage[]) => {
+  memoryCachedMessages = msgs;
+};
+
+export const getCachedDmConversations = (): ConversationSummaryItem[] => memoryCachedDmConversations;
+export const setCachedDmConversations = (convs: ConversationSummaryItem[]) => {
+  memoryCachedDmConversations = convs;
+};
+
+export const getDeletedConvIds = (): Set<string> => memoryDeletedConvIds;
 
 export const communityApi = {
   async getMessages(limit = 100): Promise<WorldChatMessage[]> {
     try {
       const messages = await api.get<WorldChatMessage[]>(`/community/messages?limit=${limit}`);
       if (messages && messages.length > 0) {
-        await AsyncStorage.setItem(STORAGE_CHAT_KEY, JSON.stringify(messages));
+        memoryCachedMessages = messages;
+        AsyncStorage.setItem(STORAGE_CHAT_KEY, JSON.stringify(messages)).catch(() => {});
         return messages;
       }
     } catch (e) {
       console.log('[Community API] getMessages backend notice:', e);
     }
 
+    if (memoryCachedMessages.length > 0) {
+      return memoryCachedMessages;
+    }
+
     try {
       const cached = await AsyncStorage.getItem(STORAGE_CHAT_KEY);
       if (cached) {
-        return JSON.parse(cached);
+        memoryCachedMessages = JSON.parse(cached);
+        return memoryCachedMessages;
       }
     } catch (e) {
       // Silent catch
@@ -85,6 +134,9 @@ export const communityApi = {
   async sendMessage(payload: CreateMessagePayload): Promise<WorldChatMessage> {
     try {
       const res = await api.post<WorldChatMessage>('/community/messages', payload, false);
+      if (res && res.id) {
+        memoryCachedMessages = [...memoryCachedMessages, res];
+      }
       return res;
     } catch (e) {
       console.log('[Community API] sendMessage backend notice (handled locally):', e);
@@ -99,6 +151,7 @@ export const communityApi = {
         created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         likes_count: 0,
       };
+      memoryCachedMessages = [...memoryCachedMessages, fallbackMsg];
       return fallbackMsg;
     }
   },
@@ -123,11 +176,16 @@ export const communityApi = {
   // ── Direct Messaging (DM) Services ──────────────────────────────────────────
   async getDmConversations(): Promise<ConversationSummaryItem[]> {
     try {
-      return await api.get<ConversationSummaryItem[]>('/community/dm/conversations');
+      const convs = await api.get<ConversationSummaryItem[]>('/community/dm/conversations');
+      if (convs && Array.isArray(convs)) {
+        memoryCachedDmConversations = convs;
+        AsyncStorage.setItem(STORAGE_DM_KEY, JSON.stringify(convs)).catch(() => {});
+        return convs;
+      }
     } catch (e) {
       console.log('[Community API] getDmConversations notice:', e);
-      return [];
     }
+    return memoryCachedDmConversations;
   },
 
   async getDmHistory(targetUserIdentifier: string): Promise<DirectMessageItem[]> {
@@ -169,9 +227,10 @@ export const communityApi = {
     }
   },
 
-  async searchOperatives(query: string): Promise<Array<{ id: string; name: string; username: string; badge: string }>> {
+  async searchOperatives(query: string): Promise<UserSearchResult[]> {
     try {
-      return await api.get(`/community/users/search?q=${encodeURIComponent(query)}`);
+      const res = await api.get<UserSearchResult[]>(`/community/users/search?q=${encodeURIComponent(query)}`);
+      return res || [];
     } catch (e) {
       console.log('[Community API] searchOperatives notice:', e);
       return [];

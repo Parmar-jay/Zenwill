@@ -418,17 +418,17 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
     # Pick the most critical uncompleted action or victory banner
     first_uncompleted = next((a for a in recommended_actions if not a.get("is_completed", False)), None)
 
-    if today_urges_count > 0:
+    if not first_uncompleted:
         directive = {
-            "category": "URGE RESCUE PROTOCOL",
-            "headline": f"{today_urges_count} Urge Wave{'s' if today_urges_count > 1 else ''} Conquered Today",
-            "subtitle": "Keep vital energy contained. Channel raw physical drive into a cold splash or 20 squats.",
-            "action_text": "Launch Urge Shield",
-            "route": "/emergency/urge-surfing",
-            "color": "#EF4444",
-            "icon": "shield-outline",
+            "category": "DISCIPLINE ACHIEVED",
+            "headline": f"All {time_window['key'].capitalize()} Recommendations Completed",
+            "subtitle": f"Peak neural self-regulation active. Operating on an unbroken {streak_val}-day trajectory" + (f" with {today_urges_count} urge waves defeated." if today_urges_count > 0 else "."),
+            "action_text": "View Progress",
+            "route": "/progress",
+            "color": "#10B981",
+            "icon": "checkmark-circle",
         }
-    elif first_uncompleted:
+    else:
         directive = {
             "category": f"{time_window['key'].upper()} PROTOCOL",
             "headline": first_uncompleted["title"],
@@ -437,16 +437,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
             "route": first_uncompleted["route"],
             "color": first_uncompleted["color"],
             "icon": first_uncompleted["icon"],
-        }
-    else:
-        directive = {
-            "category": "DISCIPLINE ACHIEVED",
-            "headline": f"All {time_window['key'].capitalize()} Recommendations Completed",
-            "subtitle": f"Peak neural self-regulation active. Operating on an unbroken {streak_val}-day trajectory.",
-            "action_text": "View Progress",
-            "route": "/progress",
-            "color": "#10B981",
-            "icon": "checkmark-circle",
         }
 
     return {

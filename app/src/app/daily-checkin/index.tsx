@@ -247,39 +247,36 @@ export default function DailyCheckinScreen() {
       reflection_response: reflectionText.trim() || undefined,
     };
 
-    // Update local habit store for relapse reset if relapse occurred
+    // 1. Update local state & missions immediately (zero lag)
     if (relapseOccurred) {
       logDay(false);
     }
     useDailyMissionStore.getState().completeTask('checkin');
 
-    try {
-      await mindApi.submitCheckin(payload);
-      useHabitStore.getState().syncFromDatabase().catch(() => {});
-    } catch (error) {
-      console.log('Checkin submit notice (handled locally):', error);
-    } finally {
-      useHabitStore.getState().syncFromDatabase().catch(() => {});
-      setIsSubmitting(false);
-      setIsCompletedAnim(true);
+    setIsSubmitting(false);
+    setIsCompletedAnim(true);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
 
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    Animated.spring(completeScale, {
+      toValue: 1,
+      friction: 4,
+      tension: 50,
+      useNativeDriver: true,
+    }).start();
 
-      Animated.spring(completeScale, {
-        toValue: 1,
-        friction: 4,
-        tension: 50,
-        useNativeDriver: true,
-      }).start();
+    // 2. Fire backend sync in background
+    mindApi.submitCheckin(payload)
+      .then(() => useHabitStore.getState().syncFromDatabase().catch(() => {}))
+      .catch((error) => console.log('Checkin submit notice (handled locally):', error));
 
-      setTimeout(() => {
-        if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.navigate('/(tabs)/home' as any);
-        }
-      }, 500);
-    }
+    // 3. Smooth snappy transition (350ms)
+    setTimeout(() => {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.navigate('/(tabs)/home' as any);
+      }
+    }, 350);
   };
 
   return (
