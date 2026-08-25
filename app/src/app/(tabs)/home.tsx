@@ -370,7 +370,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadRecommendations();
-  }, [loadRecommendations]);
+  }, [loadRecommendations, todayTasks]);
 
   const handleCompleteRecommendationTask = useCallback(async (task: RecommendationActionTask) => {
     try {

@@ -112,10 +112,16 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
     """
     user_id_str = str(user.id)
     user_email = user.email or ""
-    today = date.today()
-    today_str = today.isoformat()
-    current_hour = datetime.now().hour
+
+    # Accurate local time calculation (IST UTC+5:30)
+    ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    current_hour = ist_now.hour
+    today_str = ist_now.strftime("%Y-%m-%d")
     time_window = get_current_time_window(current_hour)
+
+    now_utc = datetime.utcnow()
+    today_start_dt = datetime(now_utc.year, now_utc.month, now_utc.day)
+    today_end_dt = today_start_dt + timedelta(days=1)
 
     # 1. Fetch Onboarding Intake
     onboarding = await Onboarding.find_one(
@@ -163,7 +169,22 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
         (j.created_at and j.created_at.strftime("%Y-%m-%d") == today_str) for j in recent_journals
     )
 
-    # 6. Fetch Completed Recommendation Tasks for Today from MongoDB
+    # 6. Fetch Completed Daily Missions Today from MongoDB
+    today_missions = await Mission.find(
+        {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]},
+        Mission.date_assigned >= today_start_dt,
+        Mission.date_assigned < today_end_dt,
+    ).to_list()
+
+    completed_mission_categories = {
+        m.category.lower().strip() for m in today_missions if m.is_completed
+    }
+    has_any_completed_missions = len(completed_mission_categories) > 0
+    has_all_missions_done = (
+        len(today_missions) > 0 and all(m.is_completed for m in today_missions)
+    ) or len(completed_mission_categories) >= 3
+
+    # 7. Fetch Completed Recommendation Tasks for Today from MongoDB
     completed_task_records = await RecommendationTaskCompletion.find(
         {
             "$or": [{"user_id": user_id_str}, {"user_id": user_email}],
@@ -193,6 +214,58 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
     focus_score = getattr(latest_checkin, "focus_score", 5) if latest_checkin else 5
     mood = getattr(latest_checkin, "mood", "Neutral") if latest_checkin else "Neutral"
     checkin_urge_intensity = getattr(latest_checkin, "urge_intensity", 0) if latest_checkin else 0
+
+    # Dynamic cross-model task completion flags
+    is_checkin_done = (
+        bool(today_checkin)
+        or ("rec_checkin" in completed_task_ids)
+        or ("checkin" in completed_mission_categories)
+        or ("morning" in completed_mission_categories)
+    )
+    is_med_done = (
+        has_meditated_today
+        or ("rec_meditation" in completed_task_ids)
+        or ("meditation" in completed_mission_categories)
+        or ("calm" in completed_mission_categories)
+        or ("sleep" in completed_mission_categories)
+    )
+    is_journal_done = (
+        has_journaled_today
+        or ("rec_journal" in completed_task_ids)
+        or ("journal" in completed_mission_categories)
+        or ("focus" in completed_mission_categories)
+        or ("reflection" in completed_mission_categories)
+    )
+    is_coach_done = (
+        ("rec_coach" in completed_task_ids)
+        or ("coach" in completed_mission_categories)
+        or ("purpose" in completed_mission_categories)
+    )
+    is_rescue_done = (
+        ("rec_rescue" in completed_task_ids)
+        or (today_urges_count > 0)
+        or ("rescue" in completed_mission_categories)
+        or ("exercise" in completed_mission_categories)
+        or ("emergency" in completed_mission_categories)
+    )
+    is_missions_done = (
+        has_all_missions_done
+        or has_any_completed_missions
+        or ("rec_missions" in completed_task_ids)
+    )
+    is_purpose_done = (
+        ("rec_purpose" in completed_task_ids)
+        or ("purpose" in completed_mission_categories)
+    )
+    is_radar_done = (
+        ("rec_trigger_intel" in completed_task_ids)
+        or ("rec_device_firewall" in completed_task_ids)
+        or is_checkin_done
+    )
+    is_firewall_done = (
+        ("rec_device_firewall" in completed_task_ids)
+        or ("rec_trigger_intel" in completed_task_ids)
+    )
 
     # ── Recommended Meditation Practice Algorithm ────────────────────────────
     chosen_technique_key = "nadi-shodhana"
@@ -226,7 +299,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
     # --- 1. MORNING TIMELINE ACTIONS (05:00 - 11:59) ---
     if time_window["key"] == "morning":
         # Action 1: Daily Check-in
-        is_checkin_done = bool(today_checkin) or ("rec_checkin" in completed_task_ids)
         recommended_actions.append({
             "id": "rec_checkin",
             "action_type": "checkin",
@@ -241,7 +313,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
         })
 
         # Action 2: Morning Sun & Breathwork
-        is_med_done = has_meditated_today or ("rec_meditation" in completed_task_ids)
         recommended_actions.append({
             "id": "rec_meditation",
             "action_type": "meditation",
@@ -257,7 +328,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
 
         # Action 3: Daily Missions or Purpose Anchor
         if streak_val >= 7:
-            is_purpose_done = "rec_purpose" in completed_task_ids
             recommended_actions.append({
                 "id": "rec_purpose",
                 "action_type": "purpose",
@@ -271,7 +341,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
                 "is_completed": is_purpose_done,
             })
         else:
-            is_missions_done = "rec_missions" in completed_task_ids
             recommended_actions.append({
                 "id": "rec_missions",
                 "action_type": "missions",
@@ -288,7 +357,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
     # --- 2. AFTERNOON TIMELINE ACTIONS (12:00 - 17:59) ---
     elif time_window["key"] == "afternoon":
         # Action 1: 3 PM Afternoon Mindfulness / Vitality Reset
-        is_med_done = has_meditated_today or ("rec_meditation" in completed_task_ids)
         recommended_actions.append({
             "id": "rec_meditation",
             "action_type": "meditation",
@@ -303,8 +371,7 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
         })
 
         # Action 2: Check-in if not yet done, or Trigger Radar
-        if not today_checkin:
-            is_checkin_done = "rec_checkin" in completed_task_ids
+        if not is_checkin_done:
             recommended_actions.append({
                 "id": "rec_checkin",
                 "action_type": "checkin",
@@ -318,7 +385,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
                 "is_completed": is_checkin_done,
             })
         else:
-            is_radar_done = "rec_trigger_intel" in completed_task_ids
             recommended_actions.append({
                 "id": "rec_trigger_intel",
                 "action_type": "trigger_intel",
@@ -334,7 +400,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
 
         # Action 3: AI Mind Coach or Urge Surfing
         if today_urges_count > 0 or stress_score >= 7:
-            is_rescue_done = "rec_rescue" in completed_task_ids
             recommended_actions.append({
                 "id": "rec_rescue",
                 "action_type": "rescue",
@@ -348,7 +413,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
                 "is_completed": is_rescue_done,
             })
         else:
-            is_coach_done = "rec_coach" in completed_task_ids
             recommended_actions.append({
                 "id": "rec_coach",
                 "action_type": "chat",
@@ -365,7 +429,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
     # --- 3. EVENING / NIGHT TIMELINE ACTIONS (18:00 - 04:59) ---
     else:
         # Action 1: Evening Reflection Journal
-        is_journal_done = has_journaled_today or ("rec_journal" in completed_task_ids)
         recommended_actions.append({
             "id": "rec_journal",
             "action_type": "journal",
@@ -380,7 +443,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
         })
 
         # Action 2: Pre-Sleep Breathwork
-        is_med_done = has_meditated_today or ("rec_meditation" in completed_task_ids)
         recommended_actions.append({
             "id": "rec_meditation",
             "action_type": "meditation",
@@ -395,7 +457,6 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
         })
 
         # Action 3: Digital Quarantine / Device Distance
-        is_firewall_done = "rec_device_firewall" in completed_task_ids
         recommended_actions.append({
             "id": "rec_device_firewall",
             "action_type": "trigger_intel",
