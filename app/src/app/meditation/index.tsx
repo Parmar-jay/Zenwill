@@ -456,28 +456,38 @@ export default function MeditationScreen() {
                   </LinearGradient>
                 </View>
 
-                {/* Source & Specs Bar */}
-                <View style={styles.specsBar}>
-                  <View style={styles.specItem}>
-                    <Ionicons name="book-outline" size={14} color={activeTechnique.color} />
-                    <ThemedText style={styles.specLabel}>Source</ThemedText>
-                    <ThemedText style={styles.specValue}>{activeTechnique.source}</ThemedText>
+                {/* Source & Specs Container */}
+                <View style={styles.specsContainer}>
+                  {/* Top: Origin & Scriptural Tradition */}
+                  <View style={styles.specSourceCard}>
+                    <View style={styles.specSourceHeader}>
+                      <Ionicons name="book-outline" size={13} color={activeTechnique.color} />
+                      <ThemedText style={[styles.specLabel, { color: activeTechnique.color }]}>
+                        TRADITIONAL SOURCE
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={styles.specSourceValue}>
+                      {activeTechnique.source}
+                    </ThemedText>
                   </View>
 
-                  <View style={styles.specDivider} />
+                  {/* Bottom: Side-by-Side Duration & Difficulty */}
+                  <View style={styles.specsRow}>
+                    <View style={styles.specBox}>
+                      <View style={styles.specBoxHeader}>
+                        <Ionicons name="time-outline" size={13} color="#F59E0B" />
+                        <ThemedText style={styles.specLabel}>DURATION</ThemedText>
+                      </View>
+                      <ThemedText style={styles.specValue}>{activeTechnique.durationText}</ThemedText>
+                    </View>
 
-                  <View style={styles.specItem}>
-                    <Ionicons name="time-outline" size={14} color={activeTechnique.color} />
-                    <ThemedText style={styles.specLabel}>Duration</ThemedText>
-                    <ThemedText style={styles.specValue}>{activeTechnique.durationText}</ThemedText>
-                  </View>
-
-                  <View style={styles.specDivider} />
-
-                  <View style={styles.specItem}>
-                    <Ionicons name="options-outline" size={14} color={activeTechnique.color} />
-                    <ThemedText style={styles.specLabel}>Difficulty</ThemedText>
-                    <ThemedText style={styles.specValue}>{activeTechnique.difficulty}</ThemedText>
+                    <View style={styles.specBox}>
+                      <View style={styles.specBoxHeader}>
+                        <Ionicons name="options-outline" size={13} color="#10B981" />
+                        <ThemedText style={styles.specLabel}>DIFFICULTY</ThemedText>
+                      </View>
+                      <ThemedText style={styles.specValue}>{activeTechnique.difficulty}</ThemedText>
+                    </View>
                   </View>
                 </View>
 
@@ -1266,34 +1276,61 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.65)',
     fontWeight: '600',
   },
-  specsBar: {
-    flexDirection: 'row',
+  specsContainer: {
+    gap: 8,
+    width: '100%',
+  },
+  specSourceCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 12,
-    justifyContent: 'space-around',
-    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 4,
   },
-  specItem: {
+  specSourceHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 6,
+  },
+  specSourceValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+    lineHeight: 17,
+  },
+  specsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+  },
+  specBox: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  specBoxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   specLabel: {
     fontSize: 9.5,
-    color: 'rgba(255, 255, 255, 0.45)',
+    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.5)',
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   specValue: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: '#ffffff',
-  },
-  specDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   detailSection: {
     gap: 8,
@@ -1313,17 +1350,20 @@ const styles = StyleSheet.create({
   },
   benefitRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
   },
   benefitDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
+    marginTop: 6,
   },
   benefitText: {
+    flex: 1,
     fontSize: 12.5,
     color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 18,
   },
   gitaBox: {
     backgroundColor: 'rgba(6, 182, 212, 0.1)',

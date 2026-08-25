@@ -1,5 +1,4 @@
 import logging
-import json
 from datetime import datetime, date, timedelta
 from typing import Dict, Any, List, Optional
 from collections import Counter
@@ -10,48 +9,169 @@ from app.models.daily_checkin import DailyCheckin
 from app.models.emergency_session import EmergencySession
 from app.models.journal import JournalEntry
 from app.models.mind_profile import MindProfile
-from app.services.gemini_service import call_gemini_api
+from app.models.behavioral_event import BehavioralEvent
+from app.models.relapse_autopsy import RelapseAutopsy
 
 logger = logging.getLogger(__name__)
 
 
-# ── Mapping & Protocol Dictionaries ──────────────────────────────────────────
-TIME_SLOT_MAP = {
-    "morning": "07:00 AM - 09:30 AM",
-    "afternoon": "02:00 PM - 05:00 PM",
-    "evening": "06:30 PM - 09:00 PM",
-    "night": "09:30 PM - 11:45 PM",
-    "late_night": "11:30 PM - 02:00 AM",
+# ── Domain Knowledge Bases & Protocol Matrices ──────────────────────────────
+
+TIME_SLOT_RANGES = {
+    "morning": ("06:30 AM - 09:00 AM", 7),
+    "afternoon": ("01:30 PM - 04:30 PM", 14),
+    "evening": ("06:30 PM - 09:30 PM", 19),
+    "night": ("09:30 PM - 11:45 PM", 22),
+    "late_night": ("11:30 PM - 02:00 AM", 23),
+    "midnight": ("11:45 PM - 02:30 AM", 0),
+    "waking_up": ("06:00 AM - 08:30 AM", 7),
+    "bedtime": ("10:30 PM - 01:00 AM", 23),
 }
 
 FIRST_SIGN_PROTOCOLS = {
-    "fantasy": "Execute 3-Second Snap: Acknowledge the mental fantasy immediately as neural noise without indulging or fighting. Splash cold water on your face and vocalize 'Not this.'",
-    "thought": "Cognitive Pattern Interrupt: Shift conscious focus immediately to physical sensory reality (name 5 surrounding objects) and initiate 4-7-8 Pranayama breathing.",
-    "physical": "Physiological Blood Flow Redirection: Stand up immediately and execute 20 bodyweight squats or 15 pushups to divert pelvic blood flow into large skeletal muscles.",
-    "craving": "Dopamine Grounding: Drink a full glass of cold water with a pinch of salt. Put your device away and step into a bright, public area for 5 minutes.",
-    "emotion": "Vagus Nerve Reset: Place your hand on your heart and take 5 slow diaphragmatic breaths (4s inhale, 7s hold, 8s exhale) to dispel emotional urgency.",
-    "memory": "Contextual Reality Check: Recall the immediate aftermath sensations (brain fog, energy crash, regret) and reconnect with your core purpose pledge.",
-    "touching": "Hands-Off Spatial Reset: Remove hands from device immediately, stand up, and change your physical environment.",
-    "dont_know": "Immediate Spatial Reset: Change your physical room immediately and open a window for fresh air.",
+    "fantasy": {
+        "title": "Mental Fantasy / Visualization",
+        "action": "Execute the 3-Second Mental Severance: Acknowledge the mental imagery as meaningless neural noise without feeding or fighting it. Immediately splash cold water on your face, fix eyes on a real physical object, and vocalize 'Not this.'",
+        "category": "Cognitive",
+        "color": "#10B981",
+    },
+    "thought": {
+        "title": "Compulsive Suggestion / Whisper",
+        "action": "Cognitive Pattern Interrupt: Shift conscious awareness immediately to 5 sensory stimuli in your immediate environment. Take 5 deep diaphragmatic breaths (4s inhale, 4s hold, 6s exhale) to re-engage prefrontal cortex control.",
+        "category": "Cognitive",
+        "color": "#06B6D4",
+    },
+    "physical": {
+        "title": "Pelvic Heat / Physical Restlessness",
+        "action": "Somatic Blood-Flow Redirection: Stand up immediately from any seated or lying position. Perform 20 deep bodyweight squats or 15 pushups to divert pelvic blood flow into major skeletal muscle groups.",
+        "category": "Physical",
+        "color": "#F59E0B",
+    },
+    "craving": {
+        "title": "Dopamine Hunger / Craving Pulse",
+        "action": "Dopamine Grounding & Hydration: Drink a full glass of cold water with a pinch of mineral salt. Put your device down completely and step into a bright, public, or well-lit space for at least 5 minutes.",
+        "category": "Physical",
+        "color": "#EC4899",
+    },
+    "emotion": {
+        "title": "Emotional Urgency / Dysphoria",
+        "action": "Vagus Nerve Somatic Reset: Place your right hand firmly over your heart center. Initiate 4-7-8 Pranayama breathing (4s inhale, 7s hold, 8s slow exhale) to deactivate the sympathetic stress response.",
+        "category": "Emotional",
+        "color": "#8B5CF6",
+    },
+    "memory": {
+        "title": "Neural Memory / Nostalgia Flash",
+        "action": "Aftermath Recall Protocol: Instantly bring to mind the immediate post-relapse sensations (brain fog, depleted vitality, heavy regret). Reconnect with your non-negotiable purpose pledge.",
+        "category": "Cognitive",
+        "color": "#3B82F6",
+    },
+    "touching": {
+        "title": "Unconscious Tactile Proximity",
+        "action": "Hands-Off Spatial Reset: Remove hands from device and body immediately. Stand up, open room door, wash hands with cold water, and change your physical room posture.",
+        "category": "Physical",
+        "color": "#EF4444",
+    },
+    "dont_know": {
+        "title": "Subtle Baseline Urge",
+        "action": "Immediate Spatial Relocation: Change your physical room environment immediately. Walk into natural light or fresh air and practice slow mindful nasal breathing.",
+        "category": "Physical",
+        "color": "#10B981",
+    },
 }
 
-DEVICE_LOCATION_RULES = {
-    "phone": "Enforce the Device Distance Rule: Charge your phone outside the sleeping area at least 45 minutes before sleep.",
-    "laptop": "Workstation Boundary: Never use your laptop in bed or private isolated corners; keep usage in bright, active areas.",
-    "tablet": "Tablet Quarantine: Place tablet in a closed drawer after 9 PM with strict application limits enabled.",
-    "desktop": "Screen Mirroring / Bright Lighting: Ensure room lighting is at 100% brightness and door remains open during computer use.",
-}
+
+def _format_hour_window(start_hour: int, span_hours: int = 2) -> str:
+    """Formats a numeric start hour into a clean AM/PM window string."""
+    end_hour = (start_hour + span_hours) % 24
+
+    def _fmt(h: int) -> str:
+        period = "AM" if h < 12 else "PM"
+        display_h = h % 12
+        if display_h == 0:
+            display_h = 12
+        return f"{display_h:02d}:00 {period}"
+
+    return f"{_fmt(start_hour)} - {_fmt(end_hour)}"
+
+
+def infer_realistic_temporal_spatial_context(
+    start_hour: int,
+    occupation: str,
+    daily_schedule: str,
+    ob_locations: List[str],
+    logged_environments: List[str],
+    primary_device: str,
+) -> Dict[str, str]:
+    """
+    Intelligently determines realistic spatial and contextual vulnerability.
+    Prevents unrealistic assumptions (e.g. 'Living room at 1 PM on a weekday for an office worker').
+    """
+    occ_lower = (occupation or "").lower()
+    sched_lower = (daily_schedule or "standard").lower()
+    is_work_student = any(k in occ_lower for k in ["engineer", "developer", "student", "office", "manager", "accountant", "analyst", "designer", "doctor", "consultant"]) or sched_lower == "standard"
+
+    # Prioritize actual logged environment from recent emergency urge sessions if present
+    if logged_environments:
+        clean_logged = logged_environments[0].strip()
+        if clean_logged and len(clean_logged) > 2:
+            return {
+                "environment_label": clean_logged,
+                "context_description": f"{clean_logged} during {primary_device} usage",
+                "environmental_rule": f"Spatial Guardrail: Maintain strict device mindfulness in {clean_logged} and keep ambient lighting high.",
+            }
+
+    # 1. Morning Awakening Window (05:00 - 08:59)
+    if 5 <= start_hour < 9:
+        loc = "Bedroom Bedside" if "bedroom" in ob_locations else "Morning Awakening Space"
+        return {
+            "environment_label": f"Morning {loc}",
+            "context_description": f"Waking up with {primary_device} in hand before getting out of bed",
+            "environmental_rule": f"Morning Launch Rule: Never check {primary_device} while still in bed. Get on two feet, hydrate, and get sunlight first.",
+        }
+
+    # 2. Midday / Work / Study Window (09:00 - 17:59)
+    elif 9 <= start_hour < 18:
+        if is_work_student:
+            return {
+                "environment_label": "Workplace Desk / Study Break",
+                "context_description": f"Midday mental fatigue or lunch break downtime with {primary_device}",
+                "environmental_rule": "Workplace Boundary: Keep phone in bag or desk drawer during deep work sprints. Take walking breaks away from screens.",
+            }
+        else:
+            loc = ob_locations[0].replace("_", " ").title() if ob_locations else "Home Workspace"
+            return {
+                "environment_label": f"Midday {loc}",
+                "context_description": f"Unstructured midday downtime with {primary_device} in {loc}",
+                "environmental_rule": f"Daytime Spatial Rule: Avoid solitary idle screen time in {loc}. Engage active physical tasks.",
+            }
+
+    # 3. Evening Decompression Window (18:00 - 21:59)
+    elif 18 <= start_hour < 22:
+        loc = ob_locations[0].replace("_", " ").title() if ob_locations else "Living Space"
+        return {
+            "environment_label": f"Evening {loc}",
+            "context_description": f"Post-work decompression and fatigue-driven browsing in {loc}",
+            "environmental_rule": f"Evening Quarantine: Replace passive scrolling in {loc} with dedicated exercise, reading, or social dinner.",
+        }
+
+    # 4. Late Night / Bedtime Window (22:00 - 04:59)
+    else:
+        return {
+            "environment_label": "Private Bedside Solitude",
+            "context_description": f"Late-night bedroom isolation with {primary_device} proximity before sleep",
+            "environmental_rule": f"2-Meter Device Firewall: Never bring {primary_device} to bed. Charge it 2 meters away 45 minutes before sleep.",
+        }
 
 
 async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     """
-    Synthesizes 100% real user data across:
-    1. Onboarding Profile (purpose, vision, baseline metrics, triggers, devices, schedules, warning signs, outcome)
-    2. Emergency Urge Sessions (timestamps, frequency, after-urge notes, trigger reasons, helpful techniques, effectiveness)
-    3. Daily Check-in Checklist logs (stress score, sleep duration/quality, mood intensity, primary triggers, focus factors)
-    4. Journal Entries (introspection themes, emotional tags)
-    5. User Streak, Points & Gamification Progress
-    into an individualized, deep Trigger Intelligence report.
+    100% Algorithmic, Zero-AI Trigger Intelligence Engine.
+    Deeply analyzes all real user data:
+    1. Onboarding Profile (occupation, schedule, warning cues, device, stated urge times & locations)
+    2. Daily Check-ins (30-day history of stress causes, sleep quality/duration, mood, urge intensities)
+    3. Emergency Sessions (actual logged urge timestamps, environments, trigger reasons, effective techniques)
+    4. Behavioral Telemetry & Habit Consistency
+    5. User Streak & Gamification State
     """
     user_id_str = str(user.id)
     user_email = user.email or ""
@@ -71,203 +191,161 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
     ).sort("-started_at").limit(100).to_list()
 
-    # 4. Fetch Recent Journals (Last 5)
-    recent_journals = await JournalEntry.find(
+    # 4. Fetch Behavioral Events
+    behavioral_events = await BehavioralEvent.find(
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
-    ).sort("-created_at").limit(5).to_list()
+    ).sort("-created_at").limit(50).to_list()
 
-    # 5. Fetch Mind Profile
-    mind_profile = await MindProfile.find_one(
+    # 5. Fetch Latest Relapse Autopsy Record
+    latest_autopsy = await RelapseAutopsy.find(
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
-    )
+    ).sort("-timestamp").first_or_none()
 
-    # ── A. Process User Purpose, Vision & Baseline ───────────────────────────
+    # ── A. Base User Parameters ───────────────────────────────────────────────
     user_name = user.name or (onboarding.first_name if onboarding else "Operative")
     streak_val = user.streak or 0
-    max_streak_val = user.max_streak or streak_val
-    total_points_val = user.total_points or 0
+    mind_strength = user.mind_strength or 500
 
-    core_purpose = getattr(onboarding, "personal_statement", "") or getattr(onboarding, "primary_outcome", "") or "Reclaiming master focus, vitality, and emotional sovereignty."
-    improvement_goals = getattr(onboarding, "improvement_reasons", []) if onboarding else []
-    primary_outcome = getattr(onboarding, "primary_outcome", "") if onboarding else "Absolute Brahmacharya & Mental Clarity"
+    occupation = getattr(onboarding, "occupation", "") if onboarding else ""
     daily_schedule = getattr(onboarding, "daily_schedule", "standard") if onboarding else "standard"
-    occupation = getattr(onboarding, "occupation", "Professional") if onboarding else "Professional"
-
-    ob_triggers = getattr(onboarding, "emotional_triggers", []) if onboarding else []
-    ob_first_sign = getattr(onboarding, "first_warning_sign", "craving") if onboarding else "craving"
-    ob_locations = getattr(onboarding, "urge_locations", ["bedroom"]) if onboarding else ["bedroom"]
-    ob_device = getattr(onboarding, "primary_device", "phone") if onboarding else "phone"
-    ob_platforms = getattr(onboarding, "online_platforms", []) if onboarding else []
-    ob_aftermath = getattr(onboarding, "emotional_aftermath", ["regret", "guilt", "brain_fog"]) if onboarding else ["regret", "guilt"]
+    ob_triggers = [t.lower() for t in getattr(onboarding, "emotional_triggers", [])] if onboarding else []
+    ob_first_sign = (getattr(onboarding, "first_warning_sign", "craving") or "craving").lower()
+    ob_locations = [l.lower() for l in getattr(onboarding, "urge_locations", [])] if onboarding else []
+    ob_device = (getattr(onboarding, "primary_device", "phone") or "phone").lower()
     ob_urge_times = getattr(onboarding, "urge_times", []) if onboarding else []
+    primary_dev = ob_device.replace("_", " ").title()
 
-    # ── B. Process Urge Sessions & Temporal Clusters ─────────────────────────
+    # ── B. Timestamp & Temporal Distribution Analysis ─────────────────────────
     total_urges_count = len(emergency_sessions)
     today_str = date.today().isoformat()
+
     today_urges = [
         s for s in emergency_sessions
-        if (s.started_at and s.started_at.strftime("%Y-%m-%d") == today_str) or
-           (s.completed_at and s.completed_at.strftime("%Y-%m-%d") == today_str)
+        if (s.started_at and s.started_at.strftime("%Y-%m-%d") == today_str)
+        or (s.completed_at and s.completed_at.strftime("%Y-%m-%d") == today_str)
     ]
     today_urges_count = len(today_urges)
 
-    effective_sessions = [s for s in emergency_sessions if getattr(s, "was_effective", True) or getattr(s, "outcome", "") == "resisted"]
-    effectiveness_rate = int((len(effective_sessions) / max(total_urges_count, 1)) * 100) if emergency_sessions else (95 if streak_val > 5 else 85)
+    effective_sessions = [
+        s for s in emergency_sessions
+        if getattr(s, "was_effective", True) or getattr(s, "outcome", "") == "resisted"
+    ]
+    effectiveness_rate = (
+        int((len(effective_sessions) / max(total_urges_count, 1)) * 100)
+        if emergency_sessions
+        else (95 if streak_val > 7 else 88)
+    )
 
     urge_hours: List[int] = []
     urge_days: List[str] = []
     session_reasons: List[str] = []
     helpful_techniques: List[str] = []
-    user_thought_notes: List[str] = []
+    logged_environments: List[str] = []
 
     for s in emergency_sessions:
         dt = s.started_at or s.completed_at
         if dt:
             urge_hours.append(dt.hour)
             urge_days.append(dt.strftime("%A"))
+        if getattr(s, "environment", None):
+            logged_environments.append(s.environment.strip())
         if getattr(s, "trigger_reason", None):
             session_reasons.append(s.trigger_reason.strip())
         if getattr(s, "main_influence", None):
             session_reasons.append(s.main_influence.strip())
         if getattr(s, "most_helpful_technique", None):
             helpful_techniques.append(s.most_helpful_technique.strip())
-        if getattr(s, "thought_note", None):
-            user_thought_notes.append(s.thought_note.strip())
 
-    # Calculate Peak Risk Window from Real Urge Data or Onboarding Times
-    peak_risk_window = ""
+    for e in behavioral_events:
+        if getattr(e, "hour_of_day", None) is not None:
+            urge_hours.append(e.hour_of_day)
+        elif e.created_at:
+            urge_hours.append(e.created_at.hour)
+            urge_days.append(e.created_at.strftime("%A"))
+
+    # ── C. Circadian Peak Window Computation ─────────────────────────────────
     if urge_hours:
         hour_counts = Counter(urge_hours)
-        best_start_hour = max(hour_counts, key=hour_counts.get)
-        end_hour = (best_start_hour + 2) % 24
-
-        def format_hour(h: int) -> str:
-            period = "AM" if h < 12 else "PM"
-            formatted_h = h % 12
-            if formatted_h == 0:
-                formatted_h = 12
-            return f"{formatted_h:02d}:00 {period}"
-
-        peak_risk_window = f"{format_hour(best_start_hour)} - {format_hour(end_hour)}"
+        peak_hour = max(hour_counts, key=hour_counts.get)
+        peak_risk_window = _format_hour_window(peak_hour, 2)
+        window_start_hour = peak_hour
     elif ob_urge_times:
         first_time_pref = ob_urge_times[0].lower()
-        peak_risk_window = TIME_SLOT_MAP.get(first_time_pref, "10:30 PM - 01:00 AM")
+        if first_time_pref in TIME_SLOT_RANGES:
+            peak_risk_window, window_start_hour = TIME_SLOT_RANGES[first_time_pref]
+        else:
+            peak_risk_window, window_start_hour = ("10:30 PM - 01:00 AM", 23)
+    elif daily_schedule == "night_shift":
+        peak_risk_window, window_start_hour = ("03:00 AM - 05:30 AM", 3)
     else:
-        peak_risk_window = "10:30 PM - 01:00 AM"
+        peak_risk_window, window_start_hour = ("10:30 PM - 01:00 AM", 23)
 
-    # Peak Risk Day from Real Urge Data
-    peak_day = "Weekends (Sat / Sun)"
+    # ── D. Peak Risk Day Computation ─────────────────────────────────────────
     if urge_days:
-        peak_day = Counter(urge_days).most_common(1)[0][0]
-    elif daily_schedule in ["night_shift", "student"]:
-        peak_day = "Friday & Saturday Nights"
+        peak_day_name = Counter(urge_days).most_common(1)[0][0]
+        peak_day = f"{peak_day_name}s"
+    elif daily_schedule in ["night_shift", "freelancer"]:
+        peak_day = "Late Weekends (Fri / Sat)"
+    elif daily_schedule == "student":
+        peak_day = "Sunday Evenings"
+    else:
+        peak_day = "Weekends (Sat / Sun)"
 
-    # ── C. Process Real Check-in Trends (Stress, Sleep, Mood, Triggers) ──────
+    # ── E. Realistic Spatial & Contextual Intelligence ───────────────────────
+    spatial_intel = infer_realistic_temporal_spatial_context(
+        start_hour=window_start_hour,
+        occupation=occupation,
+        daily_schedule=daily_schedule,
+        ob_locations=ob_locations,
+        logged_environments=logged_environments,
+        primary_device=primary_dev,
+    )
+    environment_label = spatial_intel["environment_label"]
+    environmental_rule = spatial_intel["environmental_rule"]
+
+    # ── F. Check-in Multi-Day Telemetry Analysis ─────────────────────────────
     latest_checkin = recent_checkins[0] if recent_checkins else None
 
-    avg_stress = sum(getattr(c, "stress_score", 5) for c in recent_checkins) / max(len(recent_checkins), 1)
-    avg_sleep_quality = sum(getattr(c, "sleep_quality", 7) for c in recent_checkins) / max(len(recent_checkins), 1)
+    avg_stress = sum(getattr(c, "stress_score", 4) for c in recent_checkins) / max(len(recent_checkins), 1)
     avg_sleep_hours = sum(getattr(c, "sleep_duration", 7.0) for c in recent_checkins) / max(len(recent_checkins), 1)
-    avg_mood_intensity = sum(getattr(c, "mood_intensity", 5) for c in recent_checkins) / max(len(recent_checkins), 1)
+    avg_sleep_quality = sum(getattr(c, "sleep_quality", 7) for c in recent_checkins) / max(len(recent_checkins), 1)
 
-    current_stress = getattr(latest_checkin, "stress_score", 5) if latest_checkin else int(avg_stress)
-    current_sleep_quality = getattr(latest_checkin, "sleep_quality", 7) if latest_checkin else int(avg_sleep_quality)
+    current_stress = getattr(latest_checkin, "stress_score", 4) if latest_checkin else int(avg_stress)
     current_sleep_hours = getattr(latest_checkin, "sleep_duration", 7.0) if latest_checkin else avg_sleep_hours
+    current_sleep_quality = getattr(latest_checkin, "sleep_quality", 7) if latest_checkin else int(avg_sleep_quality)
     current_mood = getattr(latest_checkin, "mood", "Neutral") if latest_checkin else "Neutral"
     checkin_urge_intensity = getattr(latest_checkin, "urge_intensity", 0) if latest_checkin else 0
 
     checkin_triggers: List[str] = []
     checkin_stress_causes: List[str] = []
-    checkin_focus_factors: List[str] = []
     for c in recent_checkins:
         if getattr(c, "primary_triggers", None):
             checkin_triggers.extend(c.primary_triggers)
         if getattr(c, "stress_causes", None):
             checkin_stress_causes.extend(c.stress_causes)
-        if getattr(c, "focus_factors", None):
-            checkin_focus_factors.extend(c.focus_factors)
 
-    # ── D. Formulate Active Catalysts (Derived from Real User Data) ───────────
-    active_catalysts: List[str] = []
-
-    # 1. Stress / Cortisol Catalyst
-    if current_stress >= 7:
-        stress_cause_txt = f" ({checkin_stress_causes[0]})" if checkin_stress_causes else ""
-        active_catalysts.append(f"High Cortisol / Acute Stress ({current_stress}/10){stress_cause_txt}")
-    elif avg_stress >= 6.5:
-        active_catalysts.append("Elevated Stress Baseline")
-
-    # 2. Sleep Debt Catalyst
-    if current_sleep_quality <= 4 or current_sleep_hours < 6.0:
-        active_catalysts.append(f"Sleep Deficit / Prefrontal Fatigue ({current_sleep_hours:.1f}h)")
-
-    # 3. Mood / Emotional Catalyst
-    if current_mood in ["Sad", "Anxious", "Lonely", "Overwhelmed", "Frustrated"]:
-        active_catalysts.append(f"Emotional Dysphoria ({current_mood})")
-
-    # 4. First Warning Sign Catalyst
-    if ob_first_sign:
-        first_sign_title = ob_first_sign.replace("_", " ").title()
-        active_catalysts.append(f"First Warning Sign: {first_sign_title}")
-
-    # 5. After-Urge Form Triggers & Check-in Triggers
-    if session_reasons:
-        for r, _ in Counter(session_reasons).most_common(2):
-            if r not in active_catalysts and len(r) < 40:
-                active_catalysts.append(r)
-    elif checkin_triggers:
-        for t, _ in Counter(checkin_triggers).most_common(2):
-            clean_t = t.replace("_", " ").title()
-            if clean_t not in active_catalysts:
-                active_catalysts.append(clean_t)
-    elif ob_triggers:
-        for t in ob_triggers[:2]:
-            clean_t = t.replace("_", " ").title()
-            if clean_t not in active_catalysts:
-                active_catalysts.append(clean_t)
-
-    # 6. Environmental & Device Catalysts
-    primary_loc = (ob_locations[0] if ob_locations else "bedroom").replace("_", " ").title()
-    primary_dev = (ob_device or "mobile phone").replace("_", " ").title()
-    active_catalysts.append(f"{primary_dev} in {primary_loc}")
-
-    if not active_catalysts:
-        active_catalysts = ["Late Night Screen Exposure", "Solitary Downtime", "Stress Spike"]
-
-    # ── E. Dynamic Risk Score (0–100) & Status Tier ──────────────────────────
-    risk_score = 20  # Base resilience
-    if streak_val >= 30:
-        risk_score -= 10
+    # ── G. Dynamic Multi-Variable Risk Score (0–100) ─────────────────────────
+    if streak_val >= 90:
+        base_risk = 14
+    elif streak_val >= 30:
+        base_risk = 22
+    elif streak_val >= 14:
+        base_risk = 30
     elif streak_val >= 7:
-        risk_score -= 5
+        base_risk = 38
+    elif streak_val >= 3:
+        base_risk = 48
+    else:
+        base_risk = 58
 
-    # Stress addition
-    if current_stress >= 8:
-        risk_score += 25
-    elif current_stress >= 6:
-        risk_score += 15
+    stress_pts = 25 if current_stress >= 8 else (16 if current_stress >= 6 else (8 if current_stress >= 4 else 0))
+    sleep_pts = 20 if (current_sleep_hours < 5.5 or current_sleep_quality <= 3) else (12 if (current_sleep_hours < 6.5 or current_sleep_quality <= 5) else 0)
+    urge_velocity_pts = min(today_urges_count * 12, 24)
+    checkin_urge_pts = 15 if checkin_urge_intensity >= 7 else (8 if checkin_urge_intensity >= 4 else 0)
+    mood_pts = 10 if current_mood in ["Sad", "Anxious", "Lonely", "Overwhelmed", "Frustrated", "Angry"] else 0
 
-    # Sleep deficit addition
-    if current_sleep_quality <= 4 or current_sleep_hours < 6.0:
-        risk_score += 20
-    elif avg_sleep_hours < 6.5:
-        risk_score += 10
-
-    # Urge spike velocity today
-    risk_score += min(today_urges_count * 15, 30)
-
-    # Daily checkin urge intensity
-    if checkin_urge_intensity >= 7:
-        risk_score += 20
-    elif checkin_urge_intensity >= 4:
-        risk_score += 10
-
-    # Mood vulnerability
-    if current_mood in ["Anxious", "Lonely", "Frustrated", "Overwhelmed"]:
-        risk_score += 10
-
-    # Bounded Risk Score
-    risk_score = max(10, min(95, risk_score))
+    total_risk = base_risk + stress_pts + sleep_pts + urge_velocity_pts + checkin_urge_pts + mood_pts
+    risk_score = max(12, min(95, total_risk))
 
     if risk_score >= 75:
         risk_level = "CRITICAL VULNERABILITY"
@@ -278,228 +356,132 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     else:
         risk_level = "OPTIMAL SHIELD"
 
-    # ── F. Dynamic Primary Vulnerability ─────────────────────────────────────
-    if current_stress >= 7 and "late_night" in ob_urge_times:
-        primary_vulnerability = f"Late-Night {primary_loc} Isolation combined with High Cortisol & {primary_dev} Proximity"
-    elif current_sleep_quality <= 4 or current_sleep_hours < 6.0:
-        primary_vulnerability = f"Prefrontal Cortex Exhaustion & Sleep Debt in {primary_loc} with {primary_dev}"
+    # ── H. Active Catalysts List ──────────────────────────────────────────────
+    active_catalysts: List[str] = []
+
+    if current_stress >= 6:
+        cause_suffix = f" ({checkin_stress_causes[0]})" if checkin_stress_causes else ""
+        active_catalysts.append(f"Acute Cortisol & Stress ({current_stress}/10){cause_suffix}")
+
+    if current_sleep_hours < 6.5 or current_sleep_quality <= 5:
+        active_catalysts.append(f"Prefrontal Fatigue / Sleep Debt ({current_sleep_hours:.1f}h)")
+
+    if current_mood in ["Anxious", "Lonely", "Sad", "Overwhelmed", "Frustrated"]:
+        active_catalysts.append(f"Emotional Dysphoria ({current_mood})")
+
+    active_catalysts.append(f"{primary_dev} in {environment_label}")
+
+    first_sign_info = FIRST_SIGN_PROTOCOLS.get(ob_first_sign, FIRST_SIGN_PROTOCOLS["craving"])
+    active_catalysts.append(f"Warning Cue: {first_sign_info['title']}")
+
+    if session_reasons:
+        top_reason = Counter(session_reasons).most_common(1)[0][0]
+        if top_reason and top_reason not in active_catalysts:
+            active_catalysts.append(top_reason)
+    elif checkin_triggers:
+        top_checkin_trig = Counter(checkin_triggers).most_common(1)[0][0].replace("_", " ").title()
+        if top_checkin_trig not in active_catalysts:
+            active_catalysts.append(top_checkin_trig)
+
+    # ── I. Contextual Primary Vulnerability Synthesis ─────────────────────────
+    if current_stress >= 7:
+        primary_vulnerability = f"Elevated stress load ({current_stress}/10) lowering dopamine inhibition during {peak_risk_window} in {environment_label}."
+    elif current_sleep_hours < 6.0:
+        primary_vulnerability = f"Prefrontal willpower deficit from sleep debt ({current_sleep_hours:.1f}h) during {peak_risk_window} hours."
+    elif today_urges_count >= 1 or checkin_urge_intensity >= 6:
+        primary_vulnerability = f"Active physiological urge momentum during {peak_risk_window} in {environment_label}."
     elif "boredom" in ob_triggers or "loneliness" in ob_triggers:
-        primary_vulnerability = f"Unstructured Idle Downtime & Dopamine Seeking on {primary_dev}"
-    elif checkin_urge_intensity >= 7:
-        primary_vulnerability = f"Elevated Physiological Urge Pressure during {peak_risk_window} in {primary_loc}"
+        primary_vulnerability = f"Unstructured idle downtime in {environment_label} triggering dopamine seeking on {primary_dev}."
     else:
-        primary_vulnerability = f"{peak_risk_window} Solitary {primary_dev} Usage in {primary_loc}"
+        primary_vulnerability = f"{spatial_intel['context_description']} during {peak_risk_window}."
 
-    # ── G. 3-Tier Tactical Defense Protocol ──────────────────────────────────
-    first_sign_key = (ob_first_sign or "craving").lower()
-    step1_first_sign = FIRST_SIGN_PROTOCOLS.get(
-        first_sign_key,
-        "Execute 3-Second Snap: Acknowledge the urge cue as temporary brain wiring; breathe deeply and splash cold water."
-    )
+    if latest_autopsy and getattr(latest_autopsy, "generated_golden_rule", None):
+        environmental_rule = latest_autopsy.generated_golden_rule
+        active_catalysts.insert(0, f"Fracture Point: {latest_autopsy.first_compromise_title}")
 
-    dev_key = (ob_device or "phone").lower()
-    step2_device_rule = DEVICE_LOCATION_RULES.get(
-        dev_key,
-        f"Keep {primary_dev} outside the {primary_loc.lower()} at least 45 minutes prior to sleep."
-    )
+    # ── J. 3-Tier Tactical Defense Protocol ──────────────────────────────────
+    step1_action = first_sign_info["action"]
+    step2_device_rule = environmental_rule
+    top_tech = helpful_techniques[0] if helpful_techniques else "Urge Surfing (3-Min)"
+    step3_transmute = f"Engage {top_tech}: Transmute vital physical energy through 15 pushups, a cold splash, or 4-7-8 Pranayama."
 
-    top_technique = helpful_techniques[0] if helpful_techniques else "Urge Surfing (3-Min)"
-    step3_transmute = f"Engage {top_technique}: Transmute physical sexual energy through 15 pushups, a cold water splash, or 4-7-8 Pranayama."
+    tactical_defense = f"1) {step1_action} 2) {step2_device_rule} 3) {step3_transmute}"
 
-    deterministic_defense = f"1) {step1_first_sign} 2) {step2_device_rule} 3) {step3_transmute}"
+    # ── K. Granular Triggers Breakdown Array (5 Categories) ───────────────────
+    triggers_breakdown: List[Dict[str, Any]] = [
+        {
+            "id": "trig-circadian",
+            "name": f"Circadian Window ({peak_risk_window})",
+            "category": "Circadian",
+            "frequency": max(total_urges_count, 1),
+            "riskScore": min(95, risk_score + 6),
+            "color": "#00E5FF",
+            "peakTime": peak_risk_window,
+            "recommendation": f"Pre-commit to digital shutdown: put {primary_dev} into grayscale/DND 30 minutes before this window.",
+        },
+        {
+            "id": "trig-environmental",
+            "name": f"{environment_label} Proximity",
+            "category": "Environmental",
+            "frequency": max(total_urges_count, 2),
+            "riskScore": min(90, max(55, risk_score - 4)),
+            "color": "#8B5CF6",
+            "peakTime": peak_risk_window,
+            "recommendation": environmental_rule,
+        },
+        {
+            "id": "trig-physical",
+            "name": f"Somatic Cue: {first_sign_info['title']}",
+            "category": "Physical",
+            "frequency": max(total_urges_count, 1),
+            "riskScore": min(88, max(50, risk_score - 8)),
+            "color": "#F59E0B",
+            "peakTime": peak_risk_window,
+            "recommendation": step1_action,
+        },
+        {
+            "id": "trig-emotional",
+            "name": f"Stress & Autonomic State ({current_stress}/10)",
+            "category": "Emotional",
+            "frequency": max(len(recent_checkins), 1),
+            "riskScore": min(92, max(45, (current_stress * 10) + 15)),
+            "color": "#EF4444" if current_stress >= 6 else "#10B981",
+            "peakTime": "Late Afternoons & Evenings",
+            "recommendation": "Execute 5 minutes of Nadi Shodhana Pranayama to normalize autonomic arousal.",
+        },
+        {
+            "id": "trig-cognitive",
+            "name": "Digital Novelty Seeking",
+            "category": "Cognitive",
+            "frequency": max(total_urges_count, 1),
+            "riskScore": min(85, max(40, risk_score - 12)),
+            "color": "#EC4899",
+            "peakTime": peak_risk_window,
+            "recommendation": "Implement strict website blocking and remove infinite-scroll apps from your primary home screen.",
+        },
+    ]
 
-    # ── H. Granular Trigger Items Array (Derived from Real User Data) ────────
-    triggers_breakdown: List[Dict[str, Any]] = []
-
-    # Category 1: Circadian / Temporal
-    triggers_breakdown.append({
-        "id": "trig-circadian",
-        "name": f"Peak Risk Window ({peak_risk_window})",
-        "category": "Circadian",
-        "frequency": total_urges_count or (1 if ob_urge_times else 0),
-        "riskScore": min(95, risk_score + 10),
-        "color": "#00E5FF",
-        "peakTime": peak_risk_window,
-        "recommendation": f"Pre-commit to evening shutdown: power down {primary_dev} and initiate wind-down 30 minutes before this window.",
-    })
-
-    # Category 2: Emotional / Stress
-    stress_label = f"Stress / Emotional Spike ({current_stress}/10)" if current_stress >= 6 else "Emotional Loneliness / Boredom"
-    triggers_breakdown.append({
-        "id": "trig-emotional",
-        "name": stress_label,
-        "category": "Emotional",
-        "frequency": len(checkin_stress_causes) or 3,
-        "riskScore": min(90, current_stress * 10),
-        "color": "#F59E0B",
-        "peakTime": peak_risk_window,
-        "recommendation": f"Execute the 3-minute Pranayama breathing protocol when stress exceeds 6/10 to ground the nervous system.",
-    })
-
-    # Category 3: Environmental / Spatial
-    triggers_breakdown.append({
-        "id": "trig-environmental",
-        "name": f"{primary_dev} in {primary_loc}",
-        "category": "Environmental",
-        "frequency": total_urges_count or 2,
-        "riskScore": 65,
-        "color": "#8B5CF6",
-        "peakTime": peak_risk_window,
-        "recommendation": step2_device_rule,
-    })
-
-    # Category 4: Physical / First Sign
-    first_sign_display = ob_first_sign.replace("_", " ").title() if ob_first_sign else "Physical Urge Sensation"
-    triggers_breakdown.append({
-        "id": "trig-physical",
-        "name": f"First Sign: {first_sign_display}",
-        "category": "Physical",
-        "frequency": max(total_urges_count, 1),
-        "riskScore": 60,
-        "color": "#10B981",
-        "peakTime": peak_risk_window,
-        "recommendation": step1_first_sign,
-    })
-
-    # ── I. Real Timeline Events (From Real Emergency Sessions & Check-ins) ────
-    timeline_events: List[Dict[str, Any]] = []
-
-    # Add real emergency sessions to timeline
-    for idx, s in enumerate(emergency_sessions[:4]):
-        s_dt = s.started_at or s.completed_at
-        time_str = s_dt.strftime("%b %d, %I:%M %p") if s_dt else "Recent"
-        trig_name = getattr(s, "trigger_reason", None) or getattr(s, "main_influence", None) or "Urge Spike"
-        eff = getattr(s, "was_effective", True) or getattr(s, "outcome", "") == "resisted"
-        tech = getattr(s, "most_helpful_technique", None) or "Urge Surfing Wave"
-        timeline_events.append({
-            "id": f"event-session-{idx}",
-            "time": time_str,
-            "triggerName": trig_name,
-            "status": "Resolved" if eff else "Flagged",
-            "resolutionAction": f"Executed {tech} • Sensation transmuted",
-        })
-
-    # If no emergency sessions logged yet, populate with real baseline from onboarding
-    if not timeline_events:
-        timeline_events.append({
-            "id": "event-baseline-1",
-            "time": "Baseline Intake",
-            "triggerName": f"First Warning Sign: {ob_first_sign.replace('_', ' ').title()}",
-            "status": "Interrupted",
-            "resolutionAction": f"Defense rule active: {step1_first_sign[:70]}...",
-        })
-        timeline_events.append({
-            "id": "event-baseline-2",
-            "time": "Spatial Baseline",
-            "triggerName": f"{primary_dev} in {primary_loc}",
-            "status": "Flagged",
-            "resolutionAction": f"Distance rule: {step2_device_rule[:70]}...",
-        })
-
-    # ── J. Synthesize via Gemini 2.5 Flash Lite ───────────────────────────────
-    prompt_payload = {
-        "username": user_name,
-        "streak_days": streak_val,
-        "max_streak": max_streak_val,
-        "total_urges_defeated": total_urges_count,
-        "today_urges_count": today_urges_count,
-        "effectiveness_rate": effectiveness_rate,
-        "core_purpose": core_purpose,
-        "primary_outcome": primary_outcome,
-        "improvement_goals": improvement_goals,
-        "daily_schedule": daily_schedule,
-        "occupation": occupation,
-        "peak_risk_window": peak_risk_window,
-        "peak_risk_day": peak_day,
-        "calculated_risk_level": risk_level,
-        "calculated_risk_score": risk_score,
-        "active_catalysts": active_catalysts,
-        "primary_vulnerability": primary_vulnerability,
-        "first_warning_sign": ob_first_sign,
-        "primary_device": ob_device,
-        "urge_location": primary_loc,
-        "latest_stress_score": current_stress,
-        "latest_sleep_quality": current_sleep_quality,
-        "latest_sleep_hours": current_sleep_hours,
-        "latest_mood": current_mood,
-        "recent_urge_reasons": session_reasons[:3],
-        "top_helpful_technique": top_technique,
-        "user_thought_notes": user_thought_notes[:2],
-    }
-
-    ai_prompt = f"""
-You are the ZenWill Chief Behavioral Intelligence Officer and Vedic Energy Transmutation Master.
-Analyze this operative's real psychological, physiological, and urge telemetry:
-
-{json.dumps(prompt_payload, indent=2)}
-
-Synthesize a deeply personalized, razor-sharp trigger intelligence report.
-Output STRICT JSON ONLY (no markdown code blocks, no backticks, no wrapping text):
-{{
-  "peak_risk_window": "{peak_risk_window}",
-  "risk_level": "{risk_level}",
-  "risk_score": {risk_score},
-  "primary_vulnerability": "{primary_vulnerability}",
-  "active_triggers": {json.dumps(active_catalysts[:4])},
-  "first_sign_action": "{step1_first_sign}",
-  "environmental_rule": "{step2_device_rule}",
-  "highest_risk_day": "{peak_day}",
-  "tactical_defense": "<2 to 3 concise, extremely actionable sentences outlining the exact protocol to neutralize this trigger sequence before it escalates, referencing the user's specific first sign ({ob_first_sign}) and device ({primary_dev})>",
-  "vitality_boost_quote": "<1 inspiring, deep sentence on transmuting sexual urge energy (Virya) into unshakable mental focus (Ojas) and sovereignty>",
-  "purpose_alignment_quote": "<1 sentence linking their core purpose ({core_purpose[:60]}...) to staying clean today>"
-}}
-"""
-
-    system_instruction = (
-        "You are an elite neuro-behavioral scientist and Vedic energy transmutation master. "
-        "Generate deep, sharp, individualized trigger intelligence protocols based 100% on the user's telemetry. "
-        "Output ONLY raw valid JSON."
-    )
-
-    raw_ai_response = await call_gemini_api(ai_prompt, system_instruction=system_instruction)
-
-    if raw_ai_response:
-        clean_text = raw_ai_response.replace("```json", "").replace("```", "").strip()
-        try:
-            parsed = json.loads(clean_text)
-            if parsed.get("tactical_defense"):
-                return {
-                    "peak_risk_window": parsed.get("peak_risk_window", peak_risk_window),
-                    "risk_level": parsed.get("risk_level", risk_level),
-                    "risk_score": parsed.get("risk_score", risk_score),
-                    "primary_vulnerability": parsed.get("primary_vulnerability", primary_vulnerability),
-                    "active_triggers": parsed.get("active_triggers", active_catalysts[:4]),
-                    "first_sign_action": parsed.get("first_sign_action", step1_first_sign),
-                    "environmental_rule": parsed.get("environmental_rule", step2_device_rule),
-                    "highest_risk_day": parsed.get("highest_risk_day", peak_day),
-                    "tactical_defense": parsed.get("tactical_defense", deterministic_defense),
-                    "vitality_boost_quote": parsed.get("vitality_boost_quote", "Virya redirected becomes Ojas—the radiance of intellect and irresistible willpower."),
-                    "purpose_alignment_quote": parsed.get("purpose_alignment_quote", f"Every urge transmuted cements your vision: {core_purpose}"),
-                    "effectiveness_rate": effectiveness_rate,
-                    "total_urges_defeated": total_urges_count,
-                    "today_urges_count": today_urges_count,
-                    "triggers": triggers_breakdown,
-                    "timeline_events": timeline_events,
-                }
-        except Exception as e:
-            logger.warning(f"Gemini trigger intelligence parse error: {e}. Using deterministic synthesis.")
-
-    # Resilient Deterministic Return (100% derived from real user database fields)
     return {
         "peak_risk_window": peak_risk_window,
+        "primary_vulnerability": primary_vulnerability,
+        "tactical_defense": tactical_defense,
+        "vitality_boost_quote": (
+            "Energy is never destroyed; it is only transmuted. When you hold your ground, "
+            "raw sexual energy transforms into pure intellectual sovereignty (Ojas)."
+        ),
+        "purpose_alignment_quote": (
+            getattr(onboarding, "personal_statement", None)
+            or getattr(onboarding, "primary_outcome", None)
+            or "You are mastering the ancient science of Brahmacharya. Your focus is sovereign."
+        ),
         "risk_level": risk_level,
         "risk_score": risk_score,
-        "primary_vulnerability": primary_vulnerability,
-        "active_triggers": active_catalysts[:4],
-        "first_sign_action": step1_first_sign,
-        "environmental_rule": step2_device_rule,
+        "active_triggers": active_catalysts,
+        "first_sign_action": step1_action,
+        "environmental_rule": environmental_rule,
         "highest_risk_day": peak_day,
-        "tactical_defense": deterministic_defense,
-        "vitality_boost_quote": "Virya redirected becomes Ojas—the radiance of intellect and irresistible willpower.",
-        "purpose_alignment_quote": f"Every urge transmuted cements your vision: {core_purpose}",
         "effectiveness_rate": effectiveness_rate,
-        "total_urges_defeated": total_urges_count,
+        "total_urges_defeated": len(effective_sessions),
         "today_urges_count": today_urges_count,
         "triggers": triggers_breakdown,
-        "timeline_events": timeline_events,
     }

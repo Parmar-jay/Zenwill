@@ -39,14 +39,6 @@ interface TriggerItem {
   recommendation: string;
 }
 
-interface TimelineEvent {
-  id: string;
-  time: string;
-  triggerName: string;
-  status: 'Resolved' | 'Interrupted' | 'Flagged';
-  resolutionAction: string;
-}
-
 export default function TriggerIntelligenceScreen() {
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
@@ -118,21 +110,6 @@ export default function TriggerIntelligenceScreen() {
     ];
   }, [triggerData, totalUrgesCount]);
 
-  const timelineEvents: TimelineEvent[] = useMemo(() => {
-    if (triggerData?.timeline_events && triggerData.timeline_events.length > 0) {
-      return triggerData.timeline_events as TimelineEvent[];
-    }
-    return [
-      {
-        id: 'ev-1',
-        time: 'Active Telemetry',
-        triggerName: triggerData?.primary_vulnerability || 'Peak Risk Window Protection',
-        status: 'Resolved',
-        resolutionAction: 'Tactical defense protocol armed and monitoring.',
-      },
-    ];
-  }, [triggerData]);
-
   const filteredTriggers = useMemo(() => {
     return triggersList.filter(
       (t) => selectedCategory === 'All' || t.category.toLowerCase() === selectedCategory.toLowerCase()
@@ -200,7 +177,7 @@ export default function TriggerIntelligenceScreen() {
               <View style={styles.cardHeaderRow}>
                 <View style={styles.headerBadgeRow}>
                   <Ionicons name="shield-checkmark" size={14} color="#00E5FF" />
-                  <ThemedText style={styles.cardCategoryTitle}>PREDICTIVE RISK TELEMETRY</ThemedText>
+                  <ThemedText style={styles.cardCategoryTitle}>PREDICTIVE RISK INTELLIGENCE</ThemedText>
                 </View>
                 <View style={[styles.statusPill, { backgroundColor: `${riskColor}20`, borderColor: `${riskColor}40` }]}>
                   <ThemedText style={[styles.statusPillText, { color: riskColor }]}>
@@ -292,7 +269,7 @@ export default function TriggerIntelligenceScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.filterScroll}
               >
-                {['All', 'Circadian', 'Emotional', 'Environmental', 'Physical'].map((cat) => {
+                {['All', 'Circadian', 'Emotional', 'Environmental', 'Physical', 'Cognitive'].map((cat) => {
                   const isSelected = selectedCategory.toLowerCase() === cat.toLowerCase();
                   return (
                     <TouchableOpacity
@@ -347,56 +324,6 @@ export default function TriggerIntelligenceScreen() {
                   </View>
                 </View>
               ))}
-            </View>
-
-            {/* 5. Real Telemetry Timeline */}
-            <View style={styles.sectionWrap}>
-              <ThemedText style={styles.sectionHeading}>Recent Telemetry & Event History</ThemedText>
-              <View style={styles.timelineCard}>
-                {timelineEvents.map((ev, idx) => (
-                  <View key={ev.id || idx} style={styles.timelineRow}>
-                    <View style={styles.timelineLeft}>
-                      <View
-                        style={[
-                          styles.timelineNode,
-                          {
-                            backgroundColor:
-                              ev.status === 'Resolved'
-                                ? '#10B981'
-                                : ev.status === 'Interrupted'
-                                ? '#00E5FF'
-                                : '#EF4444',
-                          },
-                        ]}
-                      />
-                      {idx < timelineEvents.length - 1 && <View style={styles.timelineLine} />}
-                    </View>
-
-                    <View style={styles.timelineContent}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <ThemedText style={styles.timelineTime}>{ev.time}</ThemedText>
-                        <ThemedText
-                          style={[
-                            styles.timelineStatus,
-                            {
-                              color:
-                                ev.status === 'Resolved'
-                                  ? '#10B981'
-                                  : ev.status === 'Interrupted'
-                                  ? '#00E5FF'
-                                  : '#EF4444',
-                            },
-                          ]}
-                        >
-                          {ev.status.toUpperCase()}
-                        </ThemedText>
-                      </View>
-                      <ThemedText style={styles.timelineTitle}>{ev.triggerName}</ThemedText>
-                      <ThemedText style={styles.timelineAction}>{ev.resolutionAction}</ThemedText>
-                    </View>
-                  </View>
-                ))}
-              </View>
             </View>
 
           </View>
@@ -749,60 +676,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.75)',
     lineHeight: 15,
     flex: 1,
-  },
-
-  /* Timeline */
-  timelineCard: {
-    backgroundColor: '#0E0F12',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 14,
-    gap: 16,
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  timelineLeft: {
-    alignItems: 'center',
-    width: 14,
-  },
-  timelineNode: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 3,
-  },
-  timelineLine: {
-    width: 1,
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    marginTop: 4,
-  },
-  timelineContent: {
-    flex: 1,
-    gap: 2,
-  },
-  timelineTime: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  timelineStatus: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  timelineTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  timelineAction: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.65)',
-    lineHeight: 15,
   },
 
   /* Modal */

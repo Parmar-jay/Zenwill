@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { StyleSheet, View, TouchableOpacity, useWindowDimensions, Platform } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +30,7 @@ const ShieldLightningIcon = ({ focused }: { focused: boolean }) => (
 );
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
+  const router = useRouter();
   const { width: W } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -69,6 +70,12 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           const isFocused = state.index === index;
 
           const onPress = () => {
+            if (route.name === 'progress') {
+              triggerHaptic();
+              router.push('/community' as any);
+              return;
+            }
+
             const event = navigation.emit({
               type: 'tabPress',
               target: route.key,
@@ -117,8 +124,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             iconName = isFocused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline';
             label = 'Coach';
           } else if (route.name === 'progress') {
-            iconName = isFocused ? 'stats-chart' : 'stats-chart-outline';
-            label = 'Progress';
+            iconName = isFocused ? 'people' : 'people-outline';
+            label = 'Community';
           } else if (route.name === 'profile') {
             iconName = isFocused ? 'person' : 'person-outline';
             label = 'Profile';
@@ -190,7 +197,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="progress"
         options={{
-          title: 'Progress',
+          title: 'Community',
           headerShown: false,
         }}
       />

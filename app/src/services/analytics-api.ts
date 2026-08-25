@@ -58,6 +58,113 @@ export interface MindsetEvaluation {
   meditation_urge_score: number;
 }
 
+export interface ProgressIntelligence {
+  score: number;
+  status_title: string;
+  status_color?: string;
+  summary: string;
+  transmutation_tip: string;
+  checkin_score: number;
+  journal_score: number;
+  meditation_urge_score: number;
+  metrics_breakdown?: {
+    checkin_points: number;
+    journal_points: number;
+    meditation_points: number;
+    urge_control_points: number;
+  };
+  weekly_stats?: {
+    total_checkins: number;
+    relapse_count: number;
+    urge_free_days: number;
+    avg_sleep_hours: number;
+    avg_stress: number;
+    avg_mood: number;
+    total_missions: number;
+    missions_completed: number;
+    total_journals: number;
+  };
+  predictions?: string[];
+  recommendations?: string[];
+}
+
+export interface RecommendationActionTask {
+  id: string;
+  action_type: string;
+  title: string;
+  description: string;
+  route: string;
+  time_window: string;
+  xp_reward: number;
+  color: string;
+  icon: string;
+  is_completed: boolean;
+}
+
+export interface UserRecommendations {
+  recommended_meditation: {
+    technique_id: string;
+    title: string;
+    subtitle: string;
+    duration_text: string;
+    difficulty: string;
+    image_key: string;
+    color: string;
+    reason?: string;
+  };
+  ai_insight: {
+    category: string;
+    headline: string;
+    subtitle: string;
+    action_text: string;
+    route: string;
+    color: string;
+    icon: string;
+  };
+  time_window?: {
+    key: string;
+    title: string;
+    subtitle: string;
+    icon: string;
+    theme_color: string;
+  };
+  recommended_actions?: RecommendationActionTask[];
+  progress_stats?: {
+    completed_tasks: number;
+    total_tasks: number;
+    completion_percentage: number;
+  };
+  streak_context?: {
+    streak: number;
+    mind_strength: number;
+    has_checked_in: boolean;
+    has_meditated: boolean;
+    has_journaled: boolean;
+  };
+}
+
+export interface RelapseAutopsyPayload {
+  first_compromise_domino: string;
+  emotional_precursor: string;
+  physical_environment: string;
+  device_involved: string;
+  approximate_time_window?: string;
+  user_reflection_note?: string;
+}
+
+export interface RelapseAutopsyResult {
+  success: boolean;
+  autopsy_id?: string;
+  retained_percentage: number;
+  clean_days_count: number;
+  streak_before: number;
+  domino_title: string;
+  generated_golden_rule: string;
+  rule_category: string;
+  reframing_message: string;
+  date_str?: string;
+  pledge_signed?: boolean;
+}
 export interface TriggerIntelligence {
   peak_risk_window: string;
   primary_vulnerability: string;
@@ -111,6 +218,34 @@ export const analyticsApi = {
 
   getTriggerIntelligence(): Promise<TriggerIntelligence> {
     return api.get<TriggerIntelligence>('/analytics/trigger-intelligence');
+  },
+
+  getProgressIntelligence(): Promise<ProgressIntelligence> {
+    return api.get<ProgressIntelligence>('/analytics/progress-intelligence');
+  },
+
+  getRecommendations(): Promise<UserRecommendations> {
+    return api.get<UserRecommendations>('/analytics/recommendations');
+  },
+
+  completeRecommendationTask(
+    taskId: string,
+    actionType: string = 'general',
+    title: string = 'Completed Task'
+  ): Promise<{ success: boolean; message: string; points_earned: number; mind_strength: number }> {
+    return api.post('/analytics/recommendations/complete', {
+      task_id: taskId,
+      action_type: actionType,
+      title: title,
+    });
+  },
+
+  submitRelapseAutopsy(payload: RelapseAutopsyPayload): Promise<RelapseAutopsyResult> {
+    return api.post<RelapseAutopsyResult>('/analytics/relapse-autopsy/submit', payload);
+  },
+
+  getLatestRelapseAutopsy(): Promise<RelapseAutopsyResult | null> {
+    return api.get<RelapseAutopsyResult | null>('/analytics/relapse-autopsy/latest');
   },
 
   startEmergency(data: {

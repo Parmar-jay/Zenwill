@@ -15,6 +15,8 @@ from app.models.community_message import CommunityMessage
 from app.models.purpose import LifePurpose
 from app.models.direct_message import DirectMessage
 from app.models.onboarding import Onboarding
+from app.models.recommendation_task import RecommendationTaskCompletion
+from app.models.relapse_autopsy import RelapseAutopsy
 
 DOCUMENT_MODELS = [
     User,
@@ -29,6 +31,8 @@ DOCUMENT_MODELS = [
     LifePurpose,
     DirectMessage,
     Onboarding,
+    RecommendationTaskCompletion,
+    RelapseAutopsy,
 ]
 
 motor_client: AsyncIOMotorClient = None

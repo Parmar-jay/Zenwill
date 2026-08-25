@@ -5,7 +5,6 @@ import {
   ScrollView,
   View,
   Platform,
-  Switch,
   ActivityIndicator,
   Text,
 } from 'react-native';
@@ -83,7 +82,6 @@ export default function CommunityLeaderboardScreen() {
   const firstName = useOnboardingStore((state) => state.firstName) || 'Operative';
 
   const [activeTab, setActiveTab] = useState<'All-Time' | 'Monthly' | 'Weekly'>('All-Time');
-  const [ghostMode, setGhostMode] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [dbRankings, setDbRankings] = useState<CommunityRanking[]>([]);
 
@@ -139,8 +137,8 @@ export default function CommunityLeaderboardScreen() {
       });
     });
 
-    // 2. Ensure current user is present if ghostMode is OFF
-    if (!ghostMode && !map.has(firstName.toLowerCase())) {
+    // 2. Ensure current user is present
+    if (!map.has(firstName.toLowerCase())) {
       const userRankInfo = getGamifiedRank(streak);
       map.set(firstName.toLowerCase(), {
         rank: 0,
@@ -156,11 +154,11 @@ export default function CommunityLeaderboardScreen() {
     // 3. Sort by streakDays descending & assign dynamic rank number 1..N
     const sorted = Array.from(map.values()).sort((a, b) => b.streakDays - a.streakDays);
     return sorted.map((u, idx) => ({ ...u, rank: idx + 1 }));
-  }, [dbRankings, streak, firstName, ghostMode]);
+  }, [dbRankings, streak, firstName]);
 
   // Self User Rank Info
   const myUser = useMemo(() => leaderboardUsers.find((u) => u.isSelf), [leaderboardUsers]);
-  const myRank = myUser?.rank || (ghostMode ? 'Hidden' : 1);
+  const myRank = myUser?.rank || 1;
 
   // Top 3 Podium Real Users
   const podiumRank1 = leaderboardUsers[0] || null;
@@ -294,7 +292,7 @@ export default function CommunityLeaderboardScreen() {
                 </View>
                 <View style={styles.selfRankRow}>
                   <ThemedText style={styles.selfRankNum}>
-                    {typeof myRank === 'number' ? `#${myRank} Worldwide` : 'Ghost Mode (Hidden)'}
+                    #{myRank} Worldwide
                   </ThemedText>
                   <ThemedText style={styles.selfStreakDays}>{streak} Day{streak !== 1 ? 's' : ''} Unbroken</ThemedText>
                 </View>
@@ -349,29 +347,6 @@ export default function CommunityLeaderboardScreen() {
                     ))}
                   </View>
                 )}
-              </View>
-
-              {/* Privacy Controls Footer */}
-              <View style={styles.privacyBox}>
-                <View style={styles.privacyHeader}>
-                  <Ionicons name="shield-checkmark" size={16} color="#00E5FF" />
-                  <ThemedText style={styles.privacyTitle}>Leaderboard Privacy Settings</ThemedText>
-                </View>
-
-                <View style={styles.switchRow}>
-                  <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.switchTitle}>Ghost Mode (Hide Rank)</ThemedText>
-                    <ThemedText style={styles.switchSub}>Hide your streak from global database rankings while preserving your personal counters.</ThemedText>
-                  </View>
-                  <Switch
-                    value={ghostMode}
-                    onValueChange={(val) => {
-                      triggerHaptic();
-                      setGhostMode(val);
-                    }}
-                    trackColor={{ false: 'rgba(255,255,255,0.1)', true: '#00E5FF' }}
-                  />
-                </View>
               </View>
             </>
           )}
@@ -693,41 +668,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#F59E0B',
-  },
-
-  // Privacy Box
-  privacyBox: {
-    backgroundColor: 'rgba(18, 18, 18, 0.95)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.15)',
-    padding: 12,
-    gap: 8,
-  },
-  privacyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  privacyTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#00E5FF',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  switchTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  switchSub: {
-    fontSize: 10.5,
-    color: '#64748B',
-    lineHeight: 14,
   },
 });

@@ -27,6 +27,7 @@ export default function AuthOnboardingCompleteScreen() {
   const [currentPath, setCurrentPath] = useState<string>('');
   const [isSigned, setIsSigned] = useState<boolean>(alreadySigned);
   const [scrollEnabled, setScrollEnabled] = useState<boolean>(true);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 145 });
 
   const canvasRef = useRef<View>(null);
 
@@ -244,6 +245,12 @@ export default function AuthOnboardingCompleteScreen() {
                   <View
                     ref={canvasRef}
                     style={[styles.canvasSquareWrapper, { touchAction: 'none' } as any]}
+                    onLayout={(e) => {
+                      const { width, height } = e.nativeEvent.layout;
+                      if (width > 0 && height > 0) {
+                        setCanvasSize({ width, height });
+                      }
+                    }}
                     {...panResponder.panHandlers}
                   >
                     {paths.length === 0 && !currentPath && (
@@ -259,7 +266,13 @@ export default function AuthOnboardingCompleteScreen() {
                       </View>
                     )}
 
-                    <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+                    <Svg
+                      width="100%"
+                      height="100%"
+                      viewBox={canvasSize.width > 0 ? `0 0 ${canvasSize.width} ${canvasSize.height}` : undefined}
+                      style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]}
+                      pointerEvents="none"
+                    >
                       {paths.map((p, i) => (
                         <Path key={i} d={p} stroke="#00A8FF" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
                       ))}

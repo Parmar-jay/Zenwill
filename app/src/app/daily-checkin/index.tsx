@@ -753,6 +753,19 @@ export default function DailyCheckinScreen() {
                         </TouchableOpacity>
                       ))}
                     </View>
+
+                    {/* Launch Forensic Relapse Autopsy */}
+                    <TouchableOpacity
+                      style={styles.launchAutopsyBtn}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        triggerHaptic();
+                        router.push('/relapse-autopsy' as any);
+                      }}
+                    >
+                      <Ionicons name="git-network-outline" size={14} color="#00E5FF" style={{ marginRight: 6 }} />
+                      <ThemedText style={styles.launchAutopsyBtnText}>Launch Forensic Relapse Autopsy</ThemedText>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
@@ -1151,6 +1164,23 @@ const styles = StyleSheet.create({
   optionBtn2TextActive: {
     color: '#ffffff',
     fontWeight: '700',
+  },
+  launchAutopsyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 9,
+    marginTop: 8,
+  },
+  launchAutopsyBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 0.3,
   },
   reflectionPromptCard: {
     flexDirection: 'row',

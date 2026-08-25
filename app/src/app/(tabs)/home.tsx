@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -28,6 +28,16 @@ import { useAuthStore } from '@/store/auth-store';
 import { useHabitStore } from '@/store/habit-store';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { SmoothSkeleton, PageEntrance } from '@/components/ui/smooth-loader';
+import { analyticsApi, UserRecommendations, RecommendationActionTask } from '@/services/analytics-api';
+
+const MEDITATION_IMAGE_MAP: Record<string, any> = {
+  nadi_shodhana: require('../../../assets/images/nadi_shodhana.png'),
+  bhramari: require('../../../assets/images/bhramari.png'),
+  dirgha_pranayama: require('../../../assets/images/dirgha_pranayama.png'),
+  ajapa_japa: require('../../../assets/images/ajapa_japa.png'),
+  krishna_meditation: require('../../../assets/images/krishna_meditation.png'),
+  meditation_forest: require('../../../assets/images/meditation_forest.png'),
+};
 
 export interface QuickActionDef {
   id: string;
@@ -50,7 +60,7 @@ export const ALL_QUICK_ACTIONS: QuickActionDef[] = [
   { id: 'purpose', title: 'Purpose', subtitle: 'Life mission & vision', icon: 'heart-outline', route: '/purpose', category: 'Reflection', color: '#EF4444' },
   { id: 'trigger-intel', title: 'Trigger Intel', subtitle: 'Trigger analytics', icon: 'flash-outline', route: '/trigger-intelligence', category: 'Analytics', color: '#F97316' },
   { id: 'leaderboard', title: 'Leaderboard', subtitle: 'Rankings & streaks', icon: 'trophy-outline', route: '/community/leaderboard', category: 'Community', color: '#F59E0B' },
-  { id: 'community', title: 'Community', subtitle: 'Global brotherhood', icon: 'people-outline', route: '/community', category: 'Community', color: '#3B82F6' },
+  { id: 'progress', title: 'Progress', subtitle: 'Milestones & analytics', icon: 'stats-chart-outline', route: '/progress', category: 'Analytics', color: '#00E5FF' },
   { id: 'billing', title: 'Pro Upgrade', subtitle: 'Subscription & features', icon: 'card-outline', route: '/billing', category: 'Account', color: '#EAB308' },
 ];
 
@@ -345,6 +355,56 @@ export default function HomeScreen() {
   const [insightModalVisible, setInsightModalVisible] = useState(false);
   const [customizeQuickActionsVisible, setCustomizeQuickActionsVisible] = useState(false);
   const [rankModalVisible, setRankModalVisible] = useState(false);
+
+  // Recommendations State
+  const [recommendations, setRecommendations] = useState<UserRecommendations | null>(null);
+
+  const loadRecommendations = useCallback(async () => {
+    try {
+      const data = await analyticsApi.getRecommendations();
+      setRecommendations(data);
+    } catch (e) {
+      // silent fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRecommendations();
+  }, [loadRecommendations]);
+
+  const handleCompleteRecommendationTask = useCallback(async (task: RecommendationActionTask) => {
+    try {
+      triggerHaptic();
+      // Optimistic update
+      setRecommendations((prev) => {
+        if (!prev || !prev.recommended_actions) return prev;
+        const updatedActions = prev.recommended_actions.map((a) =>
+          a.id === task.id ? { ...a, is_completed: true } : a
+        );
+        const completedCount = updatedActions.filter((a) => a.is_completed).length;
+        return {
+          ...prev,
+          recommended_actions: updatedActions,
+          progress_stats: {
+            completed_tasks: completedCount,
+            total_tasks: updatedActions.length,
+            completion_percentage: Math.round((completedCount / updatedActions.length) * 100),
+          },
+        };
+      });
+
+      await analyticsApi.completeRecommendationTask(task.id, task.action_type, task.title);
+      await loadRecommendations();
+    } catch (e) {
+      // silent fallback
+    }
+  }, [loadRecommendations]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRecommendations();
+    }, [loadRecommendations])
+  );
 
   // Quick Actions State & Persistence
   const [enabledActionIds, setEnabledActionIds] = useState<string[]>(DEFAULT_QUICK_ACTION_IDS);
@@ -968,7 +1028,7 @@ export default function HomeScreen() {
                             activeOpacity={0.75}
                             onPress={() => {
                               triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-                              logDay(false);
+                              router.push('/relapse-autopsy' as any);
                             }}
                           >
                             <LinearGradient
@@ -1095,29 +1155,94 @@ export default function HomeScreen() {
               style={{ opacity: fadeAnims.insight, transform: [{ translateY: slideAnims.insight }] }}
             >
               <TouchableOpacity
-                style={styles.aiInsightCard}
+                style={[
+                  styles.aiInsightCard,
+                  recommendations?.ai_insight?.color ? { borderColor: `${recommendations.ai_insight.color}40` } : null,
+                ]}
                 activeOpacity={0.9}
                 onPress={() => {
                   triggerHaptic();
-                  setInsightModalVisible(true);
+                  if (recommendations?.ai_insight?.route) {
+                    router.push(recommendations.ai_insight.route as any);
+                  } else {
+                    setInsightModalVisible(true);
+                  }
                 }}
               >
                 <View style={styles.aiInsightHeaderRow}>
-                  <Ionicons name="sparkles" size={13} color="#6366F1" style={{ marginRight: 5 }} />
-                  <ThemedText style={styles.aiInsightHeaderLabel} numberOfLines={1}>AI INSIGHT FOR YOU</ThemedText>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                    <Ionicons
+                      name={(recommendations?.ai_insight?.icon as any) || 'sparkles'}
+                      size={13}
+                      color={recommendations?.ai_insight?.color || '#6366F1'}
+                      style={{ marginRight: 5 }}
+                    />
+                    <ThemedText
+                      style={[
+                        styles.aiInsightHeaderLabel,
+                        recommendations?.ai_insight?.color ? { color: recommendations.ai_insight.color } : null,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {recommendations?.ai_insight?.category || 'MIND TRAINING PROTOCOL'}
+                    </ThemedText>
+                  </View>
+                  {recommendations?.progress_stats && (
+                    <View
+                      style={[
+                        styles.recProgressPill,
+                        {
+                          backgroundColor:
+                            recommendations.progress_stats.completion_percentage === 100
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : 'rgba(99, 102, 241, 0.15)',
+                          borderColor:
+                            recommendations.progress_stats.completion_percentage === 100
+                              ? 'rgba(16, 185, 129, 0.35)'
+                              : 'rgba(99, 102, 241, 0.35)',
+                        },
+                      ]}
+                    >
+                      <ThemedText
+                        style={[
+                          styles.recProgressPillText,
+                          {
+                            color:
+                              recommendations.progress_stats.completion_percentage === 100
+                                ? '#10B981'
+                                : '#818CF8',
+                          },
+                        ]}
+                      >
+                        {recommendations.progress_stats.completed_tasks}/{recommendations.progress_stats.total_tasks} Done
+                      </ThemedText>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.aiInsightContentRow}>
                   <View style={styles.aiInsightTextCol}>
                     <ThemedText style={styles.aiInsightHeadline}>
-                      Your stress was higher than usual yesterday.
+                      {recommendations?.ai_insight?.headline || 'Your stress was higher than usual yesterday.'}
                     </ThemedText>
                     <ThemedText style={styles.aiInsightSubtitle}>
-                      Try 5 min of box breathing today to calm your nervous system.
+                      {recommendations?.ai_insight?.subtitle || 'Try 5 min of box breathing today to calm your nervous system.'}
                     </ThemedText>
                     <View style={styles.aiInsightLinkRow}>
-                      <ThemedText style={styles.aiInsightLinkText}>View Full Intelligence</ThemedText>
-                      <Ionicons name="chevron-forward" size={12} color="#6366F1" style={{ marginLeft: 4 }} />
+                      <ThemedText
+                        style={[
+                          styles.aiInsightLinkText,
+                          recommendations?.ai_insight?.color ? { color: recommendations.ai_insight.color } : null,
+                        ]}
+                      >
+                        {recommendations?.ai_insight?.action_text || 'View Full Intelligence'}
+                      </ThemedText>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={12}
+                        color={recommendations?.ai_insight?.color || '#6366F1'}
+                        style={{ marginLeft: 4 }}
+                      />
                     </View>
                   </View>
                   <Image
@@ -1338,11 +1463,24 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.meditationCardContainer}>
+              <TouchableOpacity
+                style={styles.meditationCardContainer}
+                activeOpacity={0.88}
+                onPress={() => {
+                  triggerHaptic();
+                  router.push('/meditation');
+                }}
+              >
                 <View style={styles.meditationThumbnailContainer}>
                   <Image
-                    source={require('../../../assets/images/meditation_forest.png')}
+                    source={
+                      recommendations?.recommended_meditation?.image_key &&
+                      MEDITATION_IMAGE_MAP[recommendations.recommended_meditation.image_key]
+                        ? MEDITATION_IMAGE_MAP[recommendations.recommended_meditation.image_key]
+                        : require('../../../assets/images/meditation_forest.png')
+                    }
                     style={styles.meditationThumbnail}
+                    resizeMode="cover"
                   />
                   <View style={styles.meditationPlayIconCircle}>
                     <Ionicons name="play" size={12} color="#ffffff" style={{ marginLeft: 2 }} />
@@ -1350,18 +1488,25 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={styles.meditationTextContainer}>
-                  <ThemedText style={styles.meditationTitleText}>Deep Relaxation & Focus</ThemedText>
-                  <ThemedText style={styles.meditationSubtitleText}>
-                    Reduce stress, calm craving waves & restore inner clarity.
+                  <ThemedText style={styles.meditationTitleText} numberOfLines={1}>
+                    {recommendations?.recommended_meditation?.title || 'Deep Relaxation & Focus'}
+                  </ThemedText>
+                  <ThemedText style={styles.meditationSubtitleText} numberOfLines={2}>
+                    {recommendations?.recommended_meditation?.subtitle ||
+                      'Reduce stress, calm craving waves & restore inner clarity.'}
                   </ThemedText>
                   <View style={styles.meditationInfoRow}>
                     <View style={styles.meditationInfoBadge}>
                       <Ionicons name="time-outline" size={11} color="#94A3B8" style={{ marginRight: 4 }} />
-                      <ThemedText style={styles.meditationInfoText}>10 min</ThemedText>
+                      <ThemedText style={styles.meditationInfoText}>
+                        {recommendations?.recommended_meditation?.duration_text || '10 min'}
+                      </ThemedText>
                     </View>
                     <View style={styles.meditationInfoBadge}>
                       <Ionicons name="stats-chart-outline" size={11} color="#94A3B8" style={{ marginRight: 4 }} />
-                      <ThemedText style={styles.meditationInfoText}>Beginner</ThemedText>
+                      <ThemedText style={styles.meditationInfoText}>
+                        {recommendations?.recommended_meditation?.difficulty || 'Beginner'}
+                      </ThemedText>
                     </View>
                   </View>
                 </View>
@@ -1377,7 +1522,7 @@ export default function HomeScreen() {
                   <Ionicons name="play" size={10} color="#6366F1" style={{ marginRight: 4 }} />
                   <ThemedText style={styles.meditationStartButtonText}>Start</ThemedText>
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             </Animated.View>
 
             {/* Evening Reflection Reminder */}
@@ -1570,7 +1715,7 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* --- AI Insight Detail Modal --- */}
+      {/* --- Personalized Mind Training Recommendations & Timeline Protocol Modal --- */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1578,33 +1723,147 @@ export default function HomeScreen() {
         onRequestClose={() => setInsightModalVisible(false)}
       >
         <View style={styles.modalBg}>
-          <View style={styles.modalContentGlass}>
+          <View style={[styles.modalContentGlass, { maxHeight: '88%' }]}>
+            {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="sparkles" size={22} color="#6366F1" style={{ marginRight: 8 }} />
-                <ThemedText style={styles.modalHeading}>AI Mind Insights</ThemedText>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                <Ionicons
+                  name={(recommendations?.time_window?.icon as any) || 'sparkles'}
+                  size={20}
+                  color={recommendations?.time_window?.theme_color || '#6366F1'}
+                  style={{ marginRight: 8 }}
+                />
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={[styles.modalHeading, { fontSize: 16 }]} numberOfLines={1}>
+                    {recommendations?.time_window?.title || 'Personalized Mind Protocol'}
+                  </ThemedText>
+                  <ThemedText style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.5)', marginTop: 1 }} numberOfLines={1}>
+                    {recommendations?.time_window?.subtitle || 'Tailored to your live recovery state & current timeline.'}
+                  </ThemedText>
+                </View>
               </View>
-              <TouchableOpacity onPress={() => setInsightModalVisible(false)} activeOpacity={0.7}>
-                <Ionicons name="close" size={24} color="#ffffff" />
+              <TouchableOpacity onPress={() => setInsightModalVisible(false)} activeOpacity={0.7} style={{ padding: 4 }}>
+                <Ionicons name="close" size={22} color="#ffffff" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalScroll}>
-              <View style={styles.insightBoxBlue}>
-                <ThemedText style={styles.insightBoxTitle}>Weekly Intelligence Summary</ThemedText>
-                <ThemedText style={styles.insightBoxText}>
-                  Your triggers occurred predominantly during Late Night in private spaces.
-                  By implementing the evening breathing schedule, you successfully mitigated 85% of triggers before they manifested as craving peaks.
-                </ThemedText>
+            {/* Protocol Progress Bar */}
+            {recommendations?.progress_stats && (
+              <View style={styles.recModalProgressBarBox}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <ThemedText style={styles.recModalProgressLabel}>DAILY DISCIPLINE PROGRESS</ThemedText>
+                  <ThemedText style={styles.recModalProgressPct}>
+                    {recommendations.progress_stats.completed_tasks}/{recommendations.progress_stats.total_tasks} COMPLETED ({recommendations.progress_stats.completion_percentage}%)
+                  </ThemedText>
+                </View>
+                <View style={styles.recModalProgressTrack}>
+                  <View
+                    style={[
+                      styles.recModalProgressFill,
+                      {
+                        width: `${recommendations.progress_stats.completion_percentage}%`,
+                        backgroundColor:
+                          recommendations.progress_stats.completion_percentage === 100 ? '#10B981' : '#6366F1',
+                      },
+                    ]}
+                  />
+                </View>
               </View>
+            )}
+
+            <ScrollView contentContainerStyle={[styles.modalScroll, { gap: 10, paddingBottom: 16 }]} showsVerticalScrollIndicator={false}>
+              {recommendations?.recommended_actions && recommendations.recommended_actions.length > 0 ? (
+                recommendations.recommended_actions.map((task) => (
+                  <View
+                    key={task.id}
+                    style={[
+                      styles.recTaskCard,
+                      task.is_completed && styles.recTaskCardCompleted,
+                      { borderColor: task.is_completed ? 'rgba(16, 185, 129, 0.3)' : `${task.color}35` },
+                    ]}
+                  >
+                    <View style={styles.recTaskCardHeader}>
+                      {/* Checkbox / Done Icon */}
+                      <TouchableOpacity
+                        style={[
+                          styles.recTaskCheckbox,
+                          task.is_completed && styles.recTaskCheckboxChecked,
+                          { borderColor: task.is_completed ? '#10B981' : task.color },
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => handleCompleteRecommendationTask(task)}
+                      >
+                        {task.is_completed && <Ionicons name="checkmark" size={14} color="#ffffff" />}
+                      </TouchableOpacity>
+
+                      <View style={{ flex: 1, marginHorizontal: 8 }}>
+                        <ThemedText
+                          style={[
+                            styles.recTaskTitle,
+                            task.is_completed && { textDecorationLine: 'line-through', color: 'rgba(255, 255, 255, 0.5)' },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {task.title}
+                        </ThemedText>
+                        <ThemedText style={styles.recTaskTimeWindow}>
+                          {task.time_window} Protocol • +{task.xp_reward} XP
+                        </ThemedText>
+                      </View>
+
+                      {/* Action Button */}
+                      <TouchableOpacity
+                        style={[
+                          styles.recTaskActionBtn,
+                          { backgroundColor: task.is_completed ? 'rgba(255, 255, 255, 0.06)' : `${task.color}25` },
+                        ]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          triggerHaptic();
+                          setInsightModalVisible(false);
+                          if (task.route) {
+                            router.push(task.route as any);
+                          }
+                        }}
+                      >
+                        <ThemedText
+                          style={[
+                            styles.recTaskActionBtnText,
+                            { color: task.is_completed ? '#94A3B8' : task.color },
+                          ]}
+                        >
+                          {task.is_completed ? 'Open' : 'Start'}
+                        </ThemedText>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={11}
+                          color={task.is_completed ? '#94A3B8' : task.color}
+                          style={{ marginLeft: 2 }}
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    <ThemedText style={styles.recTaskDesc} numberOfLines={2}>
+                      {task.description}
+                    </ThemedText>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.insightBoxBlue}>
+                  <ThemedText style={styles.insightBoxTitle}>Mind Strength Protocol Active</ThemedText>
+                  <ThemedText style={styles.insightBoxText}>
+                    Continue executing your daily check-in, targeted breathwork, and evening reflections to maintain peak dopamine receptor sensitivity.
+                  </ThemedText>
+                </View>
+              )}
             </ScrollView>
 
             <TouchableOpacity
-              style={styles.modalCloseBtn}
+              style={[styles.modalCloseBtn, { marginTop: 8 }]}
               activeOpacity={0.8}
               onPress={() => setInsightModalVisible(false)}
             >
-              <ThemedText style={styles.modalCloseText}>Got It</ThemedText>
+              <ThemedText style={styles.modalCloseText}>Done</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -2595,6 +2854,98 @@ const styles = StyleSheet.create({
   aiInsightBrainImage: {
     width: 90,
     height: 90,
+  },
+  recProgressPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  recProgressPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  recModalProgressBarBox: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  recModalProgressLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+  },
+  recModalProgressPct: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#00E5FF',
+  },
+  recModalProgressTrack: {
+    height: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  recModalProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  recTaskCard: {
+    backgroundColor: 'rgba(15, 18, 28, 0.85)',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+  },
+  recTaskCardCompleted: {
+    backgroundColor: 'rgba(16, 185, 129, 0.04)',
+  },
+  recTaskCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  recTaskCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  recTaskCheckboxChecked: {
+    backgroundColor: '#10B981',
+  },
+  recTaskTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    letterSpacing: -0.2,
+  },
+  recTaskTimeWindow: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  recTaskActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 7,
+  },
+  recTaskActionBtnText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  recTaskDesc: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.55)',
+    lineHeight: 15,
+    marginLeft: 30,
   },
   gridRow: {
     flexDirection: 'row',

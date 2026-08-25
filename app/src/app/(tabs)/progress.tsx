@@ -156,7 +156,7 @@ export default function ProgressTabScreen() {
               <View style={styles.cardHeaderRow}>
                 <View style={styles.headerBadgeRow}>
                   <Ionicons name="sparkles" size={14} color="#00E5FF" />
-                  <ThemedText style={styles.cardCategoryTitle}>AI MINDSET EVALUATION</ThemedText>
+                  <ThemedText style={styles.cardCategoryTitle}>MINDSET PROGRESS INTELLIGENCE</ThemedText>
                 </View>
                 <View style={[styles.statusPill, { backgroundColor: lastLoggedStatus === 'retained' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)' }]}>
                   <ThemedText style={[styles.statusPillText, { color: lastLoggedStatus === 'retained' ? '#10B981' : '#94A3B8' }]}>
@@ -177,7 +177,7 @@ export default function ProgressTabScreen() {
                     {mindsetEval?.status_title ?? (streak > 7 ? 'Ojas Transmutation Active' : 'Building Neural Resilience')}
                   </ThemedText>
                   <ThemedText style={styles.scoreDescriptionText}>
-                    {mindsetEval?.summary || 'Evaluated live by Gemini AI from daily check-ins, journals, 3 PM meditation, and urge control.'}
+                    {mindsetEval?.summary || 'Evaluated live from daily check-ins, journals, yogic meditation, and urge control discipline.'}
                   </ThemedText>
                 </View>
               </View>
@@ -214,7 +214,7 @@ export default function ProgressTabScreen() {
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Ionicons name="information-circle-outline" size={15} color="#94A3B8" />
-                  <ThemedText style={styles.explainerLinkText}>How AI Calculates Mindset Score</ThemedText>
+                  <ThemedText style={styles.explainerLinkText}>How Progress Intelligence Calculates Score</ThemedText>
                 </View>
                 <Ionicons name="chevron-forward" size={14} color="#64748B" />
               </TouchableOpacity>
@@ -612,13 +612,13 @@ export default function ProgressTabScreen() {
 
             <View style={styles.modalHeader}>
               <Ionicons name="information-circle" size={20} color="#00E5FF" />
-              <ThemedText style={styles.modalTitle}>How AI Calculates Mindset Score</ThemedText>
+              <ThemedText style={styles.modalTitle}>How Progress Intelligence Calculates Score</ThemedText>
             </View>
 
             <View style={styles.formulaBox}>
-              <ThemedText style={styles.formulaHeader}>GEMINI MULTI-VARIABLE EVALUATION</ThemedText>
+              <ThemedText style={styles.formulaHeader}>4-PILLAR MULTI-VARIABLE EVALUATION</ThemedText>
               <ThemedText style={styles.formulaText}>
-                Your Mindset Score ({scoreValue}/100) is evaluated live from your daily check-in, recent journals, 3 PM meditation logs, and urge control history.
+                Your Mindset Score ({scoreValue}/100) is evaluated live from your daily check-in, recent journals, yogic meditation logs, and urge transmutation discipline.
               </ThemedText>
             </View>
 
@@ -629,7 +629,7 @@ export default function ProgressTabScreen() {
                   {mindsetEval?.checkin_score ?? 30}/30 PTS
                 </ThemedText>
               </View>
-              <ThemedText style={styles.stepDetail}>Evaluates mood, energy, sleep quality, stress levels, and urge control.</ThemedText>
+              <ThemedText style={styles.stepDetail}>Evaluates mood, energy, sleep quality, stress management, and daily accountability.</ThemedText>
             </View>
 
             <View style={styles.calcStep}>
@@ -639,17 +639,17 @@ export default function ProgressTabScreen() {
                   {mindsetEval?.journal_score ?? 20}/20 PTS
                 </ThemedText>
               </View>
-              <ThemedText style={styles.stepDetail}>Evaluates depth of introspection, emotional honesty, and self-awareness.</ThemedText>
+              <ThemedText style={styles.stepDetail}>Evaluates depth of introspection, emotional honesty, and psychological awareness.</ThemedText>
             </View>
 
             <View style={styles.calcStep}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <ThemedText style={styles.stepName}>3. Meditation & Urge Discipline</ThemedText>
+                <ThemedText style={styles.stepName}>3. Meditation & Urge Transmutation</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
                   {mindsetEval?.meditation_urge_score ?? 50}/50 PTS
                 </ThemedText>
               </View>
-              <ThemedText style={styles.stepDetail}>Tracks afternoon mindfulness sessions, urges defeated, and energy transmutation control.</ThemedText>
+              <ThemedText style={styles.stepDetail}>Tracks yogic mindfulness sessions, urges defeated, and vital energy transmutation.</ThemedText>
             </View>
 
             <TouchableOpacity

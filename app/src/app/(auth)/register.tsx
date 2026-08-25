@@ -64,7 +64,6 @@ export default function AuthRegisterScreen() {
 
     try {
       await register(trimmedEmail, password, trimmedName);
-      await requestOtp(trimmedEmail).catch(() => {});
       router.replace({ pathname: '/(auth)/verify-email' as any, params: { email: trimmedEmail, name: trimmedName } });
     } catch (err: any) {
       const detail = err?.detail || err?.message || '';
