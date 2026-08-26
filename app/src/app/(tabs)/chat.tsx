@@ -245,9 +245,23 @@ export default function CoachChatScreen() {
     // Complete AI Coach daily mission task
     useDailyMissionStore.getState().completeTask('coach');
 
+    const nowDate = new Date();
+    const nowHour = nowDate.getHours();
+    const timeOfDay = nowHour >= 5 && nowHour < 12 ? 'Morning' : (nowHour >= 12 && nowHour < 17 ? 'Afternoon' : (nowHour >= 17 && nowHour < 22 ? 'Evening' : 'Night'));
+    const localTimeStr = nowDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const localDateStr = nowDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    let tzStr = 'UTC';
+    try {
+      tzStr = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch (e) {}
+
     try {
       const response = await coachApi.sendMessage({
         message: text.trim(),
+        local_time: localTimeStr,
+        local_date: localDateStr,
+        timezone: tzStr,
+        time_of_day: timeOfDay,
       });
 
       let aiTime = nowTime;

@@ -41,9 +41,15 @@ async def send_message(
     )
     await user_msg.save()
 
-    # Determine time of day for natural conversational pacing
-    now_hour = datetime.utcnow().hour
-    time_of_day = "Morning" if 5 <= now_hour < 12 else ("Afternoon" if 12 <= now_hour < 18 else ("Evening" if 18 <= now_hour < 23 else "Late Night"))
+    # Determine real-time time of day and temporal context
+    time_of_day = payload.time_of_day
+    if not time_of_day:
+        now_hour = datetime.utcnow().hour
+        time_of_day = "Morning" if 5 <= now_hour < 12 else ("Afternoon" if 12 <= now_hour < 18 else ("Evening" if 18 <= now_hour < 23 else "Late Night"))
+
+    local_time_val = payload.local_time or datetime.utcnow().strftime("%I:%M %p")
+    local_date_val = payload.local_date or datetime.utcnow().strftime("%A, %B %d, %Y")
+    timezone_val = payload.timezone or "UTC"
 
     # Generate AI reply via Gemini
     from app.services.gemini_service import get_chat_response
@@ -52,6 +58,9 @@ async def send_message(
         "streak": getattr(current_user, "streak", 0),
         "total_urges_count": profile_summary.get("total_urges_count", 0),
         "time_of_day": time_of_day,
+        "local_time": local_time_val,
+        "local_date": local_date_val,
+        "timezone": timezone_val,
         "mind_strength": getattr(profile, "mind_strength", 75),
     }
     reply = await get_chat_response(messages=history + [{"role": "user", "content": payload.message}], user_context=user_ctx)

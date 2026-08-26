@@ -211,6 +211,9 @@ async def get_chat_response(messages: List[Dict[str, str]], user_context: Dict[s
     user_name = user_context.get("name", "Operative")
     streak_days = user_context.get("streak", 0)
     time_of_day = user_context.get("time_of_day", "Today")
+    local_time = user_context.get("local_time", "")
+    local_date = user_context.get("local_date", "")
+    timezone = user_context.get("timezone", "")
 
     # Detect if user message is a short greeting or quick check-in
     clean_lower = last_user_msg.lower().strip(" .!?,:;")
@@ -222,11 +225,17 @@ async def get_chat_response(messages: List[Dict[str, str]], user_context: Dict[s
     is_urgent_urge = any(w in clean_lower for w in ["urge", "relapse", "craving", "horny", "help", "struggling", "trigger", "edge", "edging"])
 
     prompt = f"""
-You are the ZenWill AI Mind & Willpower Coach. You are speaking with {user_name} (Current Clean Streak: {streak_days} days | Time: {time_of_day}).
+You are the ZenWill AI Mind & Willpower Coach. You are speaking with {user_name}.
+
+REAL-TIME TEMPORAL CONTEXT (MANDATORY & STRICT):
+- User's Exact Local Date: {local_date}
+- User's Exact Local Time: {local_time} ({time_of_day}) [Timezone: {timezone}]
+- User's Current Clean Streak: {streak_days} days
+CRITICAL INSTRUCTION: You MUST strictly match the user's real-time temporal context ({time_of_day} at {local_time}). If it is Afternoon, NEVER say "Good morning". If it is Evening/Night, NEVER say "Good afternoon" or "Good morning". Match all greetings, check-ins, and temporal phrasing precisely to {time_of_day}.
 
 CORE CONVERSATIONAL PRINCIPLES:
 1. CALIBRATED BREVITY (CRITICAL):
-   - If the user sends a simple greeting or short remark (e.g. "hi", "hello", "hey"): Respond in ONLY 1 to 2 short, warm, professional sentences. NEVER preach, lecture, or dump paragraphs on a greeting.
+   - If the user sends a simple greeting or short remark (e.g. "hi", "hello", "hey"): Respond in ONLY 1 to 2 short, warm, professional sentences matching the current {time_of_day.lower()}. NEVER preach, lecture, or dump paragraphs on a greeting.
    - If the user asks a specific question or shares a challenge: Deliver a sharp, actionable, highly professional response (2 to 4 concise sentences max).
    - If the user is in an active urge: Give 1-2 immediate physical/mental grounding steps.
 2. PROFESSIONAL & EMPATHETIC: Speak like an elite executive performance and mindfulness mentor. Calm, disciplined, respectful, and sharp. No fluff, no robotic filler.
@@ -248,8 +257,8 @@ Reply:
 
     # Contextual Smart Fallback
     if is_greeting:
-        return f"Hello {user_name}. Ready to assist your focus and discipline {time_of_day.lower()}. What's on your mind?"
+        return f"Hello {user_name}. Good {time_of_day.lower()}. Ready to assist your focus and discipline. What's on your mind?"
     elif is_urgent_urge:
         return f"Pause right now, {user_name}. Place your device down, take 3 deep breaths, and ground your attention in this room. The urge wave will peak and dissipate."
     else:
-        return f"Understood, {user_name}. Maintain your presence and focus. What specific challenge or objective are you working through right now?"
+        return f"Understood, {user_name}. Maintain your presence and focus this {time_of_day.lower()}. What specific challenge or objective are you working through right now?"

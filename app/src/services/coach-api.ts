@@ -20,6 +20,10 @@ export const coachApi = {
     message: string;
     session_id?: string;
     emotional_context?: string;
+    local_time?: string;
+    local_date?: string;
+    timezone?: string;
+    time_of_day?: string;
   }): Promise<CoachMessageResponse> {
     return api.post<CoachMessageResponse>('/coach/message', data);
   },
