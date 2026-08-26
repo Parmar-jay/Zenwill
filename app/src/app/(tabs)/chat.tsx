@@ -102,7 +102,7 @@ export default function CoachChatScreen() {
   const getInitialAiMessage = (name: string): Message => ({
     id: 'init-ai-greeting',
     sender: 'ai',
-    text: `Hello ${name}, I am your AI Coach. How can I help you master your mind and energy today?`,
+    text: `Welcome, ${name || 'Warrior'}. I am your ZenWill Mind & Willpower Coach. Together, we master your impulses, forge unbreakable mental discipline, and transmute raw urge energy into pure focus. How are you feeling right now?`,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   });
 

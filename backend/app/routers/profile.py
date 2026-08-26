@@ -11,6 +11,7 @@ from app.models.journal import JournalEntry
 from app.models.daily_checkin import DailyCheckin
 from app.models.behavioral_event import BehavioralEvent
 from app.models.emergency_session import EmergencySession
+from app.models.chat_message import ChatMessage
 from datetime import timedelta
 
 
@@ -313,6 +314,26 @@ async def submit_onboarding(
         current_user.name = payload.firstName
 
     await current_user.save()
+
+    # 4. Seed initial AI Coach greeting in MongoDB if no chat history exists
+    existing_chat = await ChatMessage.find_one(
+        {"$or": [{"user_id": user_id_str}, {"user_id": current_user.email}]}
+    )
+    if not existing_chat:
+        user_display_name = payload.firstName or current_user.name or "Warrior"
+        welcome_text = (
+            f"Welcome, {user_display_name}. I am your ZenWill Mind & Willpower Coach. "
+            "Together, we master your impulses, forge unbreakable mental discipline, and transmute raw urge energy into pure focus. "
+            "How are you feeling right now?"
+        )
+        first_msg = ChatMessage(
+            user_id=user_id_str,
+            role="assistant",
+            content=welcome_text,
+            emotional_context="welcome",
+            created_at=datetime.utcnow(),
+        )
+        await first_msg.save()
 
     return {
         "success": True,

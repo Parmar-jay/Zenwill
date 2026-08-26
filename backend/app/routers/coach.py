@@ -100,7 +100,24 @@ async def get_chat_history(
     query = {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]} if user_email else {"user_id": user_id_str}
 
     messages = await ChatMessage.find(query).sort("-created_at").limit(limit).to_list()
-    messages = list(reversed(messages))
+    if not messages:
+        user_name = current_user.name or "Warrior"
+        welcome_text = (
+            f"Welcome, {user_name}. I am your ZenWill Mind & Willpower Coach. "
+            "Together, we master your impulses, forge unbreakable mental discipline, and transmute raw urge energy into pure focus. "
+            "How are you feeling right now?"
+        )
+        first_msg = ChatMessage(
+            user_id=user_id_str,
+            role="assistant",
+            content=welcome_text,
+            emotional_context="welcome",
+            created_at=datetime.utcnow(),
+        )
+        await first_msg.save()
+        messages = [first_msg]
+    else:
+        messages = list(reversed(messages))
 
     return [
         ChatHistoryMessage(
@@ -117,13 +134,29 @@ async def get_chat_history(
 async def clear_chat_history(
     current_user: User = Depends(get_current_user),
 ):
-    """Clear all stored AI Coach chat messages for the current user."""
+    """Clear all stored AI Coach chat messages for the current user and reset with default greeting."""
     user_id_str = str(current_user.id)
     user_email = current_user.email if current_user.email else ""
     query = {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]} if user_email else {"user_id": user_id_str}
 
     await ChatMessage.find(query).delete()
-    return {"status": "success", "message": "Chat history cleared"}
+
+    user_name = current_user.name or "Warrior"
+    welcome_text = (
+        f"Welcome, {user_name}. I am your ZenWill Mind & Willpower Coach. "
+        "Together, we master your impulses, forge unbreakable mental discipline, and transmute raw urge energy into pure focus. "
+        "How are you feeling right now?"
+    )
+    first_msg = ChatMessage(
+        user_id=user_id_str,
+        role="assistant",
+        content=welcome_text,
+        emotional_context="welcome",
+        created_at=datetime.utcnow(),
+    )
+    await first_msg.save()
+
+    return {"status": "success", "message": "Chat history reset with initial greeting"}
 
 
 def _detect_emotional_context(message: str) -> str:
