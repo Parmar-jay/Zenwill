@@ -178,15 +178,19 @@ export default function RelapseAutopsyScreen() {
       // fallback result with actual user streak context if offline
       useHabitStore.getState().logDay(false);
       const dom = DOMINO_OPTIONS.find((d) => d.id === selectedDomino);
+      const prevStreak = streak || user?.streak || 0;
       setAutopsyResult({
         success: true,
         retained_percentage: 90.0,
-        clean_days_count: streak || user?.streak || 0,
-        streak_before: streak || user?.streak || 0,
+        clean_days_count: prevStreak,
+        streak_before: prevStreak,
         domino_title: dom?.title || 'Bedside Phone',
-        generated_golden_rule: `The ${selectedEnvironment} Rule: Never use your ${selectedDevice} in ${selectedEnvironment}. Keep it charging 2 meters away before 10:30 PM.`,
+        generated_golden_rule: `The ${selectedEnvironment} Boundary: Keep your ${selectedDevice} away from where you sleep and avoid using screens in bed.`,
         rule_category: 'Environmental',
-        reframing_message: 'Your defense is set. Follow this simple rule and get right back on track.',
+        reframing_message:
+          prevStreak > 0
+            ? `Your ${prevStreak} clean ${prevStreak === 1 ? 'day' : 'days'} built real discipline. Follow this simple rule and get right back on track.`
+            : 'Every setback gives you clear data. Follow this simple rule starting today to build a strong clean streak.',
       });
       setStep(4);
     } finally {
@@ -241,27 +245,52 @@ export default function RelapseAutopsyScreen() {
                 {/* Clear 3-Step Guide Card */}
                 <View style={styles.groundingCard}>
                   <View style={styles.groundingHeaderRow}>
-                    <Ionicons name="compass-outline" size={18} color="#00E5FF" />
+                    <Ionicons name="compass-outline" size={16} color="#00E5FF" />
                     <ThemedText style={styles.groundingTitle}>WHAT WE WILL DO IN 60 SECONDS</ThemedText>
                   </View>
+
                   <View style={styles.stepList}>
-                    <ThemedText style={styles.stepItemText}>
-                      • <ThemedText style={{ color: '#F8FAFC', fontWeight: '700' }}>Step 1:</ThemedText> Find the small choice made 2–3 hours ago that started this.
-                    </ThemedText>
-                    <ThemedText style={styles.stepItemText}>
-                      • <ThemedText style={{ color: '#F8FAFC', fontWeight: '700' }}>Step 2:</ThemedText> Identify the room, mood, and device involved.
-                    </ThemedText>
-                    <ThemedText style={styles.stepItemText}>
-                      • <ThemedText style={{ color: '#F8FAFC', fontWeight: '700' }}>Step 3:</ThemedText> Create one simple, powerful rule to protect you tomorrow.
-                    </ThemedText>
+                    <View style={styles.stepItemRow}>
+                      <View style={styles.stepNumberBadge}>
+                        <ThemedText style={styles.stepNumberBadgeText}>1</ThemedText>
+                      </View>
+                      <ThemedText style={styles.stepItemText}>
+                        <ThemedText style={styles.stepItemBold}>Isolate the Trigger:</ThemedText> Find the small choice made 2–3 hours ago that started this.
+                      </ThemedText>
+                    </View>
+
+                    <View style={styles.stepItemRow}>
+                      <View style={styles.stepNumberBadge}>
+                        <ThemedText style={styles.stepNumberBadgeText}>2</ThemedText>
+                      </View>
+                      <ThemedText style={styles.stepItemText}>
+                        <ThemedText style={styles.stepItemBold}>Map Environment:</ThemedText> Identify the room, emotional state, and device involved.
+                      </ThemedText>
+                    </View>
+
+                    <View style={styles.stepItemRow}>
+                      <View style={styles.stepNumberBadge}>
+                        <ThemedText style={styles.stepNumberBadgeText}>3</ThemedText>
+                      </View>
+                      <ThemedText style={styles.stepItemText}>
+                        <ThemedText style={styles.stepItemBold}>Deploy Shield Rule:</ThemedText> Create 1 ironclad rule to protect you tomorrow.
+                      </ThemedText>
+                    </View>
                   </View>
 
                   {(streak > 0 || (user?.streak || 0) > 0) && (
-                    <View style={styles.streakContextPill}>
-                      <Ionicons name="flame" size={13} color="#F59E0B" style={{ marginRight: 4 }} />
-                      <ThemedText style={styles.streakContextText}>
-                        Previous Streak: {streak || user?.streak} Days Clean (Your brain keeps this strength!)
-                      </ThemedText>
+                    <View style={styles.streakContextBox}>
+                      <View style={styles.streakIconCircle}>
+                        <Ionicons name="flame" size={16} color="#F59E0B" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={styles.streakContextTitle}>
+                          Previous Streak: {streak || user?.streak || 0} {(streak || user?.streak || 0) === 1 ? 'Day' : 'Days'} Clean
+                        </ThemedText>
+                        <ThemedText style={styles.streakContextSubtitle}>
+                          Your neural rewiring and mind strength are preserved.
+                        </ThemedText>
+                      </View>
                     </View>
                   )}
                 </View>
@@ -460,7 +489,7 @@ export default function RelapseAutopsyScreen() {
                   </View>
                   <ThemedText style={styles.ruleBodyText}>
                     {autopsyResult?.generated_golden_rule ||
-                      `The ${selectedEnvironment} Rule: Never use your ${selectedDevice} in ${selectedEnvironment}. Keep it charging 2 meters away before 10:30 PM.`}
+                      `The ${selectedEnvironment} Boundary: Keep your ${selectedDevice} away from where you sleep and avoid using screens in bed.`}
                   </ThemedText>
                 </View>
 
@@ -469,7 +498,7 @@ export default function RelapseAutopsyScreen() {
                   <ThemedText style={styles.summaryLabel}>How to use this rule:</ThemedText>
                   <ThemedText style={styles.summaryDesc}>
                     {autopsyResult?.reframing_message ||
-                      'Your defense is set. Follow this simple rule tonight and get right back on track.'}
+                      'Your protection boundary is set. Follow this simple rule starting today and get right back on track.'}
                   </ThemedText>
                 </View>
 
@@ -603,44 +632,84 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.25)',
     padding: 16,
-    gap: 10,
-    marginVertical: 12,
+    gap: 14,
+    marginVertical: 10,
   },
   groundingHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   groundingTitle: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#00E5FF',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
   },
   stepList: {
-    gap: 6,
+    gap: 10,
+  },
+  stepItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  stepNumberBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  stepNumberBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: '#00E5FF',
   },
   stepItemText: {
+    flex: 1,
     fontSize: 12.5,
-    color: 'rgba(255, 255, 255, 0.65)',
+    color: 'rgba(255, 255, 255, 0.7)',
     lineHeight: 18,
   },
-  streakContextPill: {
+  stepItemBold: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+  },
+  streakContextBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
     borderColor: 'rgba(245, 158, 11, 0.3)',
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    alignSelf: 'flex-start',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
     marginTop: 4,
   },
-  streakContextText: {
-    fontSize: 11.5,
-    fontWeight: '700',
+  streakIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakContextTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
     color: '#F59E0B',
+    letterSpacing: -0.2,
+  },
+  streakContextSubtitle: {
+    fontSize: 11,
+    color: 'rgba(245, 158, 11, 0.8)',
+    marginTop: 2,
+    lineHeight: 15,
   },
   dominoList: {
     gap: 10,

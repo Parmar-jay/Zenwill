@@ -16,57 +16,57 @@ logger = logging.getLogger(__name__)
 DOMINO_FIREWALL_RULES = {
     "phone_in_bed": {
         "title": "Bringing Phone to Bedside",
-        "rule": "Enforce the 2-Meter Bedroom Phone Firewall: Never bring your phone into bed. Plug it in at least 2 meters away 45 minutes before sleep.",
+        "rule": "Bedside Phone Boundary: Keep your phone charging across the room before going to sleep. Avoid using screens while lying in bed.",
         "category": "Environmental",
     },
     "doomscrolling": {
         "title": "Social Media Doomscrolling",
-        "rule": "Digital Friction Protocol: Remove infinite-scroll apps from your home screen and enforce a strict 15-minute daily app timer.",
+        "rule": "Digital Friction Protocol: Set daily app limits on social feeds and turn off non-essential notifications.",
         "category": "Cognitive",
     },
     "work_stress_isolation": {
         "title": "Work Stress & Solitary Isolation",
-        "rule": "Somatic Stress Decompression: Never sit alone behind closed doors immediately after high-stress work. Execute 5-minute Box Breathing or a brisk walk first.",
+        "rule": "Post-Work Decompression: After stressful work, take a short walk, drink water, or do 5 minutes of deep breathing before relaxing with screens.",
         "category": "Emotional",
     },
     "suggestive_peeking": {
         "title": "Suggestive Peeking & Soft Triggers",
-        "rule": "The 3-Second Severance Rule: Zero tolerance for soft triggers. The instant suggestive media appears, immediately power off screen and step out of the room.",
+        "rule": "Immediate Exit Rule: The instant suggestive media appears, immediately close the app and step out of the room.",
         "category": "Cognitive",
     },
     "skipped_habits": {
         "title": "Skipping Daily Check-in / Habits",
-        "rule": "Morning Non-Negotiable Anchor: Complete your daily check-in before opening any digital feeds or browser windows.",
+        "rule": "Morning Routine Anchor: Complete your daily check-in each morning to keep your commitment top of mind.",
         "category": "Habitual",
     },
     "late_night_boredom": {
         "title": "Late-Night Idleness & Boredom",
-        "rule": "Fixed Lights-Out Directive: Enforce a strict 10:30 PM bedtime. If sleepless after 20 minutes, get out of bed and read a physical book under dim light.",
+        "rule": "Nighttime Screen Cutoff: Put screens away 30 minutes before sleep. Read a physical book or listen to calming audio if you cannot sleep.",
         "category": "Circadian",
     },
     "bathroom_phone": {
         "title": "Bathroom Phone Usage",
-        "rule": "Device-Free Sanctuary: Never bring any phone or tablet into the bathroom. Leave devices charging in the living room.",
+        "rule": "Bathroom Device Boundary: Never bring your phone or tablet into the bathroom. Leave it outside on your desk.",
         "category": "Environmental",
     },
     "alcohol_substances": {
         "title": "Alcohol / Fatigue Lowering Inhibition",
-        "rule": "Prefrontal Guardrail: Recognize that fatigue and alcohol impair self-regulation filters. Keep all devices locked in a drawer during social recovery.",
+        "rule": "Fatigue Protection Protocol: When physically exhausted or coming home late, power down screens and head directly to sleep.",
         "category": "Physical",
     },
     "emotional_loneliness": {
         "title": "Emotional Loneliness / Conflict",
-        "rule": "Connection Protocol: When feeling isolated or hurt, step into a common area or call an accountability friend instead of seeking digital numbness.",
+        "rule": "Emotional Reset Rule: When feeling isolated or down, reach out to a friend, go outside, or journal instead of seeking quick dopamine.",
         "category": "Emotional",
     },
     "couch_procrastination": {
         "title": "Passive Stagnation & Procrastination",
-        "rule": "Physical Movement Directive: The moment you notice 15 minutes of passive lying on the couch, immediately stand up and do 20 bodyweight squats.",
+        "rule": "Active Break Directive: If you find yourself lounging mindlessly for over 15 minutes, stand up, stretch, drink water, or tackle one small task.",
         "category": "Physical",
     },
     "incognito_browsing": {
         "title": "Private / Incognito Browsing",
-        "rule": "Strict Accountability Firewall: Block incognito mode on your primary browser and enforce content filters with open-door device usage.",
+        "rule": "Transparent Browsing Rule: Avoid private or unmonitored browser tabs. Keep browsing habits open and intentional.",
         "category": "Cognitive",
     },
 }
@@ -118,9 +118,11 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
     rule_category = domino_info["category"]
     generated_rule = domino_info["rule"]
 
-    # If specific environment or device is customized, enrich the rule
-    if "bed" in first_domino_key:
-        generated_rule = f"The {physical_env} Firewall: Never operate your {device_involved.title()} in {physical_env}. Plug it in 2 meters away before 10:30 PM."
+    # If specific environment or device is customized, enrich the rule with practical boundary
+    if "bed" in first_domino_key or "bedroom" in physical_env.lower():
+        generated_rule = f"The {physical_env} Boundary: Keep your {device_involved.title()} away from where you sleep and avoid using screens in bed."
+    elif "bathroom" in first_domino_key or "bathroom" in physical_env.lower():
+        generated_rule = f"The Bathroom Boundary: Never bring your {device_involved.title()} into the bathroom. Leave it outside on your desk or table."
 
     # 3. Create and Save RelapseAutopsy Record
     autopsy = RelapseAutopsy(
@@ -169,6 +171,25 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
             today_checkin.primary_triggers = [emotional_precursor]
         await today_checkin.save()
 
+    # Construct genuine, practical reframing message based on real user numbers
+    if streak_before > 0:
+        day_word = "day" if streak_before == 1 else "days"
+        reframing_msg = (
+            f"Your {streak_before} clean {day_word} built real discipline and neuroplastic progress. "
+            "Use this protection rule to secure your environment and resume your momentum now."
+        )
+    elif clean_days_count > 0:
+        day_word = "day" if clean_days_count == 1 else "days"
+        reframing_msg = (
+            f"You have logged {clean_days_count} clean {day_word} on your journey. "
+            "Every relapse gives you clear data. Follow this protection rule and start fresh today."
+        )
+    else:
+        reframing_msg = (
+            "Every recovery journey begins with honest awareness. "
+            "Follow this simple physical protection rule starting today to build a strong clean streak."
+        )
+
     return {
         "success": True,
         "autopsy_id": str(autopsy.id),
@@ -178,11 +199,7 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
         "domino_title": domino_title,
         "generated_golden_rule": generated_rule,
         "rule_category": rule_category,
-        "reframing_message": (
-            f"You did not lose your {clean_days_count} clean days of neural rewiring. "
-            f"Your brain retains {retained_pct}% of its dopamine baseline. "
-            "Execute your new Golden Firewall Rule and resume your trajectory now."
-        ),
+        "reframing_message": reframing_msg,
     }
 
 

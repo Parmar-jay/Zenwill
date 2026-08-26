@@ -92,9 +92,9 @@ export default function MeditationScreen() {
     if (found) return found;
 
     // Fallback based on time of day
-    if (currentHour < 12) return YOGIC_PRACTICES[0]; // Nadi Shodhana
-    if (currentHour < 18) return YOGIC_PRACTICES[2]; // Dirgha Pranayama
-    return YOGIC_PRACTICES[1]; // Bhramari
+    if (currentHour < 12) return YOGIC_PRACTICES[0]; // Nadi Shodhana (Morning Clarity)
+    if (currentHour < 18) return YOGIC_PRACTICES[1]; // Bhramari (Midday Reset)
+    return YOGIC_PRACTICES[1]; // Bhramari (Evening Calm)
   }, [recommendedData, currentHour]);
 
   const recommendedReason = useMemo(() => {

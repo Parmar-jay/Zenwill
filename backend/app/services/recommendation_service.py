@@ -269,22 +269,22 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
 
     # ── Recommended Meditation Practice Algorithm ────────────────────────────
     # Dynamically adapts to BOTH the Time Window (Morning / Afternoon / Evening)
-    # AND the User's Checklist Signals (stress_score, energy_score, sleep_quality, urge_intensity, mood, focus_score)
+    # AND the User's Real-Time Checklist Signals (stress_score, energy_score, sleep_quality, urge_intensity, mood, focus_score)
 
     time_key = time_window["key"]  # "morning" | "afternoon" | "evening"
 
-    # Priority 1: Acute Urge or Active Craving Alert (Highest Priority across all times)
-    if today_urges_count > 0 or checkin_urge_intensity >= 5 or ob_first_sign in ["craving", "physical", "touching"]:
+    # Priority 1: Acute Real-Time Urge (Active SOS session today or checkin urge >= 6/10)
+    if today_urges_count > 0 or checkin_urge_intensity >= 6:
         chosen_technique_key = "dirgha-pranayama"
         if time_key == "morning":
-            reason_text = "Morning Urge Neutralizer: 3-part diaphragmatic breath to ground pelvic urge waves and protect your morning momentum."
+            reason_text = "Morning Urge Neutralizer: 3-part diaphragmatic breath to ground active cravings and protect your morning momentum."
         elif time_key == "afternoon":
             reason_text = "Midday Craving Interceptor: Slows elevated heart rate and diverts dopamine seeking into calm oxygenation."
         else:
-            reason_text = "Nighttime Urge Shield: Shuts down bedtime temptations and resets impulsive dopamine loops."
+            reason_text = "Nighttime Urge Shield: Shuts down late-night cravings and resets impulsive dopamine loops."
 
-    # Priority 2: High Stress / Cortisol Spike / Agitated Mood
-    elif stress_score >= 6 or mood in ["Anxious", "Overwhelmed", "Frustrated", "Angry"] or "stress" in ob_triggers:
+    # Priority 2: High Stress / Cortisol Spike / Agitated Mood (stress >= 6 or anxious/overwhelmed)
+    elif stress_score >= 6 or mood in ["Anxious", "Overwhelmed", "Frustrated", "Angry"]:
         if time_key == "evening":
             chosen_technique_key = "bhramari"
             reason_text = f"Evening Stress Dissolver ({stress_score}/10 stress): Humming resonance to release accumulated mental tension before sleep."
@@ -292,7 +292,7 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
             chosen_technique_key = "nadi-shodhana"
             reason_text = f"Autonomic Balance ({stress_score}/10 stress): Alternate nostril breathing to balance sympathetic tone and calm baseline anxiety."
 
-    # Priority 3: Low Energy, Broken Sleep, or Dopamine Burnout
+    # Priority 3: Low Energy, Broken Sleep, or Dopamine Burnout (energy <= 4 or sleep quality <= 4)
     elif energy_score <= 4 or sleep_quality <= 4 or sleep_hours < 6.0:
         if time_key == "morning":
             chosen_technique_key = "nadi-shodhana"
@@ -304,8 +304,8 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
             chosen_technique_key = "bhramari"
             reason_text = f"Restorative Sleep Prep ({sleep_hours}h sleep / Quality {sleep_quality}/10): Induces parasympathetic tone for deep cellular recovery."
 
-    # Priority 4: Low Focus, Brain Fog, Loneliness, or Emotional Dispersion
-    elif focus_score <= 4 or mood in ["Sad", "Lonely", "Neutral"] or "loneliness" in ob_triggers or "boredom" in ob_triggers:
+    # Priority 4: Low Focus, Brain Fog, or Emotional Dispersion (focus <= 4 or sad/lonely)
+    elif focus_score <= 4 or mood in ["Sad", "Lonely"]:
         chosen_technique_key = "ajapa-japa"
         if time_key == "morning":
             reason_text = f"Morning Single-Point Anchor (Focus {focus_score}/10): Rhythmic breath awareness to eliminate scatter and lock in deep work focus."
@@ -324,17 +324,17 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
         else:
             reason_text = f"Evening Serene Victory ({streak_val}d Streak): Review your clean day with detached, serene self-mastery."
 
-    # Baseline Timeline Defaults
+    # Baseline Timeline Protocols (Time of Day Defaults)
     else:
         if time_key == "morning":
             chosen_technique_key = "nadi-shodhana"
-            reason_text = "Morning Focus & Balance: 7 minutes of alternate nostril breathwork to start your clean day with clarity."
+            reason_text = "Morning Focus & Clarity: 7 minutes of alternate nostril breathwork to awaken the prefrontal cortex and center your day."
         elif time_key == "afternoon":
-            chosen_technique_key = "dirgha-pranayama"
-            reason_text = "Midday Grounding: 5 minutes of deep 3-part breathing to sustain baseline discipline."
+            chosen_technique_key = "bhramari"
+            reason_text = "Midday Reset & Vitality: 5 minutes of humming bee breath to release midday tension and sustain sharp attention."
         else:
             chosen_technique_key = "bhramari"
-            reason_text = "Nighttime Melatonin & Calm: Quiets mental chatter and transitions your brain into restorative sleep."
+            reason_text = "Evening Calming Protocol: Soothing humming breath to induce parasympathetic rest and prepare for restorative sleep."
 
     recommended_meditation = dict(MEDITATION_TECHNIQUES[chosen_technique_key])
     recommended_meditation["reason"] = reason_text
