@@ -250,7 +250,79 @@ export default function TriggerIntelligenceScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* 2. Core Purpose Alignment Callout */}
+            {/* 2. 24-Hour Predictive Risk Horizon Timeline */}
+            {triggerData?.forecast_timeline_24h && (
+              <View style={styles.darkCard}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.headerBadgeRow}>
+                    <Ionicons name="time" size={14} color="#00E5FF" />
+                    <ThemedText style={styles.cardCategoryTitle}>24-HOUR PREDICTIVE HORIZON</ThemedText>
+                  </View>
+                  <ThemedText style={styles.forecastSubBadge}>DIURNAL RADAR</ThemedText>
+                </View>
+
+                <View style={{ gap: 8, marginTop: 4 }}>
+                  {triggerData.forecast_timeline_24h.map((slot) => {
+                    const isCrit = slot.risk_level === 'CRITICAL';
+                    const isElev = slot.risk_level === 'ELEVATED';
+                    const slotColor = isCrit ? '#EF4444' : isElev ? '#F59E0B' : slot.risk_level === 'MODERATE' ? '#00E5FF' : '#10B981';
+
+                    return (
+                      <View
+                        key={slot.id}
+                        style={[
+                          styles.timelineSlotCard,
+                          slot.is_current && styles.timelineSlotCurrent,
+                          slot.is_current && { borderColor: slotColor },
+                        ]}
+                      >
+                        <View style={styles.slotHeaderRow}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            {slot.is_current && (
+                              <View style={[styles.activeDot, { backgroundColor: slotColor }]} />
+                            )}
+                            <ThemedText style={[styles.slotPeriodText, slot.is_current && { color: slotColor, fontWeight: '900' }]}>
+                              {slot.period_name}
+                            </ThemedText>
+                            {slot.is_current && (
+                              <View style={[styles.activeBadge, { backgroundColor: `${slotColor}20`, borderColor: `${slotColor}50` }]}>
+                                <ThemedText style={[styles.activeBadgeText, { color: slotColor }]}>ACTIVE NOW</ThemedText>
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={[styles.slotRiskPill, { backgroundColor: `${slotColor}18` }]}>
+                            <ThemedText style={[styles.slotRiskText, { color: slotColor }]}>
+                              {slot.risk_level} • {slot.risk_score}%
+                            </ThemedText>
+                          </View>
+                        </View>
+
+                        <ThemedText style={styles.slotTimeLabel}>{slot.time_label}</ThemedText>
+
+                        <View style={styles.slotHazardRow}>
+                          <Ionicons name="alert-circle-outline" size={13} color="rgba(255, 255, 255, 0.4)" />
+                          <ThemedText style={styles.slotHazardText}>
+                            <ThemedText style={{ color: '#F8FAFC', fontWeight: '700' }}>Hazard: </ThemedText>
+                            {slot.key_hazard}
+                          </ThemedText>
+                        </View>
+
+                        <View style={styles.slotShieldRow}>
+                          <Ionicons name="shield-checkmark" size={13} color="#00E5FF" />
+                          <ThemedText style={styles.slotShieldText}>
+                            <ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>Shield: </ThemedText>
+                            {slot.shield_protocol}
+                          </ThemedText>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* 3. Core Purpose Alignment Callout */}
             {triggerData?.purpose_alignment_quote && (
               <View style={[styles.darkCard, { borderColor: 'rgba(0, 229, 255, 0.2)' }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -595,6 +667,90 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.85)',
     lineHeight: 17,
     fontStyle: 'italic',
+  },
+
+  /* 24-Hour Timeline Horizon */
+  forecastSubBadge: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
+  },
+  timelineSlotCard: {
+    backgroundColor: '#111215',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+    padding: 12,
+    gap: 6,
+  },
+  timelineSlotCurrent: {
+    backgroundColor: 'rgba(0, 229, 255, 0.04)',
+    borderWidth: 1.5,
+  },
+  slotHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  slotPeriodText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  activeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  activeBadgeText: {
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  slotRiskPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  slotRiskText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  slotTimeLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  slotHazardRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 2,
+  },
+  slotHazardText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.65)',
+    lineHeight: 15,
+    flex: 1,
+  },
+  slotShieldRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  slotShieldText: {
+    fontSize: 11,
+    color: '#E2E8F0',
+    lineHeight: 15,
+    flex: 1,
   },
 
   /* Categories & Filters */

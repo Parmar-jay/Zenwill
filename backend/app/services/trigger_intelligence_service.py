@@ -433,7 +433,72 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
 
     tactical_defense = f"1) {step1_action} 2) {step2_device_rule} 3) {step3_transmute}"
 
-    # ── K. Granular Triggers Breakdown Array (5 Categories) ───────────────────
+    # ── K. Future Trigger Forecast & Preemptive Shield ────────────────────────
+    predicted_probability = min(92, max(28, risk_score + (10 if current_stress >= 6 else 0) + (10 if current_sleep_hours < 6.0 else 0)))
+
+    if current_stress >= 7:
+        forecast_root = f"High stress level ({current_stress}/10) depleting prefrontal willpower"
+    elif current_sleep_hours < 6.0:
+        forecast_root = f"Sleep deficit ({current_sleep_hours:.1f}h) impairing impulse control"
+    elif today_urges_count >= 1 or checkin_urge_intensity >= 6:
+        forecast_root = "Active craving velocity recorded today"
+    else:
+        forecast_root = f"Unstructured solitary screen time on {primary_dev} in {environment_label}"
+
+    future_trigger_forecast = {
+        "predicted_window": next_predicted_window,
+        "predicted_context": next_predicted_context,
+        "probability_pct": predicted_probability,
+        "predicted_trigger_name": f"Late Evening / Bedside {primary_dev} Solitude" if current_hour >= 16 else f"Midday Screen Slump with {primary_dev}",
+        "root_catalyst": forecast_root,
+        "preemptive_action": f"Pre-commit before {peak_risk_window}: {environmental_rule}",
+    }
+
+    # ── L. 24-Hour Predictive Risk Horizon Timeline ───────────────────────────
+    forecast_timeline_24h = [
+        {
+            "id": "slot-morning",
+            "time_label": "06:00 AM - 12:00 PM",
+            "period_name": "Morning Awakening",
+            "risk_score": max(15, min(45, int(risk_score * 0.4))),
+            "risk_level": "LOW",
+            "key_hazard": f"Checking {primary_dev} in bed before getting up",
+            "shield_protocol": "Hydrate with water and complete morning check-in before touching feeds.",
+            "is_current": current_hour < 12,
+        },
+        {
+            "id": "slot-midday",
+            "time_label": "12:00 PM - 06:00 PM",
+            "period_name": "Midday Focus & Energy",
+            "risk_score": max(25, min(65, int(risk_score * 0.7))),
+            "risk_level": "MODERATE",
+            "key_hazard": f"Post-lunch mental slump and work stress grazing on {primary_dev}",
+            "shield_protocol": "Take a 5-minute walking break away from screens and practice 3 PM breathwork.",
+            "is_current": 12 <= current_hour < 18,
+        },
+        {
+            "id": "slot-evening",
+            "time_label": "06:00 PM - 10:00 PM",
+            "period_name": "Evening Decompression",
+            "risk_score": max(40, min(85, int(risk_score * 0.85))),
+            "risk_level": "ELEVATED",
+            "key_hazard": f"Unstructured solitary lounging in {environment_label}",
+            "shield_protocol": "Keep ambient room lighting bright and engage dedicated physical/social tasks.",
+            "is_current": 18 <= current_hour < 22,
+        },
+        {
+            "id": "slot-night",
+            "time_label": "10:00 PM - 02:00 AM",
+            "period_name": "Peak Circadian Window",
+            "risk_score": min(95, max(60, risk_score + 10)),
+            "risk_level": "CRITICAL" if risk_score >= 60 else "ELEVATED",
+            "key_hazard": f"Late-night private screen time in {environment_label}",
+            "shield_protocol": environmental_rule,
+            "is_current": current_hour >= 22 or current_hour < 6,
+        },
+    ]
+
+    # ── M. Granular Triggers Breakdown Array (5 Categories) ───────────────────
     triggers_breakdown: List[Dict[str, Any]] = [
         {
             "id": "trig-circadian",
@@ -495,6 +560,8 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         "today_status_label": f"TODAY ({today_weekday_name.upper()})",
         "primary_vulnerability": primary_vulnerability,
         "tactical_defense": tactical_defense,
+        "future_trigger_forecast": future_trigger_forecast,
+        "forecast_timeline_24h": forecast_timeline_24h,
         "vitality_boost_quote": (
             "Energy is never destroyed; it is only transmuted. When you hold your ground, "
             "raw sexual energy transforms into pure intellectual sovereignty (Ojas)."

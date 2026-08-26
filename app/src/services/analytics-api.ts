@@ -174,6 +174,24 @@ export interface TriggerIntelligence {
   today_status_label?: string;
   primary_vulnerability: string;
   tactical_defense: string;
+  future_trigger_forecast?: {
+    predicted_window: string;
+    predicted_context: string;
+    probability_pct: number;
+    predicted_trigger_name: string;
+    root_catalyst: string;
+    preemptive_action: string;
+  };
+  forecast_timeline_24h?: Array<{
+    id: string;
+    time_label: string;
+    period_name: string;
+    risk_score: number;
+    risk_level: 'LOW' | 'MODERATE' | 'ELEVATED' | 'CRITICAL' | string;
+    key_hazard: string;
+    shield_protocol: string;
+    is_current: boolean;
+  }>;
   vitality_boost_quote: string;
   purpose_alignment_quote?: string;
   risk_level?: string;
