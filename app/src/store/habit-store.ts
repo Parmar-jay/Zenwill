@@ -181,40 +181,21 @@ export const useHabitStore = create<HabitState>()(
             const today = getTodayDateString();
             const lastRetainDate = profile.last_retain_date || null;
             const lastRetainStatus = profile.last_retain_status || null;
-            const lastCheckin = profile.last_checkin_date || null;
             const liveStreak = typeof profile.streak === 'number' ? profile.streak : 0;
             const liveStrength = typeof profile.ai_mindset_score === 'number' ? profile.ai_mindset_score : (typeof profile.mind_strength === 'number' ? profile.mind_strength : 50);
 
             set((state) => {
-              const todayHistory = state.history.find((h) => h.date === today);
-              const currentStatus = state.lastLoggedDate === today ? state.lastLoggedStatus : null;
-
-              let statusToKeep: 'retained' | 'relapsed' | null = null;
               let dateToKeep: string | null = null;
+              let statusToKeep: 'retained' | 'relapsed' | null = null;
 
-              if (state.lastLoggedDate === today && state.lastLoggedStatus) {
+              if (lastRetainDate === today && lastRetainStatus) {
+                dateToKeep = today;
+                statusToKeep = lastRetainStatus as 'retained' | 'relapsed';
+              } else if (state.lastLoggedDate === today && state.lastLoggedStatus) {
                 dateToKeep = today;
                 statusToKeep = state.lastLoggedStatus;
-              } else if (lastRetainDate === today) {
-                dateToKeep = today;
-                statusToKeep = (lastRetainStatus as 'retained' | 'relapsed') || 'retained';
-              } else if (state.lastLoggedDate === today) {
-                dateToKeep = today;
-                statusToKeep = currentStatus || (todayHistory ? (todayHistory.status as 'retained' | 'relapsed') : null);
               }
 
-              // Hydrate history from database checkin_history if available
-              let hydratedHistory = state.history;
-              if (profile.checkin_history && Array.isArray(profile.checkin_history) && profile.checkin_history.length > 0) {
-                hydratedHistory = profile.checkin_history.map((c: any) => ({
-                  date: c.date,
-                  status: (c.status === 'relapsed' ? 'relapsed' : 'retained') as 'retained' | 'relapsed',
-                  streakAfter: typeof c.streakAfter === 'number' ? c.streakAfter : (c.status === 'relapsed' ? 0 : 1),
-                  strengthAfter: typeof c.strengthAfter === 'number' ? c.strengthAfter : 50,
-                }));
-              }
-
-              // Keep higher streak if locally logged today as retained
               const resolvedStreak = (dateToKeep === today && statusToKeep === 'retained')
                 ? Math.max(liveStreak, state.streak)
                 : (statusToKeep === 'relapsed' ? 0 : liveStreak);
@@ -224,7 +205,6 @@ export const useHabitStore = create<HabitState>()(
                 mindStrength: liveStrength,
                 lastLoggedDate: dateToKeep,
                 lastLoggedStatus: statusToKeep,
-                history: hydratedHistory,
                 aiMindsetAnalysis: profile.ai_mindset_analysis || '',
                 recentJournals: profile.recent_journals || [],
                 meditationsCount: profile.meditations_count || 0,
@@ -236,11 +216,9 @@ export const useHabitStore = create<HabitState>()(
               };
             });
 
-
-            // Sync authStore user object & dailyMissionStore checkin status
+            // Sync authStore user streak & points only (strictly isolated from daily checkin missions)
             try {
               const { useAuthStore } = require('./auth-store');
-              const { useDailyMissionStore } = require('./daily-mission-store');
               const authState = useAuthStore.getState();
               if (authState.user) {
                 authState.updateUser({
@@ -248,9 +226,6 @@ export const useHabitStore = create<HabitState>()(
                   streak: liveStreak,
                   totalPoints: profile.total_points ?? authState.user.totalPoints,
                 });
-              }
-              if (lastCheckin === today || profile.latest_checkin_summary?.date === today) {
-                useDailyMissionStore.getState().syncWithBackend().catch(() => {});
               }
             } catch (e) {}
           }

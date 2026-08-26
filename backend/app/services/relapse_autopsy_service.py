@@ -159,18 +159,6 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
         profile.updated_at = datetime.utcnow()
         await profile.save()
 
-    # 6. If user ALREADY completed a real DailyCheckin today, update relapse_occurred = True on it
-    today_checkin = await DailyCheckin.find_one(
-        {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]},
-        DailyCheckin.date == today
-    )
-    if today_checkin:
-        today_checkin.relapse_occurred = True
-        today_checkin.action_taken = "Yes"
-        if not today_checkin.primary_triggers:
-            today_checkin.primary_triggers = [emotional_precursor]
-        await today_checkin.save()
-
     # Construct genuine, practical reframing message based on real user numbers
     if streak_before > 0:
         day_word = "day" if streak_before == 1 else "days"

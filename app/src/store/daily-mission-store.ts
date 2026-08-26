@@ -235,18 +235,14 @@ export const useDailyMissionStore = create<DailyMissionState>()(
             });
           }
 
-          // Check habitStore & authStore for real-time checkin completion status for today
+          // Check authStore for verified daily checkin submission for today
           try {
-            const { useHabitStore } = require('./habit-store');
             const { useAuthStore } = require('./auth-store');
-            const habitState = useHabitStore.getState();
             const authUser = useAuthStore.getState().user;
 
-            const isCheckinLoggedToday =
-              habitState.latestCheckinSummary?.date === today ||
-              authUser?.lastCheckinDate === today;
+            const isCheckinSubmittedToday = authUser?.lastCheckinDate === today;
 
-            if (isCheckinLoggedToday && !updated.checkin) {
+            if (isCheckinSubmittedToday && !updated.checkin) {
               updated.checkin = true;
               changed = true;
             }

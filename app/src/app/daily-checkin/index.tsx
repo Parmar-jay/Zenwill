@@ -378,10 +378,12 @@ export default function DailyCheckinScreen() {
     };
 
     // 1. Update local state & missions immediately (zero lag)
-    if (relapseOccurred) {
-      logDay(false);
-    }
+    const todayStr = new Date().toISOString().split('T')[0];
     useDailyMissionStore.getState().completeTask('checkin');
+    try {
+      const { useAuthStore } = require('@/store/auth-store');
+      useAuthStore.getState().updateUser({ lastCheckinDate: todayStr });
+    } catch (e) {}
 
     setIsSubmitting(false);
     setIsCompletedAnim(true);
