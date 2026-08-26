@@ -268,27 +268,73 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
     )
 
     # ── Recommended Meditation Practice Algorithm ────────────────────────────
-    chosen_technique_key = "nadi-shodhana"
-    reason_text = "Balances autonomic tone and calms baseline stress."
+    # Dynamically adapts to BOTH the Time Window (Morning / Afternoon / Evening)
+    # AND the User's Checklist Signals (stress_score, energy_score, sleep_quality, urge_intensity, mood, focus_score)
 
-    if today_urges_count > 0 or checkin_urge_intensity >= 6 or ob_first_sign in ["craving", "physical", "touching"]:
+    time_key = time_window["key"]  # "morning" | "afternoon" | "evening"
+
+    # Priority 1: Acute Urge or Active Craving Alert (Highest Priority across all times)
+    if today_urges_count > 0 or checkin_urge_intensity >= 5 or ob_first_sign in ["craving", "physical", "touching"]:
         chosen_technique_key = "dirgha-pranayama"
-        reason_text = "Calms active craving waves and diverts pelvic tension."
-    elif stress_score >= 7 or "stress" in ob_triggers or mood in ["Anxious", "Overwhelmed"]:
-        chosen_technique_key = "nadi-shodhana"
-        reason_text = f"Counteracts high stress ({stress_score}/10) and restores parasympathetic balance."
-    elif sleep_hours < 6.0 or sleep_quality <= 4 or current_hour >= 21 or "insomnia" in ob_triggers:
-        chosen_technique_key = "bhramari"
-        reason_text = "Quiets mental chatter and induces deep parasympathetic relaxation for sleep."
-    elif mood in ["Sad", "Lonely"] or "loneliness" in ob_triggers or "boredom" in ob_triggers:
+        if time_key == "morning":
+            reason_text = "Morning Urge Neutralizer: 3-part diaphragmatic breath to ground pelvic urge waves and protect your morning momentum."
+        elif time_key == "afternoon":
+            reason_text = "Midday Craving Interceptor: Slows elevated heart rate and diverts dopamine seeking into calm oxygenation."
+        else:
+            reason_text = "Nighttime Urge Shield: Shuts down bedtime temptations and resets impulsive dopamine loops."
+
+    # Priority 2: High Stress / Cortisol Spike / Agitated Mood
+    elif stress_score >= 6 or mood in ["Anxious", "Overwhelmed", "Frustrated", "Angry"] or "stress" in ob_triggers:
+        if time_key == "evening":
+            chosen_technique_key = "bhramari"
+            reason_text = f"Evening Stress Dissolver ({stress_score}/10 stress): Humming resonance to release accumulated mental tension before sleep."
+        else:
+            chosen_technique_key = "nadi-shodhana"
+            reason_text = f"Autonomic Balance ({stress_score}/10 stress): Alternate nostril breathing to balance sympathetic tone and calm baseline anxiety."
+
+    # Priority 3: Low Energy, Broken Sleep, or Dopamine Burnout
+    elif energy_score <= 4 or sleep_quality <= 4 or sleep_hours < 6.0:
+        if time_key == "morning":
+            chosen_technique_key = "nadi-shodhana"
+            reason_text = f"Morning Vitality Awakening (Energy {energy_score}/10): Purifies energy channels (nadis) to revitalize mind and body without caffeine."
+        elif time_key == "afternoon":
+            chosen_technique_key = "bhramari"
+            reason_text = f"Midday Fatigue Reset (Energy {energy_score}/10): 5 minutes of restorative humming to clear afternoon brain fog."
+        else:
+            chosen_technique_key = "bhramari"
+            reason_text = f"Restorative Sleep Prep ({sleep_hours}h sleep / Quality {sleep_quality}/10): Induces parasympathetic tone for deep cellular recovery."
+
+    # Priority 4: Low Focus, Brain Fog, Loneliness, or Emotional Dispersion
+    elif focus_score <= 4 or mood in ["Sad", "Lonely", "Neutral"] or "loneliness" in ob_triggers or "boredom" in ob_triggers:
         chosen_technique_key = "ajapa-japa"
-        reason_text = "Grounds emotional emptiness and builds deep internal focus."
-    elif streak_val >= 14 or (energy_score >= 7 and focus_score >= 7):
+        if time_key == "morning":
+            reason_text = f"Morning Single-Point Anchor (Focus {focus_score}/10): Rhythmic breath awareness to eliminate scatter and lock in deep work focus."
+        elif time_key == "afternoon":
+            reason_text = f"Midday Realignment (Mood: {mood}): Rhythmic breath mantra to dissolve boredom and re-anchor internal resolve."
+        else:
+            reason_text = f"Evening Emotional Grounding (Mood: {mood}): Releases loneliness and closes the day with profound inner peace."
+
+    # Priority 5: High Streak & High Vitality (Transmutation of Clean Energy into Ojas)
+    elif streak_val >= 7 and energy_score >= 6 and focus_score >= 6:
         chosen_technique_key = "krishna-meditation"
-        reason_text = "Transmutes accumulated vital energy (Virya) into pure intellectual focus (Ojas)."
+        if time_key == "morning":
+            reason_text = f"Peak Morning Power ({streak_val}d Clean Streak): Gita observer consciousness to transmute vital energy (Virya) into pure intellectual power (Ojas)."
+        elif time_key == "afternoon":
+            reason_text = f"Midday Mastery ({streak_val}d Streak): Maintain unshakeable warrior presence during peak afternoon temptation windows."
+        else:
+            reason_text = f"Evening Serene Victory ({streak_val}d Streak): Review your clean day with detached, serene self-mastery."
+
+    # Baseline Timeline Defaults
     else:
-        chosen_technique_key = "dirgha-pranayama"
-        reason_text = "Deep relaxation and baseline mind strength conditioning."
+        if time_key == "morning":
+            chosen_technique_key = "nadi-shodhana"
+            reason_text = "Morning Focus & Balance: 7 minutes of alternate nostril breathwork to start your clean day with clarity."
+        elif time_key == "afternoon":
+            chosen_technique_key = "dirgha-pranayama"
+            reason_text = "Midday Grounding: 5 minutes of deep 3-part breathing to sustain baseline discipline."
+        else:
+            chosen_technique_key = "bhramari"
+            reason_text = "Nighttime Melatonin & Calm: Quiets mental chatter and transitions your brain into restorative sleep."
 
     recommended_meditation = dict(MEDITATION_TECHNIQUES[chosen_technique_key])
     recommended_meditation["reason"] = reason_text
@@ -317,7 +363,7 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
             "id": "rec_meditation",
             "action_type": "meditation",
             "title": f"Morning {recommended_meditation['title']}",
-            "description": f"{recommended_meditation['subtitle']} ({recommended_meditation['duration_text']}).",
+            "description": f"{recommended_meditation['reason']} ({recommended_meditation['duration_text']}).",
             "route": "/meditation",
             "time_window": "Morning",
             "xp_reward": 25,
@@ -356,12 +402,12 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
 
     # --- 2. AFTERNOON TIMELINE ACTIONS (12:00 - 17:59) ---
     elif time_window["key"] == "afternoon":
-        # Action 1: 3 PM Afternoon Mindfulness / Vitality Reset
+        # Action 1: Afternoon Vitality & Meditation Reset
         recommended_actions.append({
             "id": "rec_meditation",
             "action_type": "meditation",
-            "title": "3 PM Vitality & Mind Reset",
-            "description": "5 minutes of diaphragmatic grounding to discharge midday fatigue and stress.",
+            "title": f"Afternoon {recommended_meditation['title']}",
+            "description": f"{recommended_meditation['reason']} ({recommended_meditation['duration_text']}).",
             "route": "/meditation",
             "time_window": "Afternoon",
             "xp_reward": 25,
@@ -446,13 +492,13 @@ async def compute_personalized_recommendations(user: User) -> Dict[str, Any]:
         recommended_actions.append({
             "id": "rec_meditation",
             "action_type": "meditation",
-            "title": "Pre-Sleep Bhramari Pranayama",
-            "description": "5 minutes of bee humming vibration to slow brainwaves and silence nocturnal cravings.",
+            "title": f"Evening {recommended_meditation['title']}",
+            "description": f"{recommended_meditation['reason']} ({recommended_meditation['duration_text']}).",
             "route": "/meditation",
             "time_window": "Evening",
             "xp_reward": 25,
             "color": "#8B5CF6",
-            "icon": "flower-outline",
+            "icon": "moon-outline",
             "is_completed": is_med_done,
         })
 

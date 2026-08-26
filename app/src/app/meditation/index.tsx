@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { useHabitStore } from '@/store/habit-store';
-import { analyticsApi } from '@/services/analytics-api';
+import { analyticsApi, getCachedRecommendations } from '@/services/analytics-api';
 import { YOGIC_PRACTICES, YogicTechnique, EMERGENCY_SOS_SEQUENCE } from '@/constants/practices';
 import { PageEntrance } from '@/components/ui/smooth-loader';
 
@@ -65,6 +65,41 @@ export default function MeditationScreen() {
   const filteredPractices = YOGIC_PRACTICES.filter(
     (p) => selectedCategory === 'All' || p.category === selectedCategory
   );
+
+  const [recommendedData, setRecommendedData] = useState<any>(null);
+
+  useEffect(() => {
+    const cached = getCachedRecommendations();
+    if (cached) setRecommendedData(cached);
+
+    analyticsApi.getRecommendations()
+      .then((res: any) => {
+        if (res) setRecommendedData(res);
+      })
+      .catch(() => {});
+  }, []);
+
+  const currentHour = useMemo(() => new Date().getHours(), []);
+  const timeContextLabel = useMemo(() => {
+    if (currentHour < 12) return 'Morning Protocol';
+    if (currentHour < 18) return 'Afternoon Protocol';
+    return 'Evening Deep Calm';
+  }, [currentHour]);
+
+  const recommendedPractice = useMemo(() => {
+    const recKey = recommendedData?.recommended_meditation?.technique_id || '';
+    const found = YOGIC_PRACTICES.find((p) => p.id === recKey || (recKey === 'krishna-meditation' && p.id === 'krishna-centered-meditation'));
+    if (found) return found;
+
+    // Fallback based on time of day
+    if (currentHour < 12) return YOGIC_PRACTICES[0]; // Nadi Shodhana
+    if (currentHour < 18) return YOGIC_PRACTICES[2]; // Dirgha Pranayama
+    return YOGIC_PRACTICES[1]; // Bhramari
+  }, [recommendedData, currentHour]);
+
+  const recommendedReason = useMemo(() => {
+    return recommendedData?.recommended_meditation?.reason || recommendedPractice.purpose;
+  }, [recommendedData, recommendedPractice]);
 
   const handleOpenDetail = (technique: YogicTechnique) => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
@@ -263,14 +298,14 @@ export default function MeditationScreen() {
         <PageEntrance style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          {/* Featured Practice Card */}
+          {/* Dynamic Featured / Recommended Practice Card */}
           <TouchableOpacity
             style={styles.heroCard}
             activeOpacity={0.92}
-            onPress={() => handleOpenDetail(YOGIC_PRACTICES[4])} // Krishna Centered Meditation
+            onPress={() => handleOpenDetail(recommendedPractice)}
           >
             <Image
-              source={YOGIC_PRACTICES[4].image}
+              source={recommendedPractice.image}
               style={styles.heroImageBg}
               resizeMode="cover"
             />
@@ -279,30 +314,32 @@ export default function MeditationScreen() {
               style={styles.heroGradientOverlay}
             >
               <View style={styles.heroTopRow}>
-                <View style={styles.heroBadge}>
-                  <Ionicons name="sparkles" size={12} color="#06B6D4" />
-                  <ThemedText style={styles.heroBadgeText}>Featured Practice</ThemedText>
+                <View style={[styles.heroBadge, { backgroundColor: 'rgba(0, 229, 255, 0.15)', borderColor: '#00E5FF' }]}>
+                  <Ionicons name="sparkles" size={12} color="#00E5FF" />
+                  <ThemedText style={[styles.heroBadgeText, { color: '#00E5FF', fontWeight: '800' }]}>
+                    RECOMMENDED • {timeContextLabel.toUpperCase()}
+                  </ThemedText>
                 </View>
-                {renderStars(YOGIC_PRACTICES[4].rating)}
+                {renderStars(recommendedPractice.rating)}
               </View>
 
               <View style={styles.heroTextSection}>
-                <ThemedText style={styles.heroTitle}>{YOGIC_PRACTICES[4].title}</ThemedText>
-                <ThemedText style={styles.heroSanskrit}>{YOGIC_PRACTICES[4].sanskritTitle}</ThemedText>
-                <ThemedText style={styles.heroSubtitle} numberOfLines={2}>
-                  {YOGIC_PRACTICES[4].purpose}
+                <ThemedText style={styles.heroTitle}>{recommendedPractice.title}</ThemedText>
+                <ThemedText style={styles.heroSanskrit}>{recommendedPractice.sanskritTitle}</ThemedText>
+                <ThemedText style={[styles.heroSubtitle, { color: '#E2E8F0' }]} numberOfLines={2}>
+                  {recommendedReason}
                 </ThemedText>
               </View>
 
               <View style={styles.heroFooter}>
                 <View style={styles.sourceTag}>
                   <Ionicons name="book-outline" size={12} color="rgba(255,255,255,0.6)" />
-                  <ThemedText style={styles.sourceTagText}>{YOGIC_PRACTICES[4].source}</ThemedText>
+                  <ThemedText style={styles.sourceTagText}>{recommendedPractice.source}</ThemedText>
                 </View>
 
                 <TouchableOpacity
                   style={styles.heroPlayBtn}
-                  onPress={() => handleStartSession(YOGIC_PRACTICES[4])}
+                  onPress={() => handleStartSession(recommendedPractice)}
                 >
                   <Ionicons name="play" size={14} color="#ffffff" />
                   <ThemedText style={styles.heroPlayText}>Start Session</ThemedText>

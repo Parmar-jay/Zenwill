@@ -136,19 +136,118 @@ export default function DailyCheckinScreen() {
     { label: 'Frustrated', icon: 'thunderstorm-outline' as const, color: '#F97316' },
   ];
 
-  const moodFactorOptions = [
-    'Work', 'Studies', 'Family', 'Relationship', 'Financial Pressure',
-    'Health', 'Sleep', 'Social Media', 'Addiction', 'Other'
-  ];
+  // Dynamic Mood Factors based on mood & moodIntensity
+  const isPositiveMood = ['Happy', 'Calm'].includes(mood);
+  const isDifficultMood = ['Sad', 'Angry', 'Anxious', 'Lonely', 'Overwhelmed', 'Frustrated'].includes(mood);
 
-  const energyFactorOptions = [
-    'Poor Sleep', 'Heavy Workload', 'Exercise', 'Stress', 'Illness', 'Healthy Routine', 'Other'
-  ];
+  const moodFactorOptions = useMemo(() => {
+    if (isPositiveMood || moodIntensity >= 8) {
+      return [
+        'Deep Restful Sleep',
+        'Completed Habits',
+        'Morning Meditation',
+        'Physical Workout',
+        'Clean Nutrition',
+        'Clear Life Purpose',
+        'Discipline & Flow',
+        'Meaningful Connection',
+        'Digital Freedom',
+        'Other',
+      ];
+    }
+    if (isDifficultMood || moodIntensity <= 4) {
+      return [
+        'Work / Study Pressure',
+        'Relationship Friction',
+        'Loneliness & Isolation',
+        'Financial Strain',
+        'Broken Sleep',
+        'Social Media Overstimulation',
+        'Urge Battle Fatigue',
+        'Brain Fog & Low Energy',
+        'Future Uncertainty',
+        'Other',
+      ];
+    }
+    return [
+      'Work / Studies',
+      'Daily Routine',
+      'Family & Social',
+      'Physical State',
+      'Digital Feeds',
+      'Sleep Pattern',
+      'Recovery Focus',
+      'General Environment',
+      'Other',
+    ];
+  }, [mood, moodIntensity, isPositiveMood, isDifficultMood]);
 
-  const stressCauseOptions = [
-    'Work', 'Studies', 'Family', 'Relationship', 'Money',
-    'Health', 'Loneliness', 'Future', 'Addiction Recovery', 'Other'
-  ];
+  // Dynamic Energy Factors based on energyScore
+  const energyFactorOptions = useMemo(() => {
+    if (energyScore >= 7) {
+      return [
+        'Deep Restful Sleep',
+        'Morning Sunlight & Hydration',
+        'Intense Workout',
+        'Clean Nutrition',
+        'Cold Shower',
+        'Clear Morning Intent',
+        'Minimal Screen Time',
+        'Dopamine Momentum',
+        'Other',
+      ];
+    }
+    if (energyScore <= 4) {
+      return [
+        'Poor / Broken Sleep',
+        'Dopamine Crash',
+        'Heavy Workload & Burnout',
+        'Dehydration & Poor Diet',
+        'Sedentary Inactivity',
+        'Mental Stress & Overthinking',
+        'Late Night Screen Time',
+        'Urge Resistance Fatigue',
+        'Other',
+      ];
+    }
+    return [
+      'Average Sleep',
+      'Daily Work Routine',
+      'Light Exercise',
+      'Meal Timing',
+      'Standard Screen Time',
+      'Hydration / Caffeine',
+      'Other',
+    ];
+  }, [energyScore]);
+
+  // Dynamic Stress Causes based on stressScore
+  const stressCauseOptions = useMemo(() => {
+    if (stressScore >= 5) {
+      return [
+        'Tight Deadlines & Overwork',
+        'Financial Pressure',
+        'Emotional / Relationship Conflict',
+        'Active Urge Temptation',
+        'Fear of Relapse',
+        'Social Comparison & FOMO',
+        'Physical Health Strain',
+        'Digital Information Overload',
+        'Loneliness & Isolation',
+        'Other',
+      ];
+    }
+    return [
+      'Controlled Environment',
+      'Mindfulness / Meditation',
+      'Enforced Boundaries',
+      'Balanced Schedule',
+      'Physical Exercise',
+      'Digital Detox',
+      'Peace of Mind',
+      'Other',
+    ];
+  }, [stressScore]);
 
   const triggerOptions = [
     'Boredom', 'Stress', 'Loneliness', 'Social Media', 'Instagram',
@@ -160,10 +259,41 @@ export default function DailyCheckinScreen() {
     'Guilty', 'Ashamed', 'Empty', 'Relieved', 'Motivated to Restart', 'Neutral'
   ];
 
-  const focusFactorOptions = [
-    'Social Media', 'Phone Usage', 'Stress', 'Poor Sleep',
-    'Lack of Motivation', 'Workload', 'Studies', 'Good Routine', 'Other'
-  ];
+  // Dynamic Focus Factors based on focusScore
+  const focusFactorOptions = useMemo(() => {
+    if (focusScore >= 7) {
+      return [
+        'Distraction-Free Environment',
+        'Single-Tasking Flow',
+        'Clean Dopamine Streak',
+        'Morning Meditation',
+        'Clear Priorities',
+        'Physical Vitality',
+        'App Timers Enforced',
+        'Other',
+      ];
+    }
+    if (focusScore <= 4) {
+      return [
+        'Phone Notifications & Reels',
+        'Brain Fog & Multitasking',
+        'Intrusive Urge Thoughts',
+        'Sleep Deprivation',
+        'Emotional Agitation',
+        'Cluttered Workspace',
+        'Burnout & Low Dopamine',
+        'Other',
+      ];
+    }
+    return [
+      'Standard Work Routine',
+      'Mild Distractions',
+      'Break Timing',
+      'Ambient Noise',
+      'Task Complexity',
+      'Other',
+    ];
+  }, [focusScore]);
 
   const durationOptions = ['< 15 mins', '15-30 mins', '30-60 mins', '1+ hour'];
 
@@ -463,7 +593,13 @@ export default function DailyCheckinScreen() {
                 </View>
 
                 {/* Energy Factors */}
-                <ThemedText style={[styles.sectionSublabel, { marginTop: 12 }]}>Reasons for this energy level</ThemedText>
+                <ThemedText style={[styles.sectionSublabel, { marginTop: 12 }]}>
+                  {energyScore >= 7
+                    ? 'What fueled your high vitality today?'
+                    : energyScore <= 4
+                    ? 'What is draining your energy today?'
+                    : 'Reasons for this energy level'}
+                </ThemedText>
                 <View style={styles.chipWrap}>
                   {energyFactorOptions.map((factor) => {
                     const isSelected = selectedEnergyFactors.includes(factor);
@@ -520,28 +656,37 @@ export default function DailyCheckinScreen() {
                   ))}
                 </View>
 
-                {/* Conditional Causes if Stress >= 4 */}
-                {stressScore >= 4 && (
-                  <View style={styles.conditionalBox}>
-                    <ThemedText style={styles.conditionalTitle}>What is causing your stress?</ThemedText>
-                    <View style={[styles.chipWrap, { marginTop: 6 }]}>
-                      {stressCauseOptions.map((cause) => {
-                        const isSelected = selectedStressCauses.includes(cause);
-                        return (
-                          <TouchableOpacity
-                            key={cause}
-                            style={[styles.smallTag, isSelected && { backgroundColor: 'rgba(245, 158, 11, 0.25)', borderColor: '#F59E0B' }]}
-                            onPress={() => toggleSelection(cause, selectedStressCauses, setSelectedStressCauses)}
-                          >
-                            <ThemedText style={[styles.smallTagText, isSelected && { color: '#ffffff', fontWeight: '700' }]}>
-                              {cause}
-                            </ThemedText>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
+                {/* Dynamic Stress Causes / Calming Drivers */}
+                <View style={[styles.conditionalBox, { backgroundColor: stressScore >= 5 ? 'rgba(245, 158, 11, 0.08)' : 'rgba(16, 185, 129, 0.08)', borderColor: stressScore >= 5 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(16, 185, 129, 0.25)' }]}>
+                  <ThemedText style={[styles.conditionalTitle, { color: stressScore >= 5 ? '#F59E0B' : '#10B981' }]}>
+                    {stressScore >= 5
+                      ? 'What is causing your tension or stress?'
+                      : 'What is keeping your mind calm and peaceful?'}
+                  </ThemedText>
+                  <View style={[styles.chipWrap, { marginTop: 6 }]}>
+                    {stressCauseOptions.map((cause) => {
+                      const isSelected = selectedStressCauses.includes(cause);
+                      const accentColor = stressScore >= 5 ? '#F59E0B' : '#10B981';
+                      return (
+                        <TouchableOpacity
+                          key={cause}
+                          style={[
+                            styles.smallTag,
+                            isSelected && {
+                              backgroundColor: stressScore >= 5 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(16, 185, 129, 0.25)',
+                              borderColor: accentColor,
+                            },
+                          ]}
+                          onPress={() => toggleSelection(cause, selectedStressCauses, setSelectedStressCauses)}
+                        >
+                          <ThemedText style={[styles.smallTagText, isSelected && { color: '#ffffff', fontWeight: '700' }]}>
+                            {cause}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
-                )}
+                </View>
               </View>
             )}
 
@@ -806,7 +951,13 @@ export default function DailyCheckinScreen() {
                 </View>
 
                 {/* Focus Factors */}
-                <ThemedText style={[styles.sectionSublabel, { marginTop: 12 }]}>Focus Influencers</ThemedText>
+                <ThemedText style={[styles.sectionSublabel, { marginTop: 12 }]}>
+                  {focusScore >= 7
+                    ? 'What enabled your deep focus today?'
+                    : focusScore <= 4
+                    ? 'What disrupted your attention today?'
+                    : 'Factors shaping your concentration:'}
+                </ThemedText>
                 <View style={styles.chipWrap}>
                   {focusFactorOptions.map((factor) => {
                     const isSelected = selectedFocusFactors.includes(factor);
