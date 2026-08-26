@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, ScrollView, View, Platform, Dimensions, ActivityIndicator } from 'react-native';
+import {
+  StyleSheet, TouchableOpacity, ScrollView, View,
+  Platform, Dimensions, ActivityIndicator,
+  KeyboardAvoidingView,
+} from 'react-native';
 import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/auth-store';
 import { ThemedText } from '@/components/themed-text';
@@ -182,253 +186,268 @@ export default function AuthOnboardingTriggersScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
-        <Animated.View entering={FadeIn.duration(400)} style={styles.mainWrapper}>
-          {/* Header */}
-          <View style={styles.headerRow}>
-            <TouchableOpacity activeOpacity={0.6} style={styles.backButton}
-              onPress={() => router.replace({ pathname: '/(auth)/onboarding-purpose', params: edit === 'true' ? { edit: 'true' } : {} } as any)}>
-              <Ionicons name="chevron-back" size={24} color="#00E5FF" />
-            </TouchableOpacity>
-            <View style={styles.logoCenter}>
-              <ThemedText style={styles.logoText}>
-                <ThemedText style={styles.logoZen}>ZEN</ThemedText>
-                <ThemedText style={styles.logoWill}>WILL</ThemedText>
-              </ThemedText>
-            </View>
-            {edit === 'true' ? (
-              <TouchableOpacity
-                activeOpacity={0.6}
-                style={{ width: 40, alignItems: 'center', justifyContent: 'center' }}
-                onPress={() => {
-                  useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
-                  router.replace('/(tabs)/profile' as any);
-                }}
-              >
-                <Ionicons name="close" size={24} color="#ffffff" />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+        >
+          <Animated.View entering={FadeIn.duration(400)} style={styles.mainWrapper}>
+            {/* Header */}
+            <View style={styles.headerRow}>
+              <TouchableOpacity activeOpacity={0.6} style={styles.backButton}
+                onPress={() => router.replace({ pathname: '/(auth)/onboarding-purpose', params: edit === 'true' ? { edit: 'true' } : {} } as any)}>
+                <Ionicons name="chevron-back" size={24} color="#00E5FF" />
               </TouchableOpacity>
-            ) : (
-              <View style={{ width: 40 }} />
-            )}
-          </View>
-
-          {/* Progress */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <LinearGradient colors={['#00A8FF', '#0052D4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={[styles.progressFill, { width: '80%' }]} />
-            </View>
-            <ThemedText style={styles.progressLabel}>Step 4 of 5</ThemedText>
-          </View>
-
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.contentContainer}>
-              <View style={styles.titleSection}>
-                <ThemedText style={styles.stepText}>Mind Triggers</ThemedText>
-                <ThemedText style={styles.title}>Understand Your Mind Triggers</ThemedText>
-                <ThemedText style={styles.subtitle}>
-                  Identifying what triggers your mind and cravings helps ZenWill protect you before temptation grows.
+              <View style={styles.logoCenter}>
+                <ThemedText style={styles.logoText}>
+                  <ThemedText style={styles.logoZen}>ZEN</ThemedText>
+                  <ThemedText style={styles.logoWill}>WILL</ThemedText>
                 </ThemedText>
               </View>
+              {edit === 'true' ? (
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  style={{ width: 40, alignItems: 'center', justifyContent: 'center' }}
+                  onPress={() => {
+                    useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
+                    router.replace('/(tabs)/profile' as any);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color="#ffffff" />
+                </TouchableOpacity>
+              ) : (
+                <View style={{ width: 40 }} />
+              )}
+            </View>
 
-              {/* When do urges happen */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="When do urges usually happen?" hint="Select all that apply" />
-                <View style={styles.chipRow}>
-                  {URGE_TIMES.map((o) => {
-                    const active = urgeTimes.includes(o.id);
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.chip, active && styles.chipActive]}
-                        onPress={() => setUrgeTimes(toggle(urgeTimes, o.id))}
-                      >
-                        <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
-                        <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+            {/* Progress */}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <LinearGradient colors={['#00A8FF', '#0052D4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={[styles.progressFill, { width: '80%' }]} />
               </View>
+              <ThemedText style={styles.progressLabel}>Step 4 of 5</ThemedText>
+            </View>
 
-              {/* Where they happen */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="Where do they usually happen?" />
-                <View style={styles.chipRow}>
-                  {URGE_LOCATIONS.map((o) => {
-                    const active = urgeLocations.includes(o.id);
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.chip, active && styles.chipActive]}
-                        onPress={() => setUrgeLocations(toggle(urgeLocations, o.id))}
-                      >
-                        <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
-                        <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.contentContainer}>
+                <View style={styles.titleSection}>
+                  <ThemedText style={styles.stepText}>Mind Triggers</ThemedText>
+                  <ThemedText style={styles.title}>Understand Your Mind Triggers</ThemedText>
+                  <ThemedText style={styles.subtitle}>
+                    Identifying what triggers your mind and cravings helps ZenWill protect you before temptation grows.
+                  </ThemedText>
                 </View>
-              </View>
 
-              {/* Emotional triggers */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="What usually happens before an urge?" hint="Select all that apply" />
-                <View style={styles.chipRow}>
-                  {EMO_TRIGGERS.map((o) => {
-                    const active = emotionalTriggers.includes(o.id);
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.chip, active && styles.chipActive]}
-                        onPress={() => setEmotionalTriggers(toggle(emotionalTriggers, o.id))}
-                      >
-                        <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* First warning sign */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="What is usually the first sign?" />
-                <View style={styles.signGrid}>
-                  {WARNING_SIGNS.map((o) => {
-                    const active = firstWarningSign === o.id;
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.signCard, active && styles.signCardActive]}
-                        onPress={() => setFirstWarningSign(o.id)}
-                      >
-                        <Ionicons name={o.icon as any} size={20} color={active ? '#00F0FF' : 'rgba(255,255,255,0.5)'} />
-                        <ThemedText style={[styles.signLabel, active && styles.signLabelActive]} numberOfLines={2}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Urge duration */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="How long does an urge normally last?" />
-                <View style={styles.chipRow}>
-                  {URGE_DURATIONS.map((o) => {
-                    const active = urgeDuration === o.id;
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.chip, active && styles.chipActive]}
-                        onPress={() => setUrgeDuration(o.id)}
-                      >
-                        <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Typical response */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="What do you usually do when an urge starts?" hint="Select all that apply" />
-                <View style={styles.chipRow}>
-                  {TYPICAL_RESPONSES.map((o) => {
-                    const active = typicalResponses.includes(o.id);
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.chip, active && styles.chipActive]}
-                        onPress={() => setTypicalResponses(toggle(typicalResponses, o.id))}
-                      >
-                        <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
-                        <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Emotional aftermath */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="How do you usually feel afterwards?" hint="Select all that apply" />
-                <View style={styles.aftermathGrid}>
-                  {AFTERMATH.map((o) => {
-                    const active = emotionalAftermath.includes(o.id);
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.aftermathCard, active && styles.aftermathCardActive]}
-                        onPress={() => setEmotionalAftermath(toggle(emotionalAftermath, o.id))}
-                      >
-                        <ThemedText style={styles.aftermathEmoji}>{o.emoji}</ThemedText>
-                        <ThemedText style={[styles.aftermathLabel, active && styles.aftermathLabelActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Primary device */}
-              <View style={styles.fieldBlock}>
-                <SectionTitle title="Which device is most commonly involved?" />
-                <View style={styles.chipRow}>
-                  {DEVICES.map((o) => {
-                    const active = primaryDevice === o.id;
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={0.7}
-                        style={[styles.chip, active && styles.chipActive]}
-                        onPress={() => setPrimaryDevice(o.id)}
-                      >
-                        <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
-                        <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Online platforms */}
-              <View style={styles.fieldBlock}>
-                <View style={styles.fieldLabelRow}>
-                  <SectionTitle title="Where do you spend the most time online?" hint="Select up to 3" />
-                  <View style={styles.countBadge}>
-                    <ThemedText style={styles.countBadgeText}>{onlinePlatforms.length}/3</ThemedText>
+                {/* When do urges happen */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="When do urges usually happen?" hint="Select all that apply" />
+                  <View style={styles.chipRow}>
+                    {URGE_TIMES.map((o) => {
+                      const active = urgeTimes.includes(o.id);
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => setUrgeTimes(toggle(urgeTimes, o.id))}
+                        >
+                          <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
+                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
-                <View style={styles.chipRow}>
-                  {PLATFORMS.map((o) => {
-                    const active = onlinePlatforms.includes(o.id);
-                    const disabled = !active && onlinePlatforms.length >= 3;
-                    return (
-                      <TouchableOpacity key={o.id} activeOpacity={disabled ? 1 : 0.7}
-                        style={[styles.chip, active && styles.chipActive, disabled && styles.chipDisabled]}
-                        onPress={() => !disabled && setOnlinePlatforms(toggleMax(onlinePlatforms, o.id, 3))}
-                      >
-                        <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
+
+                {/* Where they happen */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="Where do they usually happen?" />
+                  <View style={styles.chipRow}>
+                    {URGE_LOCATIONS.map((o) => {
+                      const active = urgeLocations.includes(o.id);
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => setUrgeLocations(toggle(urgeLocations, o.id))}
+                        >
+                          <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
+                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Emotional triggers */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="What usually happens before an urge?" hint="Select all that apply" />
+                  <View style={styles.chipRow}>
+                    {EMO_TRIGGERS.map((o) => {
+                      const active = emotionalTriggers.includes(o.id);
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => setEmotionalTriggers(toggle(emotionalTriggers, o.id))}
+                        >
+                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* First warning sign */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="What is usually the first sign?" />
+                  <View style={styles.signGrid}>
+                    {WARNING_SIGNS.map((o) => {
+                      const active = firstWarningSign === o.id;
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.signCard, active && styles.signCardActive]}
+                          onPress={() => setFirstWarningSign(o.id)}
+                        >
+                          <Ionicons name={o.icon as any} size={20} color={active ? '#00F0FF' : 'rgba(255,255,255,0.5)'} />
+                          <ThemedText style={[styles.signLabel, active && styles.signLabelActive]} numberOfLines={2}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Urge duration */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="How long does an urge normally last?" />
+                  <View style={styles.chipRow}>
+                    {URGE_DURATIONS.map((o) => {
+                      const active = urgeDuration === o.id;
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => setUrgeDuration(o.id)}
+                        >
+                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Typical response */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="What do you usually do when an urge starts?" hint="Select all that apply" />
+                  <View style={styles.chipRow}>
+                    {TYPICAL_RESPONSES.map((o) => {
+                      const active = typicalResponses.includes(o.id);
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => setTypicalResponses(toggle(typicalResponses, o.id))}
+                        >
+                          <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
+                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Emotional aftermath */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="How do you usually feel afterwards?" hint="Select all that apply" />
+                  <View style={styles.aftermathGrid}>
+                    {AFTERMATH.map((o) => {
+                      const active = emotionalAftermath.includes(o.id);
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.aftermathCard, active && styles.aftermathCardActive]}
+                          onPress={() => setEmotionalAftermath(toggle(emotionalAftermath, o.id))}
+                        >
+                          <ThemedText style={styles.aftermathEmoji}>{o.emoji}</ThemedText>
+                          <ThemedText style={[styles.aftermathLabel, active && styles.aftermathLabelActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Primary device */}
+                <View style={styles.fieldBlock}>
+                  <SectionTitle title="Which device is most commonly involved?" />
+                  <View style={styles.chipRow}>
+                    {DEVICES.map((o) => {
+                      const active = primaryDevice === o.id;
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={0.7}
+                          style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => setPrimaryDevice(o.id)}
+                        >
+                          <Ionicons name={o.icon as any} size={13} color={active ? '#00A8FF' : 'rgba(255,255,255,0.4)'} />
+                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Online platforms */}
+                <View style={styles.fieldBlock}>
+                  <View style={styles.fieldLabelRow}>
+                    <SectionTitle title="Where do you spend the most time online?" hint="Select up to 3" />
+                    <View style={styles.countBadge}>
+                      <ThemedText style={styles.countBadgeText}>{onlinePlatforms.length}/3</ThemedText>
+                    </View>
+                  </View>
+                  <View style={styles.chipRow}>
+                    {PLATFORMS.map((o) => {
+                      const active = onlinePlatforms.includes(o.id);
+                      const disabled = !active && onlinePlatforms.length >= 3;
+                      return (
+                        <TouchableOpacity key={o.id} activeOpacity={disabled ? 1 : 0.7}
+                          style={[styles.chip, active && styles.chipActive, disabled && styles.chipDisabled]}
+                          onPress={() => !disabled && setOnlinePlatforms(toggleMax(onlinePlatforms, o.id, 3))}
+                        >
+                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* CTA */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]}
+                  onPress={handleContinue}
+                  disabled={isSubmitting}
+                >
+                  <LinearGradient
+                    colors={['#00E5FF', '#00B4D8']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.btnPrimaryGradient}
+                  >
+                    {isSubmitting ? (
+                      <View style={styles.btnPrimaryInner}>
+                        <ActivityIndicator size="small" color="#000000" />
+                      </View>
+                    ) : (
+                      <View style={styles.btnPrimaryInner}>
+                        <ThemedText style={styles.btnPrimaryText}>Continue</ThemedText>
+                        <ThemedText style={styles.btnArrow}>➔</ThemedText>
+                      </View>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <View style={styles.footerLinkRow}>
+                  <TouchableOpacity onPress={() => router.replace('/(auth)/onboarding-permissions' as any)}>
+                    <ThemedText style={styles.footerAction}>Skip Step</ThemedText>
+                  </TouchableOpacity>
                 </View>
               </View>
-
-              {/* CTA */}
-              <TouchableOpacity activeOpacity={0.85} style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]} onPress={handleContinue} disabled={isSubmitting}>
-                <LinearGradient colors={['#00A8FF', '#0052D4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.btnPrimaryGradient}>
-                  {isSubmitting ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                      <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
-                      <ThemedText style={styles.btnPrimaryText}>Saving Triggers...</ThemedText>
-                    </View>
-                  ) : (
-                    <View style={styles.btnPrimaryInner}>
-                      <ThemedText style={styles.btnPrimaryText}>Continue</ThemedText>
-                      <ThemedText style={styles.btnArrow}>➔</ThemedText>
-                    </View>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <View style={styles.footerLinkRow}>
-                <TouchableOpacity onPress={() => router.replace('/(auth)/onboarding-permissions' as any)}>
-                  <ThemedText style={styles.footerAction}>Skip Step</ThemedText>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </Animated.View>
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
@@ -468,7 +487,7 @@ const styles = StyleSheet.create({
   progressBar: { flex: 1, height: 4, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 2, backgroundColor: '#00F0FF' },
   progressLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '600' },
-  scrollContent: { flexGrow: 1, alignItems: 'center' },
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingBottom: 150 },
   contentContainer: { width: '100%', maxWidth: 600, paddingHorizontal: Spacing.four, paddingBottom: Spacing.five, paddingTop: 4 },
   titleSection: { marginTop: Spacing.four, marginBottom: Spacing.four, gap: Spacing.one },
   stepText: { color: '#00F0FF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
@@ -507,11 +526,11 @@ const styles = StyleSheet.create({
   aftermathEmoji: { fontSize: 22 },
   aftermathLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: '500', textAlign: 'center' },
   aftermathLabelActive: { color: '#00F0FF', fontWeight: '700' },
-  btnPrimaryContainer: { borderRadius: 16, overflow: 'hidden', marginTop: 12, shadowColor: '#00F0FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 6 },
-  btnPrimaryGradient: { paddingVertical: 16 },
+  btnPrimaryContainer: { borderRadius: 20, overflow: 'hidden', marginTop: 12 },
+  btnPrimaryGradient: { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   btnPrimaryInner: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  btnPrimaryText: { color: '#070709', fontWeight: '800', fontSize: 16, letterSpacing: 0.5 },
-  btnArrow: { color: '#070709', fontSize: 15, fontWeight: 'bold' },
+  btnPrimaryText: { color: '#000000', fontWeight: '700', fontSize: 15.5, letterSpacing: 0.3 },
+  btnArrow: { color: '#000000', fontSize: 14, fontWeight: '700' },
   footerLinkRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.four },
   footerAction: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
 });

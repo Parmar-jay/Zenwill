@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   StyleSheet, TouchableOpacity, ScrollView, View,
   Platform, TextInput, Dimensions, Alert, ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/auth-store';
@@ -128,170 +129,188 @@ export default function AuthCreateProfileScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
-        <Animated.View entering={FadeIn.duration(400)} style={styles.mainWrapper}>
-          {/* Header */}
-          <View style={styles.headerRow}>
-            <TouchableOpacity
-              activeOpacity={0.6}
-              style={styles.backButton}
-              onPress={() => {
-                if (edit === 'true') {
-                  useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
-                  router.replace('/(tabs)/profile' as any);
-                } else {
-                  router.replace('/(auth)/welcome' as any);
-                }
-              }}
-            >
-              <Ionicons name="chevron-back" size={24} color="#00E5FF" />
-            </TouchableOpacity>
-            <View style={styles.logoCenter}>
-              <ThemedText style={styles.logoText}>
-                <ThemedText style={styles.logoZen}>ZEN</ThemedText>
-                <ThemedText style={styles.logoWill}>WILL</ThemedText>
-              </ThemedText>
-            </View>
-            {edit === 'true' ? (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+        >
+          <Animated.View entering={FadeIn.duration(400)} style={styles.mainWrapper}>
+            {/* Header */}
+            <View style={styles.headerRow}>
               <TouchableOpacity
                 activeOpacity={0.6}
-                style={{ width: 40, alignItems: 'center', justifyContent: 'center' }}
+                style={styles.backButton}
                 onPress={() => {
-                  useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
-                  router.replace('/(tabs)/profile' as any);
+                  if (edit === 'true') {
+                    useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
+                    router.replace('/(tabs)/profile' as any);
+                  } else {
+                    router.replace('/(auth)/welcome' as any);
+                  }
                 }}
               >
-                <Ionicons name="close" size={24} color="#ffffff" />
+                <Ionicons name="chevron-back" size={24} color="#00E5FF" />
               </TouchableOpacity>
-            ) : (
-              <View style={{ width: 40 }} />
-            )}
-          </View>
-
-          {/* Progress Bar */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <LinearGradient colors={['#00A8FF', '#0052D4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.progressFill, { width: '20%' }]} />
-            </View>
-            <ThemedText style={styles.progressLabel}>Step 1 of 5</ThemedText>
-          </View>
-
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <View style={styles.contentContainer}>
-              {/* Title */}
-              <View style={styles.titleSection}>
-                <ThemedText style={styles.stepText}>Create Profile</ThemedText>
-                <ThemedText style={styles.title}>Tell Us About Yourself</ThemedText>
-                <ThemedText style={styles.subtitle}>
-                  Welcome! Sharing your daily routine helps ZenWill customize your experience and protect you when temptations are most likely to happen.
+              <View style={styles.logoCenter}>
+                <ThemedText style={styles.logoText}>
+                  <ThemedText style={styles.logoZen}>ZEN</ThemedText>
+                  <ThemedText style={styles.logoWill}>WILL</ThemedText>
                 </ThemedText>
               </View>
-
-              {/* First Name */}
-              <View style={styles.fieldBlock}>
-                <ThemedText style={styles.fieldLabel}>First Name</ThemedText>
-                <View style={[styles.inputCard, firstNameFocused && styles.inputCardFocused]}>
-                  <Ionicons name="person-outline" size={20} color={firstNameFocused ? '#00A8FF' : 'rgba(255,255,255,0.4)'} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="Enter your first name"
-                    placeholderTextColor="rgba(255,255,255,0.3)"
-                    value={firstName}
-                    onChangeText={setFirstName}
-                    autoCapitalize="words"
-                    onFocus={() => setFirstNameFocused(true)}
-                    onBlur={() => setFirstNameFocused(false)}
-                  />
-                </View>
-              </View>
-
-              {/* Age Group */}
-              <View style={styles.fieldBlock}>
-                <ThemedText style={styles.fieldLabel}>Age Group</ThemedText>
-                <ChipRow options={AGE_GROUPS} selected={ageGroup} onSelect={setAgeGroup} />
-              </View>
-
-              {/* Gender */}
-              <View style={styles.fieldBlock}>
-                <ThemedText style={styles.fieldLabel}>Gender</ThemedText>
-                <ChipRow options={GENDERS} selected={gender} onSelect={setGender} />
-              </View>
-
-              {/* Occupation */}
-              <View style={styles.fieldBlock}>
-                <ThemedText style={styles.fieldLabel}>Occupation / Daily Work</ThemedText>
-                <View style={styles.cardGrid}>
-                  {OCCUPATIONS.map((o) => {
-                    const active = occupation === o.id;
-                    return (
-                      <TouchableOpacity
-                        key={o.id}
-                        activeOpacity={0.7}
-                        style={[styles.gridCard, active && styles.gridCardActive]}
-                        onPress={() => setOccupation(o.id)}
-                      >
-                        <Ionicons name={o.icon as any} size={22} color={active ? '#00A8FF' : 'rgba(255,255,255,0.45)'} />
-                        <ThemedText style={[styles.gridCardText, active && styles.gridCardTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Daily Schedule */}
-              <View style={styles.fieldBlock}>
-                <ThemedText style={styles.fieldLabel}>Daily Schedule & Free Time</ThemedText>
-                <ThemedText style={styles.fieldHint}>
-                  Knowing your free time helps ZenWill protect you before cravings start.
-                </ThemedText>
-                <View style={styles.cardGrid}>
-                  {SCHEDULES.map((o) => {
-                    const active = dailySchedule === o.id;
-                    return (
-                      <TouchableOpacity
-                        key={o.id}
-                        activeOpacity={0.7}
-                        style={[styles.gridCard, active && styles.gridCardActive]}
-                        onPress={() => setDailySchedule(o.id)}
-                      >
-                        <Ionicons name={o.icon as any} size={22} color={active ? '#00A8FF' : 'rgba(255,255,255,0.45)'} />
-                        <ThemedText style={[styles.gridCardText, active && styles.gridCardTextActive]}>{o.label}</ThemedText>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* Relationship Status */}
-              <View style={styles.fieldBlock}>
-                <ThemedText style={styles.fieldLabel}>Relationship Status</ThemedText>
-                <ChipRow options={RELATIONSHIPS} selected={relationshipStatus} onSelect={setRelationshipStatus} />
-              </View>
-
-              {/* CTA */}
-              <TouchableOpacity activeOpacity={0.85} style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]} onPress={handleContinue} disabled={isSubmitting}>
-                <LinearGradient colors={['#00A8FF', '#0052D4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.btnPrimaryGradient}>
-                  {isSubmitting ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                      <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
-                      <ThemedText style={styles.btnPrimaryText}>Saving Profile...</ThemedText>
-                    </View>
-                  ) : (
-                    <View style={styles.btnPrimaryInner}>
-                      <ThemedText style={styles.btnPrimaryText}>Continue to Assessment</ThemedText>
-                      <ThemedText style={styles.btnArrow}>➔</ThemedText>
-                    </View>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <View style={styles.footerLinkRow}>
-                <TouchableOpacity onPress={() => router.replace('/(auth)/assessment' as any)}>
-                  <ThemedText style={styles.footerAction}>Skip for now</ThemedText>
+              {edit === 'true' ? (
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  style={{ width: 40, alignItems: 'center', justifyContent: 'center' }}
+                  onPress={() => {
+                    useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
+                    router.replace('/(tabs)/profile' as any);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color="#ffffff" />
                 </TouchableOpacity>
-              </View>
+              ) : (
+                <View style={{ width: 40 }} />
+              )}
             </View>
-          </ScrollView>
-        </Animated.View>
+
+            {/* Progress Bar */}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <LinearGradient colors={['#00E5FF', '#00A8FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.progressFill, { width: '20%' }]} />
+              </View>
+              <ThemedText style={styles.progressLabel}>Step 1 of 5</ThemedText>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={true}>
+              <View style={styles.contentContainer}>
+                {/* Title */}
+                <View style={styles.titleSection}>
+                  <ThemedText style={styles.stepText}>Create Profile</ThemedText>
+                  <ThemedText style={styles.title}>Tell Us About Yourself</ThemedText>
+                  <ThemedText style={styles.subtitle}>
+                    ZenWill personalises your impulse defense based on your identity, schedule, and personal goals.
+                  </ThemedText>
+                </View>
+
+                {/* First Name */}
+                <View style={styles.fieldBlock}>
+                  <ThemedText style={styles.fieldLabel}>First Name or Nickname *</ThemedText>
+                  <View style={[styles.inputCard, firstNameFocused && styles.inputCardFocused]}>
+                    <Ionicons name="person-outline" size={20} color={firstNameFocused ? '#00E5FF' : 'rgba(255,255,255,0.3)'} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="What should we call you?"
+                      placeholderTextColor="rgba(255,255,255,0.25)"
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      onFocus={() => setFirstNameFocused(true)}
+                      onBlur={() => setFirstNameFocused(false)}
+                      autoCapitalize="words"
+                      returnKeyType="done"
+                    />
+                  </View>
+                </View>
+
+                {/* Age Group */}
+                <View style={styles.fieldBlock}>
+                  <ThemedText style={styles.fieldLabel}>Age Group</ThemedText>
+                  <ChipRow options={AGE_GROUPS} selected={ageGroup} onSelect={setAgeGroup} />
+                </View>
+
+                {/* Gender */}
+                <View style={styles.fieldBlock}>
+                  <ThemedText style={styles.fieldLabel}>Gender Identity</ThemedText>
+                  <ChipRow options={GENDERS} selected={gender} onSelect={setGender} />
+                </View>
+
+                {/* Occupation */}
+                <View style={styles.fieldBlock}>
+                  <ThemedText style={styles.fieldLabel}>What is your main occupation?</ThemedText>
+                  <View style={styles.cardGrid}>
+                    {OCCUPATIONS.map((o) => {
+                      const active = occupation === o.id;
+                      return (
+                        <TouchableOpacity
+                          key={o.id}
+                          activeOpacity={0.7}
+                          style={[styles.gridCard, active && styles.gridCardActive]}
+                          onPress={() => setOccupation(o.id)}
+                        >
+                          <Ionicons name={o.icon as any} size={20} color={active ? '#00E5FF' : 'rgba(255,255,255,0.45)'} />
+                          <ThemedText style={[styles.gridCardText, active && styles.gridCardTextActive]}>
+                            {o.label}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Schedule */}
+                <View style={styles.fieldBlock}>
+                  <ThemedText style={styles.fieldLabel}>Daily Schedule</ThemedText>
+                  <ThemedText style={styles.fieldHint}>When are you most active during the day?</ThemedText>
+                  <View style={styles.cardGrid}>
+                    {SCHEDULES.map((o) => {
+                      const active = dailySchedule === o.id;
+                      return (
+                        <TouchableOpacity
+                          key={o.id}
+                          activeOpacity={0.7}
+                          style={[styles.gridCard, active && styles.gridCardActive]}
+                          onPress={() => setDailySchedule(o.id)}
+                        >
+                          <Ionicons name={o.icon as any} size={20} color={active ? '#00E5FF' : 'rgba(255,255,255,0.45)'} />
+                          <ThemedText style={[styles.gridCardText, active && styles.gridCardTextActive]}>
+                            {o.label}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Relationship Status */}
+                <View style={styles.fieldBlock}>
+                  <ThemedText style={styles.fieldLabel}>Relationship Status</ThemedText>
+                  <ChipRow options={RELATIONSHIPS} selected={relationshipStatus} onSelect={setRelationshipStatus} />
+                </View>
+
+                {/* CTA */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]}
+                  onPress={handleContinue}
+                  disabled={isSubmitting}
+                >
+                  <LinearGradient
+                    colors={['#00E5FF', '#00B4D8']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.btnPrimaryGradient}
+                  >
+                    {isSubmitting ? (
+                      <View style={styles.btnPrimaryInner}>
+                        <ActivityIndicator size="small" color="#000000" />
+                      </View>
+                    ) : (
+                      <View style={styles.btnPrimaryInner}>
+                        <ThemedText style={styles.btnPrimaryText}>Continue to Assessment</ThemedText>
+                        <ThemedText style={styles.btnArrow}>➔</ThemedText>
+                      </View>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <View style={styles.footerLinkRow}>
+                  <TouchableOpacity onPress={() => router.replace('/(auth)/assessment' as any)}>
+                    <ThemedText style={styles.footerAction}>Skip for now</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
@@ -344,10 +363,10 @@ const styles = StyleSheet.create({
   },
   progressFill: { height: '100%', borderRadius: 2 },
   progressLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '600' },
-  scrollContent: { flexGrow: 1, alignItems: 'center' },
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingBottom: 150 },
   contentContainer: { width: '100%', maxWidth: 600, paddingHorizontal: Spacing.four, paddingBottom: Spacing.five, paddingTop: 4 },
   titleSection: { marginTop: Spacing.four, marginBottom: Spacing.four, gap: Spacing.one },
-  stepText: { color: '#00A8FF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  stepText: { color: '#00E5FF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 },
   subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.45)', lineHeight: 20, marginTop: 2 },
   fieldBlock: { marginBottom: 22 },
@@ -358,7 +377,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', borderRadius: 16,
     paddingHorizontal: 16, height: 58,
   },
-  inputCardFocused: { borderColor: '#00A8FF', backgroundColor: 'rgba(0,168,255,0.01)' },
+  inputCardFocused: { borderColor: '#00E5FF', backgroundColor: 'rgba(0,229,255,0.02)' },
   inputIcon: { marginRight: 12 },
   textInput: {
     flex: 1, color: '#ffffff', fontSize: 16, fontWeight: '500',
@@ -369,9 +388,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 24,
     backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)',
   },
-  chipActive: { backgroundColor: 'rgba(0,168,255,0.12)', borderColor: '#00A8FF' },
+  chipActive: { backgroundColor: 'rgba(0,229,255,0.12)', borderColor: '#00E5FF' },
   chipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '500' },
-  chipTextActive: { color: '#00A8FF', fontWeight: '700' },
+  chipTextActive: { color: '#00E5FF', fontWeight: '700' },
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   gridCard: {
     flex: 1, minWidth: 95, maxWidth: 180,
@@ -379,14 +398,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
     borderRadius: 14, alignItems: 'center', gap: 6,
   },
-  gridCardActive: { borderColor: 'rgba(0,168,255,0.5)', backgroundColor: 'rgba(0,168,255,0.06)' },
+  gridCardActive: { borderColor: 'rgba(0,229,255,0.5)', backgroundColor: 'rgba(0,229,255,0.06)' },
   gridCardText: { color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '500', textAlign: 'center' },
-  gridCardTextActive: { color: '#00A8FF', fontWeight: '700' },
+  gridCardTextActive: { color: '#00E5FF', fontWeight: '700' },
   btnPrimaryContainer: { borderRadius: 20, overflow: 'hidden', marginTop: 8 },
   btnPrimaryGradient: { paddingVertical: 16 },
   btnPrimaryInner: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  btnPrimaryText: { color: '#ffffff', fontWeight: '700', fontSize: 16, letterSpacing: 0.5 },
-  btnArrow: { color: '#ffffff', fontSize: 15, fontWeight: 'bold' },
+  btnPrimaryText: { color: '#000000', fontWeight: '700', fontSize: 15.5, letterSpacing: 0.3 },
+  btnArrow: { color: '#000000', fontSize: 14, fontWeight: '700' },
   footerLinkRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.four },
   footerAction: { color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
 });

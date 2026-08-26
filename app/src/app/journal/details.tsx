@@ -36,6 +36,7 @@ export default function JournalDetailsScreen() {
 
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isEditing, setIsEditing] = useState(false);
   const [entryTitle, setEntryTitle] = useState('');
   const [entryContent, setEntryContent] = useState('');
@@ -75,6 +76,35 @@ export default function JournalDetailsScreen() {
       triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     } catch (error) {
       console.error('Error updating entry:', error);
+    }
+  };
+
+  const handleSaveAndReturn = async () => {
+    try {
+      setIsSaving(true);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+      if (entryId && (isEditing || entryTitle.trim() !== (entry?.title || '') || entryContent.trim() !== (entry?.content || ''))) {
+        const updated = await journalApi.updateEntry(entryId, {
+          title: entryTitle.trim() || undefined,
+          content: entryContent.trim(),
+        });
+        setEntry(updated);
+      }
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/journal' as any);
+      }
+    } catch (error) {
+      console.error('Error saving and returning:', error);
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/journal' as any);
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -228,16 +258,23 @@ export default function JournalDetailsScreen() {
               </View>
             )}
 
-            {/* Bottom Action */}
+            {/* Bottom Save & Return Action */}
             <TouchableOpacity 
-              style={styles.coachChatBtn}
-              onPress={() => {
-                triggerHaptic();
-                router.push('/coach/chat' as any);
-              }}
+              style={styles.saveReturnBtn}
+              onPress={handleSaveAndReturn}
+              disabled={isSaving}
+              activeOpacity={0.85}
             >
-              <Ionicons name="chatbubbles-outline" size={16} color="#000000" />
-              <ThemedText style={styles.coachChatText}>Discuss Entry with AI Coach</ThemedText>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color="#000000" />
+                  <ThemedText style={styles.saveReturnText}>
+                    {isEditing ? 'Save & Return to Journal' : 'Done & Return to Journal'}
+                  </ThemedText>
+                </>
+              )}
             </TouchableOpacity>
 
           </ScrollView>
@@ -416,7 +453,7 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#CBD5E1',
   },
-  coachChatBtn: {
+  saveReturnBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -424,10 +461,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBBF24',
     paddingVertical: 14,
     borderRadius: 16,
+    shadowColor: '#FBBF24',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  coachChatText: {
+  saveReturnText: {
     color: '#000000',
-    fontSize: 13.5,
+    fontSize: 14.5,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });

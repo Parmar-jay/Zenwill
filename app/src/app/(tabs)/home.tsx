@@ -491,25 +491,59 @@ export default function HomeScreen() {
   const [mentalShiftApplied, setMentalShiftApplied] = useState(false);
   const breathAnim = useMemo(() => new Animated.Value(1), []);
   const numberPulseAnim = useMemo(() => new Animated.Value(1), []);
-  const breathTimerRef = useRef<any>(null);
+  const idleBreathAnim = useMemo(() => new Animated.Value(1), []);
+  const isBreathingRef = useRef(false);
   const countdownIntervalRef = useRef<any>(null);
 
-  // Countdown timer with smooth pulse animation
+  // Ambient breathing pulse when idle
+  useEffect(() => {
+    let idleLoop: Animated.CompositeAnimation | null = null;
+    if (!breathingActive) {
+      idleLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(idleBreathAnim, {
+            toValue: 1.08,
+            duration: 2200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(idleBreathAnim, {
+            toValue: 0.94,
+            duration: 2200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      idleLoop.start();
+    }
+    return () => {
+      if (idleLoop) idleLoop.stop();
+    };
+  }, [breathingActive]);
+
+  // Countdown timer with smooth pulse animation & safety check
   const startCountdown = (seconds: number, callback?: () => void) => {
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
     }
+    if (!isBreathingRef.current) return;
     setBreathCountdown(seconds);
     numberPulseAnim.setValue(1.2);
     Animated.spring(numberPulseAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();
 
     let current = seconds;
     countdownIntervalRef.current = setInterval(() => {
+      if (!isBreathingRef.current) {
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+        setBreathCountdown(null);
+        return;
+      }
       current -= 1;
       if (current <= 0) {
-        clearInterval(countdownIntervalRef.current);
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
         setBreathCountdown(null);
-        if (callback) callback();
+        if (callback && isBreathingRef.current) callback();
       } else {
         setBreathCountdown(current);
         numberPulseAnim.setValue(1.25);
@@ -615,17 +649,21 @@ export default function HomeScreen() {
   // Breathing exercise controller (7-Cycle Charioteer Reset)
   const startBreathing = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    isBreathingRef.current = true;
     setBreathingActive(true);
     setBreathCycleCount(0);
     runBreathingCycle(0);
   };
 
   const stopBreathing = () => {
+    isBreathingRef.current = false;
     setBreathingActive(false);
     setBreathText('Tap Start to Begin');
     setBreathCountdown(null);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-    if (breathTimerRef.current) clearTimeout(breathTimerRef.current);
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+    }
+    breathAnim.stopAnimation();
     Animated.spring(breathAnim, {
       toValue: 1,
       useNativeDriver: true,
@@ -634,6 +672,8 @@ export default function HomeScreen() {
   };
 
   const runBreathingCycle = (currentCycle = 0) => {
+    if (!isBreathingRef.current) return;
+
     // 1. INHALE PHASE (4s)
     setBreathText('Inhale');
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
@@ -646,11 +686,15 @@ export default function HomeScreen() {
     }).start();
 
     startCountdown(4, () => {
+      if (!isBreathingRef.current) return;
+
       // 2. HOLD PHASE (4s)
       setBreathText('Hold');
       triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
       startCountdown(4, () => {
+        if (!isBreathingRef.current) return;
+
         // 3. EXHALE PHASE (4s)
         setBreathText('Exhale');
         triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
@@ -663,16 +707,20 @@ export default function HomeScreen() {
         }).start();
 
         startCountdown(4, () => {
+          if (!isBreathingRef.current) return;
+
           // 4. REST / GROUND (2s)
           setBreathText('Hold');
           triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
           startCountdown(2, () => {
+            if (!isBreathingRef.current) return;
             const nextCycle = currentCycle + 1;
             setBreathCycleCount(nextCycle);
 
             if (nextCycle >= 7) {
-              setBreathText('7 Cycles Complete. Mind Sovereign! 👑');
+              isBreathingRef.current = false;
+              setBreathText('Mind Sovereign! 👑');
               triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
               setBreathingActive(false);
               setBreathCountdown(null);
@@ -1742,7 +1790,7 @@ export default function HomeScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.chariotModalScroll} showsVerticalScrollIndicator={false}>
-              {/* 2. Clear Cinematic Hero Artwork & Warrior Anchor */}
+              {/* 2. Hero Artwork with Responsive Cursive Anchor Overlay */}
               <View style={styles.chariotArtworkCard}>
                 <Image
                   source={require('../../../assets/images/chariote.png')}
@@ -1750,90 +1798,100 @@ export default function HomeScreen() {
                   resizeMode="cover"
                 />
                 <LinearGradient
-                  colors={['transparent', 'rgba(3, 7, 18, 0.55)', 'rgba(3, 7, 18, 0.98)']}
+                  colors={['transparent', 'rgba(3, 7, 18, 0.45)', 'rgba(3, 7, 18, 0.92)']}
                   style={styles.chariotBottomGradient}
                 >
                   <View style={styles.chariotHeroPill}>
                     <Ionicons name="flash" size={10} color="#00E5FF" />
                     <ThemedText style={styles.chariotHeroPillText}>YOU HOLD THE REINS</ThemedText>
                   </View>
-                  <ThemedText style={styles.chariotArtTitle}>The senses are wild horses. You are the Master.</ThemedText>
-                  <ThemedText style={styles.chariotArtSubtitle}>
-                    Stand unbroken. Take back control right now with conscious breath.
+                  <ThemedText style={styles.chariotCursiveQuote}>
+                    "The senses are wild horses. You are the Master."
+                  </ThemedText>
+                  <ThemedText style={styles.chariotCursiveSubtitle}>
+                    Stand unbroken • Take back control with conscious breath
                   </ThemedText>
                 </LinearGradient>
               </View>
 
-              {/* 3. Minimalist Pranayama Breath Visualizer with Animated Countdown */}
+              {/* 3. Clean Interactive Breathing Visualizer */}
               <View style={styles.breathExerciseContainer}>
-                <Animated.View
-                  style={[
-                    styles.breathCircleOuter,
-                    { transform: [{ scale: breathAnim }] },
-                  ]}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={breathingActive ? stopBreathing : startBreathing}
+                  style={styles.breathTouchWrap}
                 >
-                  <View style={styles.breathCircleInner}>
-                    {breathCountdown !== null ? (
-                      <Animated.Text
-                        style={[
-                          styles.breathCountdownText,
-                          { transform: [{ scale: numberPulseAnim }] },
-                        ]}
-                      >
-                        {breathCountdown}
-                      </Animated.Text>
-                    ) : (
-                      <Ionicons name="water" size={28} color="#ffffff" />
-                    )}
-                  </View>
-                </Animated.View>
+                  <Animated.View
+                    style={[
+                      styles.breathCircleOuter,
+                      { transform: [{ scale: breathAnim }] },
+                    ]}
+                  >
+                    <View style={styles.breathCircleInner}>
+                      {breathCountdown !== null ? (
+                        <Animated.Text
+                          style={[
+                            styles.breathCountdownText,
+                            { transform: [{ scale: numberPulseAnim }] },
+                          ]}
+                        >
+                          {breathCountdown}
+                        </Animated.Text>
+                      ) : (
+                        <Ionicons name="leaf" size={24} color="#000000" />
+                      )}
+                    </View>
+                  </Animated.View>
+                </TouchableOpacity>
 
-                <ThemedText style={styles.breathStatusText}>{breathText}</ThemedText>
-
-                {breathingActive ? (
-                  <View style={{ alignItems: 'center', gap: 6, width: '100%' }}>
-                    <ThemedText style={styles.breathCycleCount}>Cycle {breathCycleCount + 1} of 7 • Seizing the Reins</ThemedText>
-                    <TouchableOpacity style={styles.stopBreathBtn} onPress={stopBreathing} activeOpacity={0.7}>
-                      <ThemedText style={styles.stopBreathText}>Abort Reset</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.startBreathBtn} onPress={startBreathing} activeOpacity={0.8}>
-                    <ThemedText style={styles.startBreathText}>Start Breath Control (Pranayama)</ThemedText>
-                  </TouchableOpacity>
-                )}
+                {/* Status & Subtitle */}
+                <ThemedText style={styles.breathStatusText}>
+                  {breathingActive ? breathText : 'Tap Circle to Begin'}
+                </ThemedText>
+                <ThemedText style={styles.breathGuideSubtitle}>
+                  {breathingActive
+                    ? `Cycle ${breathCycleCount + 1} of 7 • Tap circle to pause`
+                    : '7-Cycle Box Breathing to eliminate cravings'}
+                </ThemedText>
               </View>
 
               <View style={styles.divider} />
 
-              {/* 4. Action Buttons: Done & Full Defense Protocol */}
+              {/* 4. Action Buttons: Done & Advanced */}
               <View style={styles.rescueActionsWrap}>
                 <TouchableOpacity
-                  style={[styles.doneBtnPrimary, mentalShiftApplied && styles.doneBtnPrimarySuccess]}
-                  activeOpacity={0.8}
+                  style={[styles.doneBtnPrimaryContainer, mentalShiftApplied && styles.doneBtnPrimarySuccess]}
+                  activeOpacity={0.85}
                   onPress={handleDoneUrgeRescue}
                   disabled={mentalShiftApplied}
                 >
-                  {mentalShiftApplied ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <>
-                      <Ionicons name="checkmark" size={18} color="#ffffff" />
-                      <ThemedText style={styles.doneBtnPrimaryText}>Done</ThemedText>
-                    </>
-                  )}
+                  <LinearGradient
+                    colors={['#10B981', '#059669']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.doneBtnGradient}
+                  >
+                    {mentalShiftApplied ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark" size={18} color="#ffffff" />
+                        <ThemedText style={styles.doneBtnPrimaryText}>Done</ThemedText>
+                      </>
+                    )}
+                  </LinearGradient>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.guidedUrgeBtn}
-                  activeOpacity={0.8}
+                  activeOpacity={0.7}
                   onPress={() => {
                     stopBreathing();
                     setTriggerModalVisible(false);
                     router.push('/emergency/breathing' as any);
                   }}
                 >
-                  <Ionicons name="shield-checkmark-outline" size={15} color="#818CF8" />
+                  <Ionicons name="shield-checkmark-outline" size={15} color="rgba(255, 255, 255, 0.6)" />
                   <ThemedText style={styles.guidedUrgeBtnText}>Advanced</ThemedText>
                 </TouchableOpacity>
               </View>
@@ -3514,17 +3572,17 @@ const styles = StyleSheet.create({
   },
   chariotModalScroll: {
     padding: 16,
-    paddingBottom: 24,
-    gap: 16,
+    paddingBottom: 48,
+    gap: 12,
   },
   chariotArtworkCard: {
     width: '100%',
-    height: 200,
-    borderRadius: 16,
+    height: 180,
+    borderRadius: 18,
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     backgroundColor: '#000000',
   },
   chariotFullImage: {
@@ -3536,9 +3594,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 110,
-    paddingHorizontal: 14,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    paddingTop: 36,
     justifyContent: 'flex-end',
     gap: 4,
   },
@@ -3547,12 +3605,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    borderColor: 'rgba(0, 229, 255, 0.3)',
+    backgroundColor: 'rgba(0, 229, 255, 0.18)',
+    borderColor: 'rgba(0, 229, 255, 0.4)',
     borderWidth: 1,
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     marginBottom: 2,
   },
   chariotHeroPillText: {
@@ -3561,120 +3619,124 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
     letterSpacing: 0.8,
   },
-  chariotArtTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+  chariotCursiveQuote: {
+    fontSize: 15.5,
+    fontWeight: '600',
+    fontStyle: 'italic',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia-Italic' : 'serif',
     color: '#FFFFFF',
-    letterSpacing: -0.2,
+    letterSpacing: 0.2,
+    lineHeight: 21,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 5,
   },
-  chariotArtSubtitle: {
+  chariotCursiveSubtitle: {
     fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.75)',
+    color: 'rgba(255, 255, 255, 0.85)',
+    letterSpacing: 0.2,
     lineHeight: 15,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   breathExerciseContainer: {
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 12,
+    paddingVertical: 6,
+    gap: 4,
   },
   breathCircleOuter: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(99, 102, 241, 0.35)',
+    marginVertical: 4,
   },
   breathCircleInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#6366F1',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#00E5FF',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
   },
   breathCountdownText: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#ffffff',
+    color: '#000000',
   },
   breathStatusText: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: '#ffffff',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  breathCycleCount: {
-    fontSize: 11,
-    color: '#00E5FF',
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  startBreathBtn: {
-    backgroundColor: '#6366F1',
-    borderRadius: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    marginTop: 4,
-  },
-  startBreathText: {
-    color: '#ffffff',
-    fontSize: 12.5,
+    fontSize: 18,
     fontWeight: '800',
+    color: '#ffffff',
+    marginTop: 14,
+    lineHeight: 24,
+    textAlign: 'center',
+    letterSpacing: -0.2,
   },
-  stopBreathBtn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    marginTop: 4,
+  breathGuideSubtitle: {
+    fontSize: 12.5,
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 17,
+    marginTop: 6,
+    marginBottom: 8,
+    paddingHorizontal: 16,
   },
-  stopBreathText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 11.5,
-    fontWeight: '600',
+  breathTouchWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
   },
   rescueActionsWrap: {
     gap: 10,
     marginTop: 4,
   },
-  doneBtnPrimary: {
-    backgroundColor: '#10B981',
+  doneBtnPrimaryContainer: {
+    width: '100%',
     borderRadius: 14,
-    paddingVertical: 13,
+    overflow: 'hidden',
+  },
+  doneBtnGradient: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
+    paddingVertical: 14,
   },
   doneBtnPrimarySuccess: {
-    backgroundColor: '#059669',
+    opacity: 0.85,
   },
   doneBtnPrimaryText: {
     color: '#ffffff',
-    fontSize: 13.5,
-    fontWeight: '800',
+    fontSize: 14.5,
+    fontWeight: '700',
   },
   guidedUrgeBtn: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
-    borderRadius: 12,
-    paddingVertical: 11,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 14,
+    paddingVertical: 13,
   },
   guidedUrgeBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#818CF8',
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    fontWeight: '600',
   },
   insightBoxBlue: {
     backgroundColor: 'rgba(99, 102, 241, 0.12)',

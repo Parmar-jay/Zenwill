@@ -2,6 +2,7 @@ import '../global.css';
 import React, { useEffect } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as SystemUI from 'expo-system-ui';
 import { useColorScheme } from 'react-native';
 import { Stack, useSegments, useRouter, useRootNavigationState } from 'expo-router';
 import { useAuthStore } from '@/store/auth-store';
@@ -102,16 +103,24 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 const PureBlackTheme = {
   ...DarkTheme,
+  dark: true,
   colors: {
     ...DarkTheme.colors,
+    primary: '#00E5FF',
     background: '#000000',
     card: '#000000',
+    text: '#FFFFFF',
     border: 'rgba(255, 255, 255, 0.08)',
+    notification: '#00E5FF',
   },
 };
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync('#000000').catch(() => {});
+  }, []);
 
   const [loaded, error] = useFonts({
     SpaceGrotesk_400Regular,
@@ -151,13 +160,13 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            animation: 'fade_from_bottom',
+            animation: 'fade',
             contentStyle: { backgroundColor: '#000000' },
           }}
         >
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="+not-found" options={{ title: 'Oops!' }} />
         </Stack>
       </AuthGuard>

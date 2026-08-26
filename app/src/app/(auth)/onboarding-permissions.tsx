@@ -211,12 +211,21 @@ export default function AuthOnboardingPermissionsScreen() {
               </View>
 
               {/* CTA */}
-              <TouchableOpacity activeOpacity={0.85} style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]} onPress={handleContinue} disabled={isSubmitting}>
-                <LinearGradient colors={['#00A8FF', '#0052D4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.btnPrimaryGradient}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]}
+                onPress={handleContinue}
+                disabled={isSubmitting}
+              >
+                <LinearGradient
+                  colors={['#00E5FF', '#00B4D8']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.btnPrimaryGradient}
+                >
                   {isSubmitting ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                      <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
-                      <ThemedText style={styles.btnPrimaryText}>Finishing Onboarding...</ThemedText>
+                    <View style={styles.btnPrimaryInner}>
+                      <ActivityIndicator size="small" color="#000000" />
                     </View>
                   ) : (
                     <View style={styles.btnPrimaryInner}>
@@ -269,18 +278,18 @@ const styles = StyleSheet.create({
   logoCenter: { alignItems: 'center' },
   logoText: { fontSize: 22, fontFamily: Platform.select({ ios: 'Didot', android: 'serif', default: 'serif' }), fontWeight: '800', letterSpacing: 2 },
   logoZen: { color: '#ffffff' },
-  logoWill: { color: '#00A8FF' },
+  logoWill: { color: '#00E5FF' },
   progressContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.four, paddingTop: 10, gap: 10 },
   progressBar: { flex: 1, height: 3, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 2 },
   progressLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '600' },
-  scrollContent: { flexGrow: 1, alignItems: 'center' },
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingBottom: 150 },
   contentContainer: { width: '100%', maxWidth: 600, paddingHorizontal: Spacing.four, paddingBottom: Spacing.five, paddingTop: 4 },
   iconContainer: { alignItems: 'center', marginTop: Spacing.four, marginBottom: Spacing.three },
   iconCircleOuter: { width: 120, height: 120, borderRadius: 60, alignItems: 'center', justifyContent: 'center' },
-  iconCircleInner: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(0,168,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  iconCircleInner: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(0,229,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   titleSection: { marginBottom: Spacing.four, gap: Spacing.one },
-  stepText: { color: '#00A8FF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  stepText: { color: '#00E5FF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 },
   subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.45)', lineHeight: 20, marginTop: 2 },
   permissionsContainer: { gap: 14, marginBottom: 20 },
@@ -292,22 +301,22 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
-  permCardActive: { borderColor: 'rgba(0,168,255,0.3)', backgroundColor: 'rgba(0,168,255,0.04)' },
+  permCardActive: { borderColor: 'rgba(0,229,255,0.3)', backgroundColor: 'rgba(0,229,255,0.04)' },
   permIconWrap: {
     width: 42,
     height: 42,
     borderRadius: 12,
-    backgroundColor: 'rgba(0,168,255,0.08)',
+    backgroundColor: 'rgba(0,229,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  permIconWrapActive: { backgroundColor: '#00A8FF' },
+  permIconWrapActive: { backgroundColor: '#00E5FF' },
   permContent: { flex: 1 },
   permTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
   permTitle: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: '700' },
   permTitleActive: { color: '#ffffff', fontWeight: '800' },
-  recommendedBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: 'rgba(0,168,255,0.12)' },
-  recommendedBadgeText: { color: '#00A8FF', fontSize: 10, fontWeight: '700' },
+  recommendedBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: 'rgba(0,229,255,0.12)' },
+  recommendedBadgeText: { color: '#00E5FF', fontSize: 10, fontWeight: '700' },
   permDesc: { color: 'rgba(255,255,255,0.45)', fontSize: 12, lineHeight: 17 },
 
   toggleBtn: {
@@ -326,8 +335,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,200,81,0.4)',
   },
   toggleBtnOff: {
-    backgroundColor: 'rgba(0,168,255,0.1)',
-    borderColor: 'rgba(0,168,255,0.3)',
+    backgroundColor: 'rgba(0,229,255,0.1)',
+    borderColor: 'rgba(0,229,255,0.3)',
   },
   toggleBtnText: {
     fontSize: 12,
@@ -338,7 +347,7 @@ const styles = StyleSheet.create({
     color: '#00C851',
   },
   toggleBtnTextOff: {
-    color: '#00A8FF',
+    color: '#00E5FF',
   },
 
   privacyNote: {
@@ -349,8 +358,8 @@ const styles = StyleSheet.create({
   btnPrimaryContainer: { borderRadius: 20, overflow: 'hidden', marginTop: 4 },
   btnPrimaryGradient: { paddingVertical: 16 },
   btnPrimaryInner: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  btnPrimaryText: { color: '#ffffff', fontWeight: '700', fontSize: 16, letterSpacing: 0.5 },
-  btnArrow: { color: '#ffffff', fontSize: 15, fontWeight: 'bold' },
+  btnPrimaryText: { color: '#000000', fontWeight: '700', fontSize: 15.5, letterSpacing: 0.3 },
+  btnArrow: { color: '#000000', fontSize: 14, fontWeight: '700' },
   footerLinkRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.four },
   footerAction: { color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
 });

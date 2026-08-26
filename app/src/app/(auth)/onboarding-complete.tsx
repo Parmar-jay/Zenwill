@@ -325,13 +325,13 @@ export default function AuthOnboardingCompleteScreen() {
                   disabled={!isSigned || isSubmitting}
                 >
                   <LinearGradient
-                    colors={['#00A8FF', '#0052D4']}
+                    colors={['#00E5FF', '#00B4D8']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.btnGradient}
                   >
                     {isSubmitting ? (
-                      <ActivityIndicator color="#ffffff" size="small" />
+                      <ActivityIndicator color="#000000" size="small" />
                     ) : (
                       <>
                         <ThemedText style={[styles.btnText, !isSigned && styles.btnTextDisabled]}>
@@ -562,9 +562,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8,
   },
   btnText: {
-    color: '#ffffff', fontWeight: '800', fontSize: 16, letterSpacing: 0.3,
+    color: '#000000', fontWeight: '700', fontSize: 15.5, letterSpacing: 0.3,
   },
-  btnArrow: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
+  btnArrow: { color: '#000000', fontSize: 14, fontWeight: '700' },
   ctaNote: {
     color: 'rgba(255,255,255,0.25)', fontSize: 12,
     textAlign: 'center', marginTop: 12, fontWeight: '500',
@@ -573,6 +573,6 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   btnTextDisabled: {
-    color: 'rgba(255,255,255,0.35)',
+    color: 'rgba(0,0,0,0.45)',
   },
 });

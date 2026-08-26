@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   StyleSheet, TouchableOpacity, ScrollView, View,
   Platform, TextInput, Dimensions, ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter, Stack, useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/auth-store';
@@ -70,157 +71,172 @@ export default function AuthOnboardingPurposeScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView style={styles.safeArea} edges={['top','bottom','left','right']}>
-        <Animated.View entering={FadeIn.duration(400)} style={styles.mainWrapper}>
-          {/* Header */}
-          <View style={styles.headerRow}>
-            <TouchableOpacity activeOpacity={0.6} style={styles.backButton}
-              onPress={() => router.replace({ pathname: '/(auth)/assessment', params: edit === 'true' ? { edit: 'true' } : {} } as any)}>
-              <Ionicons name="chevron-back" size={24} color="#00E5FF" />
-            </TouchableOpacity>
-            <View style={styles.logoCenter}>
-              <ThemedText style={styles.logoText}>
-                <ThemedText style={styles.logoZen}>ZEN</ThemedText>
-                <ThemedText style={styles.logoWill}>WILL</ThemedText>
-              </ThemedText>
-            </View>
-            {edit === 'true' ? (
-              <TouchableOpacity
-                activeOpacity={0.6}
-                style={{ width: 40, alignItems: 'center', justifyContent: 'center' }}
-                onPress={() => {
-                  useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
-                  router.replace('/(tabs)/profile' as any);
-                }}
-              >
-                <Ionicons name="close" size={24} color="#ffffff" />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+        >
+          <Animated.View entering={FadeIn.duration(400)} style={styles.mainWrapper}>
+            {/* Header */}
+            <View style={styles.headerRow}>
+              <TouchableOpacity activeOpacity={0.6} style={styles.backButton}
+                onPress={() => router.replace({ pathname: '/(auth)/assessment', params: edit === 'true' ? { edit: 'true' } : {} } as any)}>
+                <Ionicons name="chevron-back" size={24} color="#00E5FF" />
               </TouchableOpacity>
-            ) : (
-              <View style={{ width: 40 }} />
-            )}
-          </View>
-
-          {/* Progress */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <LinearGradient colors={['#00A8FF','#0052D4']} start={{x:0,y:0}} end={{x:1,y:0}}
-                style={[styles.progressFill, { width: '60%' }]} />
-            </View>
-            <ThemedText style={styles.progressLabel}>Step 3 of 5</ThemedText>
-          </View>
-
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <View style={styles.contentContainer}>
-              <View style={styles.titleSection}>
-                <ThemedText style={styles.stepText}>Your Purpose</ThemedText>
-                <ThemedText style={styles.title}>Why Do You Want to Change?</ThemedText>
-                <ThemedText style={styles.subtitle}>
-                  Choose up to 5 things you want to improve. Remembering your core reason helps you stay strong whenever cravings or temptations happen.
+              <View style={styles.logoCenter}>
+                <ThemedText style={styles.logoText}>
+                  <ThemedText style={styles.logoZen}>ZEN</ThemedText>
+                  <ThemedText style={styles.logoWill}>WILL</ThemedText>
                 </ThemedText>
               </View>
+              {edit === 'true' ? (
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  style={{ width: 40, alignItems: 'center', justifyContent: 'center' }}
+                  onPress={() => {
+                    useAuthStore.setState({ isOnboarded: true, onboardingStep: 6 });
+                    router.replace('/(tabs)/profile' as any);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color="#ffffff" />
+                </TouchableOpacity>
+              ) : (
+                <View style={{ width: 40 }} />
+              )}
+            </View>
 
-              {/* Reason Multi-Select */}
-              <View style={styles.fieldBlock}>
-                <View style={styles.fieldLabelRow}>
-                  <ThemedText style={styles.fieldLabel}>What do you want to improve?</ThemedText>
-                  <View style={styles.countBadge}>
-                    <ThemedText style={styles.countBadgeText}>{selectedReasons.length}/5</ThemedText>
-                  </View>
-                </View>
-                <View style={styles.cardGrid}>
-                  {REASONS.map((r) => {
-                    const selected = selectedReasons.includes(r.id);
-                    const disabled = !selected && selectedReasons.length >= 5;
-                    return (
-                      <TouchableOpacity
-                        key={r.id}
-                        activeOpacity={disabled ? 1 : 0.7}
-                        style={[styles.reasonCard, selected && styles.reasonCardSelected, disabled && styles.reasonCardDisabled]}
-                        onPress={() => !disabled && toggleReason(r.id)}
-                      >
-                        <Ionicons name={r.icon as any} size={18} color={selected ? '#00A8FF' : disabled ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.45)'} />
-                        <ThemedText style={[styles.reasonCardText, selected && styles.reasonCardTextSelected, disabled && styles.reasonCardTextDisabled]}>
-                          {r.label}
-                        </ThemedText>
-                        {selected && (
-                          <View style={styles.checkDot}>
-                            <Ionicons name="checkmark" size={10} color="#ffffff" />
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+            {/* Progress */}
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <LinearGradient colors={['#00E5FF','#00A8FF']} start={{x:0,y:0}} end={{x:1,y:0}}
+                  style={[styles.progressFill, { width: '60%' }]} />
               </View>
+              <ThemedText style={styles.progressLabel}>Step 3 of 5</ThemedText>
+            </View>
 
-              {/* Primary Outcome */}
-              {selectedReasons.length > 0 && (
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={true}>
+              <View style={styles.contentContainer}>
+                <View style={styles.titleSection}>
+                  <ThemedText style={styles.stepText}>Your Purpose</ThemedText>
+                  <ThemedText style={styles.title}>Why Do You Want to Change?</ThemedText>
+                  <ThemedText style={styles.subtitle}>
+                    Choose up to 5 things you want to improve. Remembering your core reason helps you stay strong whenever cravings or temptations happen.
+                  </ThemedText>
+                </View>
+
+                {/* Reason Multi-Select */}
                 <View style={styles.fieldBlock}>
-                  <ThemedText style={styles.fieldLabel}>Which outcome matters most?</ThemedText>
-                  <ThemedText style={styles.fieldHint}>Choose one from your selections above</ThemedText>
-                  <View style={styles.chipRow}>
-                    {selectedReasons.map((id) => {
-                      const r = REASONS.find((x) => x.id === id)!;
-                      const active = primaryOutcome === id;
+                  <View style={styles.fieldLabelRow}>
+                    <ThemedText style={styles.fieldLabel}>What do you want to improve?</ThemedText>
+                    <View style={styles.countBadge}>
+                      <ThemedText style={styles.countBadgeText}>{selectedReasons.length}/5</ThemedText>
+                    </View>
+                  </View>
+                  <View style={styles.cardGrid}>
+                    {REASONS.map((r) => {
+                      const selected = selectedReasons.includes(r.id);
+                      const disabled = !selected && selectedReasons.length >= 5;
                       return (
-                        <TouchableOpacity key={id} activeOpacity={0.7}
-                          style={[styles.chip, active && styles.chipActive]}
-                          onPress={() => setPrimaryOutcome(id)}
+                        <TouchableOpacity
+                          key={r.id}
+                          activeOpacity={disabled ? 1 : 0.7}
+                          style={[styles.reasonCard, selected && styles.reasonCardSelected, disabled && styles.reasonCardDisabled]}
+                          onPress={() => !disabled && toggleReason(r.id)}
                         >
-                          <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{r.label}</ThemedText>
+                          <Ionicons name={r.icon as any} size={18} color={selected ? '#00E5FF' : disabled ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.45)'} />
+                          <ThemedText style={[styles.reasonCardText, selected && styles.reasonCardTextSelected, disabled && styles.reasonCardTextDisabled]}>
+                            {r.label}
+                          </ThemedText>
+                          {selected && (
+                            <View style={styles.checkDot}>
+                              <Ionicons name="checkmark" size={10} color="#000000" />
+                            </View>
+                          )}
                         </TouchableOpacity>
                       );
                     })}
                   </View>
                 </View>
-              )}
 
-              {/* Personal Statement */}
-              <View style={styles.fieldBlock}>
-                <ThemedText style={styles.fieldLabel}>Personal Motivation Note</ThemedText>
-                <ThemedText style={styles.fieldHint}>Complete the sentence below to set your motivation:</ThemedText>
-                <View style={[styles.inputCard, statementFocused && styles.inputCardFocused]}>
-                  <ThemedText style={styles.inputPrefix}>{"\"I want to change because…"}</ThemedText>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="enter your main reason"
-                    placeholderTextColor="rgba(255,255,255,0.25)"
-                    value={statement}
-                    onChangeText={(t) => t.length <= 100 && setStatement(t)}
-                    multiline
-                    onFocus={() => setStatementFocused(true)}
-                    onBlur={() => setStatementFocused(false)}
-                  />
-                </View>
-                <View style={styles.charCountRow}>
-                  <ThemedText style={styles.charCount}>{statement.length}/100</ThemedText>
-                </View>
-              </View>
-
-              {/* CTA */}
-              <TouchableOpacity activeOpacity={0.85} style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]} onPress={handleContinue} disabled={isSubmitting}>
-                <LinearGradient colors={['#00A8FF','#0052D4']} start={{x:0,y:0}} end={{x:1,y:0}} style={styles.btnPrimaryGradient}>
-                  {isSubmitting ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                      <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />
-                      <ThemedText style={styles.btnPrimaryText}>Saving Purpose...</ThemedText>
+                {/* Primary Outcome */}
+                {selectedReasons.length > 0 && (
+                  <View style={styles.fieldBlock}>
+                    <ThemedText style={styles.fieldLabel}>Which outcome matters most?</ThemedText>
+                    <ThemedText style={styles.fieldHint}>Choose one from your selections above</ThemedText>
+                    <View style={styles.chipRow}>
+                      {selectedReasons.map((id) => {
+                        const r = REASONS.find((x) => x.id === id)!;
+                        const active = primaryOutcome === id;
+                        return (
+                          <TouchableOpacity key={id} activeOpacity={0.7}
+                            style={[styles.chip, active && styles.chipActive]}
+                            onPress={() => setPrimaryOutcome(id)}
+                          >
+                            <ThemedText style={[styles.chipText, active && styles.chipTextActive]}>{r.label}</ThemedText>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  ) : (
-                    <View style={styles.btnPrimaryInner}>
-                      <ThemedText style={styles.btnPrimaryText}>Continue</ThemedText>
-                      <ThemedText style={styles.btnArrow}>➔</ThemedText>
-                    </View>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                  </View>
+                )}
 
-              <View style={styles.footerLinkRow}>
-                <TouchableOpacity onPress={() => router.replace('/(auth)/onboarding-triggers' as any)}>
-                  <ThemedText style={styles.footerAction}>Skip Step</ThemedText>
+                {/* Personal Statement */}
+                <View style={styles.fieldBlock}>
+                  <ThemedText style={styles.fieldLabel}>Personal Motivation Note</ThemedText>
+                  <ThemedText style={styles.fieldHint}>Complete the sentence below to set your motivation:</ThemedText>
+                  <View style={[styles.inputCard, statementFocused && styles.inputCardFocused]}>
+                    <ThemedText style={styles.inputPrefix}>{"\"I want to change because…"}</ThemedText>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="enter your main reason"
+                      placeholderTextColor="rgba(255,255,255,0.25)"
+                      value={statement}
+                      onChangeText={(t) => t.length <= 100 && setStatement(t)}
+                      multiline
+                      onFocus={() => setStatementFocused(true)}
+                      onBlur={() => setStatementFocused(false)}
+                    />
+                  </View>
+                  <View style={styles.charCountRow}>
+                    <ThemedText style={styles.charCount}>{statement.length}/100</ThemedText>
+                  </View>
+                </View>
+
+                {/* CTA */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.btnPrimaryContainer, isSubmitting && { opacity: 0.75 }]}
+                  onPress={handleContinue}
+                  disabled={isSubmitting}
+                >
+                  <LinearGradient
+                    colors={['#00E5FF', '#00B4D8']}
+                    start={{x:0,y:0}}
+                    end={{x:1,y:0}}
+                    style={styles.btnPrimaryGradient}
+                  >
+                    {isSubmitting ? (
+                      <View style={styles.btnPrimaryInner}>
+                        <ActivityIndicator size="small" color="#000000" />
+                      </View>
+                    ) : (
+                      <View style={styles.btnPrimaryInner}>
+                        <ThemedText style={styles.btnPrimaryText}>Continue</ThemedText>
+                        <ThemedText style={styles.btnArrow}>➔</ThemedText>
+                      </View>
+                    )}
+                  </LinearGradient>
                 </TouchableOpacity>
+
+                <View style={styles.footerLinkRow}>
+                  <TouchableOpacity onPress={() => router.replace('/(auth)/onboarding-triggers' as any)}>
+                    <ThemedText style={styles.footerAction}>Skip Step</ThemedText>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          </ScrollView>
-        </Animated.View>
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
@@ -257,42 +273,42 @@ const styles = StyleSheet.create({
   logoCenter: { alignItems: 'center' },
   logoText: { fontSize: 22, fontFamily: Platform.select({ ios: 'Didot', android: 'serif', default: 'serif' }), fontWeight: '800', letterSpacing: 2 },
   logoZen: { color: '#ffffff' },
-  logoWill: { color: '#00A8FF' },
+  logoWill: { color: '#00E5FF' },
   progressContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.four, paddingTop: 10, gap: 10 },
   progressBar: { flex: 1, height: 3, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 2 },
   progressLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: '600' },
-  scrollContent: { flexGrow: 1, alignItems: 'center' },
+  scrollContent: { flexGrow: 1, alignItems: 'center', paddingBottom: 160 },
   contentContainer: { width: '100%', maxWidth: 600, paddingHorizontal: Spacing.four, paddingBottom: Spacing.five, paddingTop: 4 },
   titleSection: { marginTop: Spacing.four, marginBottom: Spacing.four, gap: Spacing.one },
-  stepText: { color: '#00A8FF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+  stepText: { color: '#00E5FF', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   title: { fontSize: 28, fontWeight: '800', color: '#ffffff', letterSpacing: -0.5 },
   subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.45)', lineHeight: 20, marginTop: 2 },
   fieldBlock: { marginBottom: 22 },
   fieldLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   fieldLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 13, fontWeight: '600', letterSpacing: 0.3 },
   fieldHint: { color: 'rgba(255,255,255,0.3)', fontSize: 12, marginBottom: 10 },
-  countBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: 'rgba(0,168,255,0.12)', borderWidth: 1, borderColor: 'rgba(0,168,255,0.3)' },
-  countBadgeText: { color: '#00A8FF', fontSize: 12, fontWeight: '700' },
+  countBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, backgroundColor: 'rgba(0,229,255,0.12)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.3)' },
+  countBadgeText: { color: '#00E5FF', fontSize: 12, fontWeight: '700' },
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   reasonCard: {
     flex: 1, minWidth: 140, maxWidth: 280, paddingVertical: 14, paddingHorizontal: 12,
     backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)',
     borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 8,
   },
-  reasonCardSelected: { borderColor: 'rgba(0,168,255,0.5)', backgroundColor: 'rgba(0,168,255,0.07)' },
+  reasonCardSelected: { borderColor: 'rgba(0,229,255,0.5)', backgroundColor: 'rgba(0,229,255,0.07)' },
   reasonCardDisabled: { opacity: 0.4 },
   reasonCardText: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '500', flex: 1 },
-  reasonCardTextSelected: { color: '#00A8FF', fontWeight: '700' },
+  reasonCardTextSelected: { color: '#00E5FF', fontWeight: '700' },
   reasonCardTextDisabled: { color: 'rgba(255,255,255,0.2)' },
-  checkDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#00A8FF', alignItems: 'center', justifyContent: 'center' },
+  checkDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#00E5FF', alignItems: 'center', justifyContent: 'center' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 24, backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
-  chipActive: { backgroundColor: 'rgba(0,168,255,0.12)', borderColor: '#00A8FF' },
+  chipActive: { backgroundColor: 'rgba(0,229,255,0.12)', borderColor: '#00E5FF' },
   chipText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '500' },
-  chipTextActive: { color: '#00A8FF', fontWeight: '700' },
+  chipTextActive: { color: '#00E5FF', fontWeight: '700' },
   inputCard: { backgroundColor: '#111215', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: 16 },
-  inputCardFocused: { borderColor: '#00A8FF' },
+  inputCardFocused: { borderColor: '#00E5FF' },
   inputPrefix: { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontStyle: 'italic', marginBottom: 6 },
   textInput: { color: '#ffffff', fontSize: 15, fontWeight: '500', lineHeight: 22, outlineStyle: 'none' } as any,
   charCountRow: { alignItems: 'flex-end', marginTop: 6 },
@@ -300,8 +316,8 @@ const styles = StyleSheet.create({
   btnPrimaryContainer: { borderRadius: 20, overflow: 'hidden', marginTop: 8 },
   btnPrimaryGradient: { paddingVertical: 16 },
   btnPrimaryInner: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  btnPrimaryText: { color: '#ffffff', fontWeight: '700', fontSize: 16, letterSpacing: 0.5 },
-  btnArrow: { color: '#ffffff', fontSize: 15, fontWeight: 'bold' },
+  btnPrimaryText: { color: '#000000', fontWeight: '700', fontSize: 15.5, letterSpacing: 0.3 },
+  btnArrow: { color: '#000000', fontSize: 14, fontWeight: '700' },
   footerLinkRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.four },
   footerAction: { color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: '600', textDecorationLine: 'underline' },
 });

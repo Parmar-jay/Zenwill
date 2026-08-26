@@ -165,6 +165,7 @@ export default function TabsLayout() {
     <Tabs
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
+        sceneStyle: { backgroundColor: '#000000' },
         headerStyle: {
           backgroundColor: '#000000',
         },
