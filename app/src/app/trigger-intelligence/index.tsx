@@ -328,7 +328,7 @@ export default function TriggerIntelligenceScreen() {
                         ]}
                       >
                         <View style={styles.slotHeaderRow}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <View style={styles.slotTitleGroup}>
                             {slot.is_current && (
                               <View style={[styles.activeDot, { backgroundColor: slotColor }]} />
                             )}
@@ -801,7 +801,15 @@ const styles = StyleSheet.create({
   slotHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  slotTitleGroup: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
   },
   activeDot: {
     width: 6,
@@ -814,20 +822,22 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   activeBadge: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 1,
   },
   activeBadgeText: {
-    fontSize: 8,
+    fontSize: 7.5,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   slotRiskPill: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
+    flexShrink: 0,
+    alignSelf: 'flex-start',
   },
   slotRiskText: {
     fontSize: 9.5,
