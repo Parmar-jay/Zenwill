@@ -12,6 +12,7 @@ import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import { useHabitStore } from '@/store/habit-store';
@@ -176,10 +177,10 @@ export default function TriggerIntelligenceScreen() {
             <View style={styles.darkCard}>
               <View style={styles.cardHeaderRow}>
                 <View style={styles.headerBadgeRow}>
-                  <Ionicons name="shield-checkmark" size={14} color="#00E5FF" />
-                  <ThemedText style={styles.cardCategoryTitle}>PREDICTIVE RISK INTELLIGENCE</ThemedText>
+                  <Ionicons name="shield-checkmark" size={13} color="#00E5FF" />
+                  <ThemedText style={styles.cardCategoryTitle}>PREDICTIVE RISK RADAR</ThemedText>
                 </View>
-                <View style={[styles.statusPill, { backgroundColor: `${riskColor}20`, borderColor: `${riskColor}40` }]}>
+                <View style={[styles.statusPill, { backgroundColor: `${riskColor}18`, borderColor: `${riskColor}35` }]}>
                   <ThemedText style={[styles.statusPillText, { color: riskColor }]}>
                     {riskLevel}
                   </ThemedText>
@@ -188,26 +189,26 @@ export default function TriggerIntelligenceScreen() {
 
               {/* Peak Danger Window & Critical Day */}
               <View style={styles.timingBox}>
-                <View style={{ flex: 1, gap: 2 }}>
+                <View style={styles.timingLeftCol}>
                   <ThemedText style={styles.timingLabel}>NEXT PREDICTED TRIGGER</ThemedText>
-                  <ThemedText style={styles.timingValue}>
+                  <ThemedText style={styles.timingValue} numberOfLines={2}>
                     {triggerData?.next_predicted_window || triggerData?.peak_risk_window || 'Tonight, 10:30 PM - 12:30 AM'}
                   </ThemedText>
                 </View>
 
-                <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                  <ThemedText style={styles.timingLabel}>
-                    {triggerData?.today_status_label ? 'TODAY\'S PHASE' : 'CRITICAL PHASE'}
-                  </ThemedText>
-                  <ThemedText style={styles.timingDayValue}>
-                    {triggerData?.today_weekday ? `${triggerData.today_weekday} (${triggerData.highest_risk_day})` : (triggerData?.highest_risk_day || 'Weekends')}
+                <View style={styles.timingDivider} />
+
+                <View style={styles.timingRightCol}>
+                  <ThemedText style={styles.timingLabel}>PEAK VULNERABILITY</ThemedText>
+                  <ThemedText style={styles.timingDayValue} numberOfLines={1}>
+                    {triggerData?.highest_risk_day || 'Weekends'}
                   </ThemedText>
                 </View>
               </View>
 
               {/* Primary Vulnerability Analysis */}
               <View style={styles.vulnerabilitySection}>
-                <ThemedText style={styles.vulnerabilityLabel}>Primary Vulnerability Identified:</ThemedText>
+                <ThemedText style={styles.vulnerabilityLabel}>PRIMARY VULNERABILITY IDENTIFIED</ThemedText>
                 <ThemedText style={styles.vulnerabilityText}>
                   {triggerData?.primary_vulnerability || 'Solitary device usage in private areas with elevated evening stress.'}
                 </ThemedText>
@@ -215,38 +216,88 @@ export default function TriggerIntelligenceScreen() {
 
               {/* Active Catalyst Chips */}
               {triggerData?.active_triggers && triggerData.active_triggers.length > 0 && (
-                <View style={styles.chipsWrap}>
-                  {triggerData.active_triggers.map((cat, idx) => (
-                    <View key={idx} style={styles.catalystChip}>
-                      <View style={[styles.catalystDot, { backgroundColor: idx === 0 ? '#EF4444' : '#00E5FF' }]} />
-                      <ThemedText style={styles.catalystText}>{cat}</ThemedText>
-                    </View>
-                  ))}
+                <View style={styles.catalystsSection}>
+                  <ThemedText style={styles.vulnerabilityLabel}>ACTIVE RISK DRIVERS</ThemedText>
+                  <View style={styles.chipsWrap}>
+                    {triggerData.active_triggers.map((cat, idx) => (
+                      <View key={idx} style={styles.catalystChip}>
+                        <Ionicons
+                          name={
+                            cat.toLowerCase().includes('sleep')
+                              ? 'moon-outline'
+                              : cat.toLowerCase().includes('phone') || cat.toLowerCase().includes('device') || cat.toLowerCase().includes('screen')
+                              ? 'phone-portrait-outline'
+                              : cat.toLowerCase().includes('craving') || cat.toLowerCase().includes('dopamine') || cat.toLowerCase().includes('pulse')
+                              ? 'flash-outline'
+                              : cat.toLowerCase().includes('stress') || cat.toLowerCase().includes('fatigue')
+                              ? 'battery-dead-outline'
+                              : cat.toLowerCase().includes('space') || cat.toLowerCase().includes('bedroom') || cat.toLowerCase().includes('solitude') || cat.toLowerCase().includes('awakening')
+                              ? 'bed-outline'
+                              : cat.toLowerCase().includes('urge') || cat.toLowerCase().includes('sos')
+                              ? 'alert-circle-outline'
+                              : 'shield-checkmark-outline'
+                          }
+                          size={12}
+                          color={idx === 0 ? '#EF4444' : '#00E5FF'}
+                        />
+                        <ThemedText style={styles.catalystText} numberOfLines={1}>{cat}</ThemedText>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               )}
 
-              {/* Tactical Defense Protocol */}
+              {/* Structured 3-Tier Tactical Defense Protocol */}
               <View style={styles.tacticalBox}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name="flash" size={13} color="#00E5FF" />
+                <View style={styles.tacticalHeaderRow}>
+                  <Ionicons name="flash" size={12} color="#00E5FF" />
                   <ThemedText style={styles.tacticalTitle}>TACTICAL DEFENSE SEQUENCE</ThemedText>
                 </View>
-                <ThemedText style={styles.tacticalBody}>
-                  {triggerData?.tactical_defense || '1) Execute 3-Second Snap on first sign. 2) Remove device from room. 3) Transmute vital energy via 15 pushups or Pranayama.'}
-                </ThemedText>
+                <View style={styles.tacticalStepsWrap}>
+                  {(triggerData?.tactical_defense
+                    ? triggerData.tactical_defense.split(/\s*[123]\)\s*/).filter(Boolean)
+                    : [
+                        'Execute 3-Second Snap on first sign.',
+                        'Remove device from private space.',
+                        'Transmute vital energy through Pranayama or movement.',
+                      ]
+                  ).map((stepText, sIdx) => {
+                    const stepTitles = ['First-Sign Reaction', 'Spatial Boundary', 'Vitality Transmutation'];
+                    return (
+                      <View key={sIdx} style={styles.tacticalStepCard}>
+                        <View style={styles.tacticalStepTopRow}>
+                          <View style={styles.tacticalStepNumBadge}>
+                            <ThemedText style={styles.tacticalStepNumText}>{sIdx + 1}</ThemedText>
+                          </View>
+                          <ThemedText style={styles.tacticalStepTitleText}>
+                            {stepTitles[sIdx] || `Step ${sIdx + 1}`}
+                          </ThemedText>
+                        </View>
+                        <ThemedText style={styles.tacticalStepText}>{stepText.trim()}</ThemedText>
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
 
               {/* Quick Action to Launch Emergency Shield */}
               <TouchableOpacity
                 style={styles.actionBtn}
-                activeOpacity={0.8}
+                activeOpacity={0.85}
                 onPress={() => {
                   triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
                   router.push('/emergency/urge-surfing' as any);
                 }}
               >
-                <Ionicons name="shield" size={16} color="#000000" />
-                <ThemedText style={styles.actionBtnText}>Launch Emergency Urge Shield</ThemedText>
+                <LinearGradient
+                  colors={['#00E5FF', '#00B4D8']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.actionBtnGradient}
+                >
+                  <Ionicons name="shield-checkmark" size={16} color="#000000" />
+                  <ThemedText style={styles.actionBtnText}>Launch Emergency Urge Shield</ThemedText>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
 
@@ -529,52 +580,70 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   headerBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 1,
   },
   cardCategoryTitle: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#00E5FF',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   statusPill: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
+    flexShrink: 0,
   },
   statusPillText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+    fontSize: 8.5,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
 
   /* Timing Box */
   timingBox: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     backgroundColor: '#111215',
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
+    alignItems: 'center',
+    gap: 10,
+  },
+  timingLeftCol: {
+    flex: 1.25,
+    gap: 3,
+  },
+  timingRightCol: {
+    flex: 0.85,
+    gap: 3,
+    alignItems: 'flex-end',
+  },
+  timingDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   timingLabel: {
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '800',
     color: '#64748B',
-    letterSpacing: 0.6,
+    letterSpacing: 0.5,
   },
   timingValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#00E5FF',
+    lineHeight: 17,
   },
   timingDayValue: {
     fontSize: 12,
@@ -587,18 +656,22 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   vulnerabilityLabel: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 9.5,
+    fontWeight: '800',
     color: '#64748B',
+    letterSpacing: 0.5,
   },
   vulnerabilityText: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.9)',
     lineHeight: 17,
   },
 
   /* Catalyst Chips */
+  catalystsSection: {
+    gap: 6,
+  },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -607,59 +680,96 @@ const styles = StyleSheet.create({
   catalystChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#16181D',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.035)',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  catalystDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
   catalystText: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '700',
     color: 'rgba(255, 255, 255, 0.85)',
   },
 
   /* Tactical Sequence Box */
   tacticalBox: {
-    backgroundColor: '#111215',
+    backgroundColor: 'rgba(0, 229, 255, 0.025)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.2)',
+    borderColor: 'rgba(0, 229, 255, 0.16)',
     padding: 12,
+    gap: 8,
+  },
+  tacticalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
   },
   tacticalTitle: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#00E5FF',
     letterSpacing: 0.8,
   },
-  tacticalBody: {
+  tacticalStepsWrap: {
+    gap: 6,
+  },
+  tacticalStepCard: {
+    backgroundColor: '#111215',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 9,
+    gap: 4,
+  },
+  tacticalStepTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tacticalStepNumBadge: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+  },
+  tacticalStepNumText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#00E5FF',
+    letterSpacing: 0.4,
+  },
+  tacticalStepTitleText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  tacticalStepText: {
     fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: 'rgba(255, 255, 255, 0.78)',
     lineHeight: 16,
   },
 
   actionBtn: {
-    backgroundColor: '#00E5FF',
-    borderRadius: 10,
-    paddingVertical: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 2,
+  },
+  actionBtnGradient: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    paddingVertical: 13,
   },
   actionBtnText: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 13.5,
+    fontWeight: '900',
     color: '#000000',
+    letterSpacing: 0.3,
   },
 
   purposeText: {

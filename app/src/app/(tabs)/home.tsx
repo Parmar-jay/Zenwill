@@ -12,6 +12,7 @@ import {
   Image,
   ImageBackground,
   TextInput,
+  ActivityIndicator,
   useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -482,13 +483,41 @@ export default function HomeScreen() {
     });
   }, [quickActionSearch, selectedCategory]);
 
-  // Breathing Exercise States (Trigger SOS Modal)
+  // Breathing Exercise States (Trigger SOS Modal - 7 Cycles Charioteer Reset)
   const [breathingActive, setBreathingActive] = useState(false);
   const [breathText, setBreathText] = useState('Tap Start to Begin');
+  const [breathCountdown, setBreathCountdown] = useState<number | null>(null);
   const [breathCycleCount, setBreathCycleCount] = useState(0);
   const [mentalShiftApplied, setMentalShiftApplied] = useState(false);
   const breathAnim = useMemo(() => new Animated.Value(1), []);
+  const numberPulseAnim = useMemo(() => new Animated.Value(1), []);
   const breathTimerRef = useRef<any>(null);
+  const countdownIntervalRef = useRef<any>(null);
+
+  // Countdown timer with smooth pulse animation
+  const startCountdown = (seconds: number, callback?: () => void) => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+    }
+    setBreathCountdown(seconds);
+    numberPulseAnim.setValue(1.2);
+    Animated.spring(numberPulseAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+
+    let current = seconds;
+    countdownIntervalRef.current = setInterval(() => {
+      current -= 1;
+      if (current <= 0) {
+        clearInterval(countdownIntervalRef.current);
+        setBreathCountdown(null);
+        if (callback) callback();
+      } else {
+        setBreathCountdown(current);
+        numberPulseAnim.setValue(1.25);
+        Animated.spring(numberPulseAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+        triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+      }
+    }, 1000);
+  };
 
   // Entrance Animations state
   const fadeAnims = useMemo(() => ({
@@ -583,83 +612,124 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Breathing exercise controller
+  // Breathing exercise controller (7-Cycle Charioteer Reset)
   const startBreathing = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     setBreathingActive(true);
     setBreathCycleCount(0);
-    runBreathingCycle();
+    runBreathingCycle(0);
   };
 
   const stopBreathing = () => {
     setBreathingActive(false);
     setBreathText('Tap Start to Begin');
+    setBreathCountdown(null);
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    if (breathTimerRef.current) clearTimeout(breathTimerRef.current);
     Animated.spring(breathAnim, {
       toValue: 1,
       useNativeDriver: true,
       friction: 6,
     }).start();
-    if (breathTimerRef.current) {
-      clearTimeout(breathTimerRef.current);
-    }
   };
 
-  const runBreathingCycle = () => {
-    setBreathText('Inhale (4s)');
-    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+  const runBreathingCycle = (currentCycle = 0) => {
+    // 1. INHALE PHASE (4s)
+    setBreathText('Inhale');
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
     Animated.timing(breathAnim, {
-      toValue: 1.5,
+      toValue: 1.55,
       duration: 4000,
-      easing: Easing.bezier(0.42, 0, 0.58, 1),
+      easing: Easing.bezier(0.25, 0.1, 0.25, 1.0),
       useNativeDriver: true,
-    }).start(() => {
-      setBreathText('Hold (4s)');
+    }).start();
+
+    startCountdown(4, () => {
+      // 2. HOLD PHASE (4s)
+      setBreathText('Hold');
       triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
-      breathTimerRef.current = setTimeout(() => {
-        setBreathText('Exhale (4s)');
-        triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+      startCountdown(4, () => {
+        // 3. EXHALE PHASE (4s)
+        setBreathText('Exhale');
+        triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
         Animated.timing(breathAnim, {
           toValue: 1.0,
           duration: 4000,
-          easing: Easing.bezier(0.42, 0, 0.58, 1),
+          easing: Easing.bezier(0.33, 1, 0.68, 1),
           useNativeDriver: true,
-        }).start(() => {
-          setBreathText('Hold (4s)');
+        }).start();
+
+        startCountdown(4, () => {
+          // 4. REST / GROUND (2s)
+          setBreathText('Hold');
           triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
-          breathTimerRef.current = setTimeout(() => {
-            setBreathCycleCount((prev) => {
-              const next = prev + 1;
-              if (next >= 3) {
-                setBreathText('Mind Calmed. Complete! ✨');
-                triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-                setTimeout(() => {
-                  stopBreathing();
-                }, 2000);
-              } else {
-                runBreathingCycle();
-              }
-              return next;
-            });
-          }, 4000);
+          startCountdown(2, () => {
+            const nextCycle = currentCycle + 1;
+            setBreathCycleCount(nextCycle);
+
+            if (nextCycle >= 7) {
+              setBreathText('7 Cycles Complete. Mind Sovereign! 👑');
+              triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+              setBreathingActive(false);
+              setBreathCountdown(null);
+            } else {
+              runBreathingCycle(nextCycle);
+            }
+          });
         });
-      }, 4000);
+      });
     });
   };
 
-  const handleApplyMentalShift = () => {
+  const handleDoneUrgeRescue = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     setMentalShiftApplied(true);
-    completeTask('rescue');
     useHabitStore.getState().incrementUrgeCount();
+    useDailyMissionStore.getState().completeTask('rescue');
+
+    // Parallel background backend logging
+    const bgSync = async () => {
+      try {
+        await Promise.all([
+          analyticsApi.completeEmergency({
+            session_id: 'rescue_' + Date.now(),
+            techniques_used: ['Pranayama Reset', '7-Cycle Charioteer Reset'],
+            outcome: 'resisted',
+            was_effective: true,
+            main_influence: 'Breath Control',
+            trigger_reason: 'Urge SOS Reset',
+            urge_intensity_before: 7,
+            urge_intensity_after: 2,
+            thought_note: 'Completed 7-Cycle Pranayama Reset from Home',
+            most_helpful_technique: 'Pranayama Reset',
+          }),
+          analyticsApi.logEvent({
+            event_type: 'urge_rescue_completed',
+            trigger_context: 'Charioteer Urge SOS',
+            outcome: 'resisted',
+            intensity: 7,
+            metadata: {
+              technique: 'Pranayama Reset',
+              cycles: 7,
+            },
+          }),
+        ]);
+      } catch (e) {
+        // silent fallback
+      }
+    };
+    bgSync();
+
     setTimeout(() => {
       setTriggerModalVisible(false);
       setMentalShiftApplied(false);
-      router.push('/emergency/grounding' as any);
-    }, 1200);
+      stopBreathing();
+      router.push('/emergency/reflection' as any);
+    }, 800);
   };
 
   // Math variables for circular progress ring
@@ -1641,7 +1711,7 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* --- Trigger SOS Emergency Modal (Pranayama Reset) --- */}
+      {/* --- Trigger SOS Emergency Modal (Charioteer Urge Rescue & Pranayama Reset) --- */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1652,10 +1722,11 @@ export default function HomeScreen() {
         }}
       >
         <View style={styles.modalBg}>
-          <View style={[styles.modalContentGlass, styles.triggerModalGlow]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="shield-outline" size={22} color="#FF4D4D" style={{ marginRight: 8 }} />
+          <View style={[styles.modalContentGlass, styles.triggerModalGlow, { padding: 0, overflow: 'hidden', maxHeight: '90%' }]}>
+            {/* 1. Sleek Minimalist Header */}
+            <View style={styles.chariotTopBar}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="shield" size={17} color="#00E5FF" />
                 <ThemedText style={styles.modalHeading}>Urge Relief & Breath Reset</ThemedText>
               </View>
               <TouchableOpacity
@@ -1663,18 +1734,37 @@ export default function HomeScreen() {
                   stopBreathing();
                   setTriggerModalVisible(false);
                 }}
+                style={styles.chariotCloseBtn}
                 activeOpacity={0.7}
               >
-                <Ionicons name="close" size={24} color="#ffffff" />
+                <Ionicons name="close" size={20} color="rgba(255, 255, 255, 0.8)" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalScroll}>
-              <ThemedText style={styles.triggerInstruction}>
-                Your senses are reacting to a dopamine trigger. The wild horses are pulling. Take back the reins right now with breath control.
-              </ThemedText>
+            <ScrollView contentContainerStyle={styles.chariotModalScroll} showsVerticalScrollIndicator={false}>
+              {/* 2. Clear Cinematic Hero Artwork & Warrior Anchor */}
+              <View style={styles.chariotArtworkCard}>
+                <Image
+                  source={require('../../../assets/images/chariote.png')}
+                  style={styles.chariotFullImage}
+                  resizeMode="cover"
+                />
+                <LinearGradient
+                  colors={['transparent', 'rgba(3, 7, 18, 0.55)', 'rgba(3, 7, 18, 0.98)']}
+                  style={styles.chariotBottomGradient}
+                >
+                  <View style={styles.chariotHeroPill}>
+                    <Ionicons name="flash" size={10} color="#00E5FF" />
+                    <ThemedText style={styles.chariotHeroPillText}>YOU HOLD THE REINS</ThemedText>
+                  </View>
+                  <ThemedText style={styles.chariotArtTitle}>The senses are wild horses. You are the Master.</ThemedText>
+                  <ThemedText style={styles.chariotArtSubtitle}>
+                    Stand unbroken. Take back control right now with conscious breath.
+                  </ThemedText>
+                </LinearGradient>
+              </View>
 
-              {/* Animated Box Breathing Circle */}
+              {/* 3. Minimalist Pranayama Breath Visualizer with Animated Countdown */}
               <View style={styles.breathExerciseContainer}>
                 <Animated.View
                   style={[
@@ -1683,15 +1773,26 @@ export default function HomeScreen() {
                   ]}
                 >
                   <View style={styles.breathCircleInner}>
-                    <Ionicons name="water" size={32} color="#ffffff" />
+                    {breathCountdown !== null ? (
+                      <Animated.Text
+                        style={[
+                          styles.breathCountdownText,
+                          { transform: [{ scale: numberPulseAnim }] },
+                        ]}
+                      >
+                        {breathCountdown}
+                      </Animated.Text>
+                    ) : (
+                      <Ionicons name="water" size={28} color="#ffffff" />
+                    )}
                   </View>
                 </Animated.View>
 
                 <ThemedText style={styles.breathStatusText}>{breathText}</ThemedText>
 
                 {breathingActive ? (
-                  <View style={{ alignItems: 'center' }}>
-                    <ThemedText style={styles.breathCycleCount}>Cycle {breathCycleCount}/3</ThemedText>
+                  <View style={{ alignItems: 'center', gap: 6, width: '100%' }}>
+                    <ThemedText style={styles.breathCycleCount}>Cycle {breathCycleCount + 1} of 7 • Seizing the Reins</ThemedText>
                     <TouchableOpacity style={styles.stopBreathBtn} onPress={stopBreathing} activeOpacity={0.7}>
                       <ThemedText style={styles.stopBreathText}>Abort Reset</ThemedText>
                     </TouchableOpacity>
@@ -1705,25 +1806,35 @@ export default function HomeScreen() {
 
               <View style={styles.divider} />
 
-              {/* Vedic Mental Shift Card */}
-              <View style={styles.shiftCard}>
-                <ThemedText style={styles.shiftTitle}>The Transmutation Shift</ThemedText>
-                <ThemedText style={styles.shiftQuote}>
-                  {"\"I do not suppress my force. I lift it. I choose to construct, not to consume.\""}
-                </ThemedText>
-                <ThemedText style={styles.shiftBody}>
-                  The surge you feel is raw vitality. It wants to build. Choose one creative action right now to channel your energy.
-                </ThemedText>
-
+              {/* 4. Action Buttons: Done & Full Defense Protocol */}
+              <View style={styles.rescueActionsWrap}>
                 <TouchableOpacity
-                  style={[styles.applyShiftBtn, mentalShiftApplied && styles.applyShiftBtnSuccess]}
+                  style={[styles.doneBtnPrimary, mentalShiftApplied && styles.doneBtnPrimarySuccess]}
                   activeOpacity={0.8}
-                  onPress={handleApplyMentalShift}
+                  onPress={handleDoneUrgeRescue}
                   disabled={mentalShiftApplied}
                 >
-                  <ThemedText style={styles.applyShiftBtnText}>
-                    {mentalShiftApplied ? 'Mental Shift Applied! ✓' : 'Channel Energy into Creation'}
-                  </ThemedText>
+                  {mentalShiftApplied ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={18} color="#ffffff" />
+                      <ThemedText style={styles.doneBtnPrimaryText}>Done</ThemedText>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.guidedUrgeBtn}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    stopBreathing();
+                    setTriggerModalVisible(false);
+                    router.push('/emergency/breathing' as any);
+                  }}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={15} color="#818CF8" />
+                  <ThemedText style={styles.guidedUrgeBtnText}>Advanced</ThemedText>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -3387,10 +3498,84 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     textAlign: 'center',
   },
+  /* Minimalist Charioteer Urge Rescue Styles */
+  chariotTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: '#090D16',
+  },
+  chariotCloseBtn: {
+    padding: 6,
+  },
+  chariotModalScroll: {
+    padding: 16,
+    paddingBottom: 24,
+    gap: 16,
+  },
+  chariotArtworkCard: {
+    width: '100%',
+    height: 200,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#000000',
+  },
+  chariotFullImage: {
+    width: '100%',
+    height: '100%',
+  },
+  chariotBottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 110,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  chariotHeroPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 5,
+    marginBottom: 2,
+  },
+  chariotHeroPillText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#00E5FF',
+    letterSpacing: 0.8,
+  },
+  chariotArtTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  chariotArtSubtitle: {
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.75)',
+    lineHeight: 15,
+  },
   breathExerciseContainer: {
     alignItems: 'center',
-    paddingVertical: 20,
-    gap: 14,
+    paddingVertical: 14,
+    gap: 12,
   },
   breathCircleOuter: {
     width: 104,
@@ -3410,84 +3595,86 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  breathCountdownText: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
   breathStatusText: {
     fontSize: 17,
     fontWeight: '900',
     color: '#ffffff',
-    marginTop: 6,
+    marginTop: 4,
+    textAlign: 'center',
   },
   breathCycleCount: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.5)',
-    marginTop: 4,
+    color: '#00E5FF',
+    fontWeight: '700',
+    marginTop: 2,
   },
   startBreathBtn: {
     backgroundColor: '#6366F1',
     borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    marginTop: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginTop: 4,
   },
   startBreathText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
   },
   stopBreathBtn: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginTop: 8,
+    paddingVertical: 7,
+    marginTop: 4,
   },
   stopBreathText: {
     color: 'rgba(255, 255, 255, 0.6)',
     fontSize: 11.5,
     fontWeight: '600',
   },
-  shiftCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    padding: 16,
+  rescueActionsWrap: {
     gap: 10,
-  },
-  shiftTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  shiftQuote: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    color: '#818CF8',
-    lineHeight: 17,
-    borderLeftWidth: 2,
-    borderLeftColor: '#6366F1',
-    paddingLeft: 10,
-  },
-  shiftBody: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.55)',
-    lineHeight: 17,
-  },
-  applyShiftBtn: {
-    backgroundColor: '#6366F1',
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
     marginTop: 4,
   },
-  applyShiftBtnSuccess: {
+  doneBtnPrimary: {
     backgroundColor: '#10B981',
+    borderRadius: 14,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
   },
-  applyShiftBtnText: {
+  doneBtnPrimarySuccess: {
+    backgroundColor: '#059669',
+  },
+  doneBtnPrimaryText: {
     color: '#ffffff',
-    fontSize: 12,
+    fontSize: 13.5,
     fontWeight: '800',
+  },
+  guidedUrgeBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+    borderRadius: 12,
+    paddingVertical: 11,
+  },
+  guidedUrgeBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#818CF8',
   },
   insightBoxBlue: {
     backgroundColor: 'rgba(99, 102, 241, 0.12)',

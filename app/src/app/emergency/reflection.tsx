@@ -67,16 +67,18 @@ export default function EmergencyReflectionScreen() {
       await Promise.all([
         analyticsApi.completeEmergency({
           session_id: 'emergency_' + Date.now(),
-          techniques_used: ['Mind Shield Breathing', 'Sensory Grounding'],
+          techniques_used: ['Pranayama Breath Reset', 'Sensory Grounding', 'Urge Surfing'],
           outcome: 'resisted',
-          user_feedback: reflectionText || 'User completed Mind Shield de-escalation protocol.',
+          trigger_reason: selectedTrigger,
           most_helpful_technique: selectedTrigger,
+          user_feedback: reflectionText || 'User successfully de-escalated urge with breath and sensory grounding.',
+          was_effective: true,
         }),
         analyticsApi.logEvent({
           event_type: 'emergency_reflection_submitted',
           trigger_context: selectedTrigger,
           outcome: 'resisted',
-          metadata: { reflection_text: reflectionText },
+          metadata: { reflection_text: reflectionText, trigger: selectedTrigger },
         }),
       ]);
       useHabitStore.getState().syncFromDatabase().catch(() => {});

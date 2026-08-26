@@ -122,7 +122,7 @@ def infer_realistic_temporal_spatial_context(
 
     # 1. Morning Awakening Window (05:00 - 08:59)
     if 5 <= start_hour < 9:
-        loc = "Bedroom Bedside" if "bedroom" in ob_locations else "Morning Awakening Space"
+        loc = "Bedroom Bedside" if "bedroom" in ob_locations else "Awakening Space"
         return {
             "environment_label": f"Morning {loc}",
             "context_description": f"Waking up with {primary_device} in hand before getting out of bed",
@@ -133,7 +133,7 @@ def infer_realistic_temporal_spatial_context(
     elif 9 <= start_hour < 18:
         if is_work_student:
             return {
-                "environment_label": "Workplace Desk / Study Break",
+                "environment_label": "Workplace Desk / Study Space",
                 "context_description": f"Midday mental fatigue or lunch break downtime with {primary_device}",
                 "environmental_rule": "Workplace Boundary: Keep phone in bag or desk drawer during deep work sprints. Take walking breaks away from screens.",
             }
@@ -158,8 +158,8 @@ def infer_realistic_temporal_spatial_context(
     else:
         return {
             "environment_label": "Private Bedside Solitude",
-            "context_description": f"Late-night bedroom isolation with {primary_device} proximity before sleep",
-            "environmental_rule": f"2-Meter Device Firewall: Never bring {primary_device} to bed. Charge it 2 meters away 45 minutes before sleep.",
+            "context_description": f"Late-night private bedroom screen usage on {primary_device}",
+            "environmental_rule": f"Bedside Boundary: Charge {primary_device} across the room or outside bedroom 30 minutes before sleep.",
         }
 
 
@@ -312,22 +312,25 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     environmental_rule = spatial_intel["environmental_rule"]
 
     # Calculate Next Predicted High-Risk Window relative to current time
-    if current_hour < 12:
-        if any(13 <= h <= 17 for h in urge_hours):
-            next_predicted_window = "Today, 02:00 PM - 04:30 PM"
-            next_predicted_context = "Midday Screen Fatigue"
+    if window_start_hour < 12:
+        time_prefix = "Today" if current_hour < window_start_hour else "Tomorrow"
+        next_predicted_window = f"{time_prefix} Morning, {peak_risk_window}"
+        next_predicted_context = f"Morning Awakening in {environment_label}"
+    elif 12 <= window_start_hour < 18:
+        time_prefix = "Today" if current_hour < window_start_hour else "Tomorrow"
+        next_predicted_window = f"{time_prefix} Afternoon, {peak_risk_window}"
+        next_predicted_context = f"Midday Screen Slump in {environment_label}"
+    elif 18 <= window_start_hour < 23:
+        time_prefix = "Tonight" if current_hour < window_start_hour else "Tomorrow Night"
+        next_predicted_window = f"{time_prefix}, {peak_risk_window}"
+        next_predicted_context = f"Evening Decompression in {environment_label}"
+    else:
+        if current_hour >= 23 or current_hour < 5:
+            next_predicted_window = "Active Right Now (Late-Night Screen Solitude)"
+            next_predicted_context = f"Active Bedside Solitude with {primary_dev}"
         else:
             next_predicted_window = f"Tonight, {peak_risk_window}"
-            next_predicted_context = f"Bedside Solitude in {environment_label}"
-    elif 12 <= current_hour < 18:
-        next_predicted_window = f"Tonight, {peak_risk_window}"
-        next_predicted_context = f"Post-Work Decompression in {environment_label}"
-    elif 18 <= current_hour < 23:
-        next_predicted_window = f"Tonight, {peak_risk_window}"
-        next_predicted_context = f"Nighttime Bedside with {primary_dev}"
-    else:
-        next_predicted_window = "Active Right Now (Late-Night Screen Solitude)"
-        next_predicted_context = f"Active Bedside Hazard with {primary_dev}"
+            next_predicted_context = f"Late-Night Bedside in {environment_label}"
 
     # ── F. Check-in Multi-Day Telemetry Analysis ─────────────────────────────
     latest_checkin = recent_checkins[0] if recent_checkins else None
@@ -378,45 +381,34 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     elif risk_score >= 50:
         risk_level = "ELEVATED VULNERABILITY"
     elif risk_score >= 30:
-        risk_level = "MODERATE VIGILANCE"
+        risk_level = "MODERATE VULNERABILITY"
     else:
-        risk_level = "OPTIMAL SHIELD"
+        risk_level = "OPTIMAL RESILIENCE"
 
-    # ── H. Active Catalysts List ──────────────────────────────────────────────
-    active_catalysts: List[str] = []
-
-    if current_stress >= 6:
-        cause_suffix = f" ({checkin_stress_causes[0]})" if checkin_stress_causes else ""
-        active_catalysts.append(f"Acute Stress ({current_stress}/10){cause_suffix}")
-
-    if current_sleep_hours < 6.5 or current_sleep_quality <= 5:
+    # ── H. Environmental & Behavioral Active Domino Triggers ──────────────────
+    active_catalysts = []
+    if current_sleep_hours < 6.5 or current_sleep_quality <= 4:
         active_catalysts.append(f"Sleep Deficit ({current_sleep_hours:.1f}h)")
-
-    if current_mood in ["Anxious", "Lonely", "Sad", "Overwhelmed", "Frustrated"]:
-        active_catalysts.append(f"Emotional State ({current_mood})")
-
+    if current_stress >= 6:
+        active_catalysts.append(f"High Stress ({current_stress}/10)")
+    if checkin_triggers:
+        top_checkin_trigger = Counter(checkin_triggers).most_common(1)[0][0]
+        active_catalysts.append(top_checkin_trigger)
     active_catalysts.append(f"{primary_dev} in {environment_label}")
-
     first_sign_info = FIRST_SIGN_PROTOCOLS.get(ob_first_sign, FIRST_SIGN_PROTOCOLS["craving"])
-    active_catalysts.append(f"Early Warning Cue: {first_sign_info['title']}")
+    if first_sign_info.get("cue"):
+        active_catalysts.append(f"Early Warning Cue: {first_sign_info['cue']}")
+    if today_urges_count > 0:
+        active_catalysts.append("Urge SOS Reset")
 
-    if session_reasons:
-        top_reason = Counter(session_reasons).most_common(1)[0][0]
-        if top_reason and top_reason not in active_catalysts:
-            active_catalysts.append(top_reason)
-    elif checkin_triggers:
-        top_checkin_trig = Counter(checkin_triggers).most_common(1)[0][0].replace("_", " ").title()
-        if top_checkin_trig not in active_catalysts:
-            active_catalysts.append(top_checkin_trig)
-
-    # ── I. Contextual Primary Vulnerability Synthesis ─────────────────────────
-    if current_stress >= 7:
-        primary_vulnerability = f"Elevated stress load ({current_stress}/10) lowering impulse control during {peak_risk_window} in {environment_label}."
-    elif current_sleep_hours < 6.0:
-        primary_vulnerability = f"Willpower deficit from sleep debt ({current_sleep_hours:.1f}h) during {peak_risk_window} hours."
-    elif today_urges_count >= 1 or checkin_urge_intensity >= 6:
+    # ── I. Concise Dynamic Primary Vulnerability Statement ───────────────────
+    if today_urges_count > 0 or checkin_urge_intensity >= 6:
         primary_vulnerability = f"Active craving wave recorded today. High dopamine seeking predicted during {peak_risk_window} in {environment_label}."
-    elif streak_val >= 7:
+    elif current_stress >= 7:
+        primary_vulnerability = f"High mental fatigue & stress ({current_stress}/10) weakens impulse control around {peak_risk_window}."
+    elif current_sleep_hours < 6.0:
+        primary_vulnerability = f"Sleep deprivation ({current_sleep_hours:.1f}h) impairs prefrontal willpower during {peak_risk_window}."
+    elif streak_val >= 14:
         primary_vulnerability = f"Clean streak momentum is high ({streak_val}d). Guard against overconfidence and idle screen time in {environment_label}."
     else:
         primary_vulnerability = f"Unstructured idle screen time on {primary_dev} during {peak_risk_window} in {environment_label}."
@@ -428,7 +420,8 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     # ── J. 3-Tier Tactical Defense Protocol ──────────────────────────────────
     step1_action = first_sign_info["action"]
     step2_device_rule = environmental_rule
-    top_tech = helpful_techniques[0] if helpful_techniques else "Urge Surfing (3-Min)"
+    clean_techs = [t for t in (helpful_techniques or []) if t and t.lower() not in ["unknown", "none", "null"]]
+    top_tech = clean_techs[0] if clean_techs else "Pranayama Breath Reset"
     step3_transmute = f"Engage {top_tech}: Transmute vital physical energy through deep breathing, a cold splash, or pushups."
 
     tactical_defense = f"1) {step1_action} 2) {step2_device_rule} 3) {step3_transmute}"

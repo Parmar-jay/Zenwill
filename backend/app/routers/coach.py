@@ -22,8 +22,8 @@ async def send_message(
     user_email = current_user.email if current_user.email else ""
     query = {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]} if user_email else {"user_id": user_id_str}
 
-    # Load last 10 messages for context
-    history_rows = await ChatMessage.find(query).sort("-created_at").limit(10).to_list()
+    # Load last 14 messages (7 full conversation turns) for context
+    history_rows = await ChatMessage.find(query).sort("-created_at").limit(14).to_list()
     history_rows = list(reversed(history_rows))
     history = [{"role": m.role, "content": m.content} for m in history_rows]
 
@@ -41,12 +41,18 @@ async def send_message(
     )
     await user_msg.save()
 
+    # Determine time of day for natural conversational pacing
+    now_hour = datetime.utcnow().hour
+    time_of_day = "Morning" if 5 <= now_hour < 12 else ("Afternoon" if 12 <= now_hour < 18 else ("Evening" if 18 <= now_hour < 23 else "Late Night"))
+
     # Generate AI reply via Gemini
     from app.services.gemini_service import get_chat_response
     user_ctx = {
         "name": current_user.name or "Warrior",
         "streak": getattr(current_user, "streak", 0),
         "total_urges_count": profile_summary.get("total_urges_count", 0),
+        "time_of_day": time_of_day,
+        "mind_strength": getattr(profile, "mind_strength", 75),
     }
     reply = await get_chat_response(messages=history + [{"role": "user", "content": payload.message}], user_context=user_ctx)
 

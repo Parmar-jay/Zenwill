@@ -196,34 +196,60 @@ Generate STRICT JSON ONLY (no markdown code blocks):
 
 
 async def get_chat_response(messages: List[Dict[str, str]], user_context: Dict[str, Any]) -> str:
-    """Generate multi-turn AI Coach chat response focused on energy transmutation and mind mastery."""
-    history_text = ""
-    for msg in messages[-6:]:
-        role = "User" if msg.get("role") == "user" else "AI Coach"
-        history_text += f"{role}: {msg.get('content', '')}\n"
+    """Generate multi-turn AI Coach chat response focused on calibrated brevity, professional guidance, and 7-turn memory."""
+    # Build history from last 14 messages (up to 7 full conversational turns)
+    recent_turns = messages[-14:] if len(messages) > 14 else messages
+    history_lines = []
+    for msg in recent_turns[:-1]:
+        role = "User" if msg.get("role") == "user" else "ZenWill Coach"
+        content = (msg.get("content") or "").strip()
+        if content:
+            history_lines.append(f"{role}: {content}")
+    history_text = "\n".join(history_lines) if history_lines else "No previous conversation."
 
-    last_user_msg = messages[-1].get("content", "") if messages else "How can I master my mind today?"
+    last_user_msg = (messages[-1].get("content", "") if messages else "").strip()
+    user_name = user_context.get("name", "Operative")
+    streak_days = user_context.get("streak", 0)
+    time_of_day = user_context.get("time_of_day", "Today")
+
+    # Detect if user message is a short greeting or quick check-in
+    clean_lower = last_user_msg.lower().strip(" .!?,:;")
+    is_greeting = clean_lower in [
+        "hi", "hii", "hiii", "hello", "hey", "heyy", "sup", "yo", "good morning",
+        "good afternoon", "good evening", "how are you", "howdy", "morning", "evening"
+    ] or len(clean_lower.split()) <= 2 and any(w in clean_lower for w in ["hi", "hey", "hello", "sup", "yo"])
+
+    is_urgent_urge = any(w in clean_lower for w in ["urge", "relapse", "craving", "horny", "help", "struggling", "trigger", "edge", "edging"])
 
     prompt = f"""
-User Profile Context:
-- Username: {user_context.get("name", "Warrior")}
-- Clean Streak: {user_context.get("streak", 0)} days
-- Total Urges Defeated: {user_context.get("total_urges_count", 0)}
-- Primary Objective: Sexual Energy Transmutation & Building Greatness
+You are the ZenWill AI Mind & Willpower Coach. You are speaking with {user_name} (Current Clean Streak: {streak_days} days | Time: {time_of_day}).
 
-Recent Conversation History:
+CORE CONVERSATIONAL PRINCIPLES:
+1. CALIBRATED BREVITY (CRITICAL):
+   - If the user sends a simple greeting or short remark (e.g. "hi", "hello", "hey"): Respond in ONLY 1 to 2 short, warm, professional sentences. NEVER preach, lecture, or dump paragraphs on a greeting.
+   - If the user asks a specific question or shares a challenge: Deliver a sharp, actionable, highly professional response (2 to 4 concise sentences max).
+   - If the user is in an active urge: Give 1-2 immediate physical/mental grounding steps.
+2. PROFESSIONAL & EMPATHETIC: Speak like an elite executive performance and mindfulness mentor. Calm, disciplined, respectful, and sharp. No fluff, no robotic filler.
+3. CONVERSATIONAL CONTINUITY: Use the previous 7 turns of context below to understand what {user_name} is going through. Do not repeat what was already said.
+
+Previous Conversation Context (Last 7 Turns):
 {history_text}
 
-User Question: "{last_user_msg}"
+User's Latest Message:
+"{last_user_msg}"
 
-Respond directly, empowering the user to take control of their mind, channel urge energy into creation, and achieve greatness. Keep response under 150 words.
+Reply:
 """
 
     response = await call_gemini_api(prompt)
     if response:
-        return response
+        cleaned = response.strip().strip('"')
+        return cleaned
 
-    return (
-        "Every urge is raw electrical fuel. Do not fight the wave; ride it and redirect that intense force into your highest goals. "
-        "Take a deep breath, ground your awareness in the present moment, and build something remarkable today!"
-    )
+    # Contextual Smart Fallback
+    if is_greeting:
+        return f"Hello {user_name}. Ready to assist your focus and discipline {time_of_day.lower()}. What's on your mind?"
+    elif is_urgent_urge:
+        return f"Pause right now, {user_name}. Place your device down, take 3 deep breaths, and ground your attention in this room. The urge wave will peak and dissipate."
+    else:
+        return f"Understood, {user_name}. Maintain your presence and focus. What specific challenge or objective are you working through right now?"

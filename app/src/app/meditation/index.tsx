@@ -310,38 +310,49 @@ export default function MeditationScreen() {
               resizeMode="cover"
             />
             <LinearGradient
-              colors={['rgba(5, 6, 9, 0.4)', 'rgba(5, 6, 9, 0.95)']}
+              colors={['rgba(5, 6, 9, 0.35)', 'rgba(5, 6, 9, 0.75)', 'rgba(5, 6, 9, 0.98)']}
               style={styles.heroGradientOverlay}
             >
               <View style={styles.heroTopRow}>
-                <View style={[styles.heroBadge, { backgroundColor: 'rgba(0, 229, 255, 0.15)', borderColor: '#00E5FF' }]}>
-                  <Ionicons name="sparkles" size={12} color="#00E5FF" />
-                  <ThemedText style={[styles.heroBadgeText, { color: '#00E5FF', fontWeight: '800' }]}>
+                <View style={styles.heroBadge}>
+                  <Ionicons name="sparkles" size={11} color="#00E5FF" />
+                  <ThemedText style={styles.heroBadgeText} numberOfLines={1}>
                     RECOMMENDED • {timeContextLabel.toUpperCase()}
                   </ThemedText>
                 </View>
-                {renderStars(recommendedPractice.rating)}
+                <View style={styles.heroRatingWrap}>
+                  {renderStars(recommendedPractice.rating)}
+                </View>
               </View>
 
               <View style={styles.heroTextSection}>
-                <ThemedText style={styles.heroTitle}>{recommendedPractice.title}</ThemedText>
-                <ThemedText style={styles.heroSanskrit}>{recommendedPractice.sanskritTitle}</ThemedText>
-                <ThemedText style={[styles.heroSubtitle, { color: '#E2E8F0' }]} numberOfLines={2}>
+                <View style={styles.heroTitleRow}>
+                  <ThemedText style={styles.heroTitle} numberOfLines={1}>
+                    {recommendedPractice.title}
+                  </ThemedText>
+                  <ThemedText style={styles.heroSanskrit} numberOfLines={1}>
+                    • {recommendedPractice.sanskritTitle}
+                  </ThemedText>
+                </View>
+                <ThemedText style={styles.heroSubtitle} numberOfLines={2}>
                   {recommendedReason}
                 </ThemedText>
               </View>
 
               <View style={styles.heroFooter}>
                 <View style={styles.sourceTag}>
-                  <Ionicons name="book-outline" size={12} color="rgba(255,255,255,0.6)" />
-                  <ThemedText style={styles.sourceTagText}>{recommendedPractice.source}</ThemedText>
+                  <Ionicons name="book-outline" size={11} color="rgba(255,255,255,0.6)" />
+                  <ThemedText style={styles.sourceTagText} numberOfLines={1}>
+                    {recommendedPractice.source}
+                  </ThemedText>
                 </View>
 
                 <TouchableOpacity
                   style={styles.heroPlayBtn}
+                  activeOpacity={0.85}
                   onPress={() => handleStartSession(recommendedPractice)}
                 >
-                  <Ionicons name="play" size={14} color="#ffffff" />
+                  <Ionicons name="play" size={13} color="#000000" />
                   <ThemedText style={styles.heroPlayText}>Start Session</ThemedText>
                 </TouchableOpacity>
               </View>
@@ -944,102 +955,114 @@ const styles = StyleSheet.create({
     gap: 2,
   },
 
-  // Hero Card
+  // Hero Card (Thinner, Responsive, Perfectly Aligned)
   heroCard: {
     width: '100%',
-    minHeight: 230,
-    borderRadius: 24,
+    borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(6, 182, 212, 0.3)',
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    backgroundColor: '#08090C',
     position: 'relative',
   },
   heroImageBg: {
     ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
+    opacity: 0.65,
   },
   heroGradientOverlay: {
-    padding: 16,
-    minHeight: 230,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
     justifyContent: 'space-between',
-    gap: 10,
   },
   heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   heroBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(6, 182, 212, 0.25)',
+    backgroundColor: 'rgba(0, 229, 255, 0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(6, 182, 212, 0.4)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    flexShrink: 1,
   },
   heroBadgeText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
-    color: '#06B6D4',
+    color: '#00E5FF',
+    letterSpacing: 0.5,
+  },
+  heroRatingWrap: {
+    flexShrink: 0,
   },
   heroTextSection: {
-    gap: 2,
+    gap: 3,
+  },
+  heroTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    flexWrap: 'wrap',
   },
   heroTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '900',
     color: '#ffffff',
-    letterSpacing: -0.4,
-    lineHeight: 26,
+    letterSpacing: -0.3,
   },
   heroSanskrit: {
-    fontSize: 12,
-    color: '#06B6D4',
+    fontSize: 11.5,
+    color: '#00E5FF',
     fontWeight: '700',
   },
   heroSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.78)',
     lineHeight: 16,
-    marginTop: 4,
   },
   heroFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    flexWrap: 'wrap',
     gap: 8,
-    marginTop: 4,
+    marginTop: 2,
   },
   sourceTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    flexShrink: 1,
+    flex: 1,
   },
   sourceTagText: {
-    fontSize: 10.5,
+    fontSize: 10,
     color: 'rgba(255, 255, 255, 0.6)',
+    fontWeight: '600',
   },
   heroPlayBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#06B6D4',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    minHeight: 36,
+    gap: 5,
+    backgroundColor: '#00E5FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6.5,
+    borderRadius: 10,
+    flexShrink: 0,
   },
   heroPlayText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#ffffff',
+    fontSize: 11.5,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.2,
   },
 
   // Categories
