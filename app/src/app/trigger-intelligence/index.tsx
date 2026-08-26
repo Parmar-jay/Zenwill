@@ -189,16 +189,18 @@ export default function TriggerIntelligenceScreen() {
               {/* Peak Danger Window & Critical Day */}
               <View style={styles.timingBox}>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <ThemedText style={styles.timingLabel}>PEAK DANGER WINDOW</ThemedText>
+                  <ThemedText style={styles.timingLabel}>NEXT PREDICTED TRIGGER</ThemedText>
                   <ThemedText style={styles.timingValue}>
-                    {triggerData?.peak_risk_window || '10:30 PM - 01:00 AM'}
+                    {triggerData?.next_predicted_window || triggerData?.peak_risk_window || 'Tonight, 10:30 PM - 12:30 AM'}
                   </ThemedText>
                 </View>
 
                 <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                  <ThemedText style={styles.timingLabel}>HIGHEST RISK DAY</ThemedText>
+                  <ThemedText style={styles.timingLabel}>
+                    {triggerData?.today_status_label ? 'TODAY\'S PHASE' : 'CRITICAL PHASE'}
+                  </ThemedText>
                   <ThemedText style={styles.timingDayValue}>
-                    {triggerData?.highest_risk_day || 'Weekends'}
+                    {triggerData?.today_weekday ? `${triggerData.today_weekday} (${triggerData.highest_risk_day})` : (triggerData?.highest_risk_day || 'Weekends')}
                   </ThemedText>
                 </View>
               </View>

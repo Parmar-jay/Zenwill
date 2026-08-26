@@ -250,15 +250,19 @@ export default function ProgressTabScreen() {
                 {/* Peak Window & Danger Timing */}
                 <View style={styles.intelTimingRow}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <ThemedText style={styles.intelTimingSub}>PEAK DANGER WINDOW</ThemedText>
-                    <ThemedText style={styles.intelTimingTime}>{triggerIntel.peak_risk_window || '10:30 PM - 01:00 AM'}</ThemedText>
+                    <ThemedText style={styles.intelTimingSub}>NEXT PREDICTED TRIGGER</ThemedText>
+                    <ThemedText style={styles.intelTimingTime}>
+                      {triggerIntel.next_predicted_window || triggerIntel.peak_risk_window || 'Tonight, 10:30 PM - 12:30 AM'}
+                    </ThemedText>
                   </View>
-                  {triggerIntel.highest_risk_day && (
-                    <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                      <ThemedText style={styles.intelTimingSub}>CRITICAL DAY</ThemedText>
-                      <ThemedText style={styles.intelTimingDay}>{triggerIntel.highest_risk_day}</ThemedText>
-                    </View>
-                  )}
+                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                    <ThemedText style={styles.intelTimingSub}>
+                      {triggerIntel.today_status_label ? 'TODAY\'S PHASE' : 'CRITICAL PHASE'}
+                    </ThemedText>
+                    <ThemedText style={styles.intelTimingDay}>
+                      {triggerIntel.today_weekday ? `${triggerIntel.today_weekday} (${triggerIntel.highest_risk_day})` : (triggerIntel.highest_risk_day || 'Weekends')}
+                    </ThemedText>
+                  </View>
                 </View>
 
                 {/* Primary Vulnerability Statement */}

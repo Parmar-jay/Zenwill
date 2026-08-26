@@ -274,22 +274,30 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         if first_time_pref in TIME_SLOT_RANGES:
             peak_risk_window, window_start_hour = TIME_SLOT_RANGES[first_time_pref]
         else:
-            peak_risk_window, window_start_hour = ("10:30 PM - 01:00 AM", 23)
+            peak_risk_window, window_start_hour = ("10:30 PM - 12:30 AM", 23)
     elif daily_schedule == "night_shift":
         peak_risk_window, window_start_hour = ("03:00 AM - 05:30 AM", 3)
     else:
-        peak_risk_window, window_start_hour = ("10:30 PM - 01:00 AM", 23)
+        peak_risk_window, window_start_hour = ("10:30 PM - 12:30 AM", 23)
 
-    # ── D. Peak Risk Day Computation ─────────────────────────────────────────
-    if urge_days:
-        peak_day_name = Counter(urge_days).most_common(1)[0][0]
-        peak_day = f"{peak_day_name}s"
+    # ── D. Peak Risk Day & Real-Time Day-of-Week Computation ──────────────────
+    now_utc = datetime.utcnow()
+    current_hour = now_utc.hour
+    today_weekday_name = now_utc.strftime("%A")
+
+    if urge_days and len(urge_days) >= 2:
+        day_counts = Counter(urge_days)
+        top_day = day_counts.most_common(1)[0][0]
+        if day_counts[top_day] >= 2:
+            peak_day = f"{top_day}s"
+        else:
+            peak_day = "Late Evenings & Weekends"
     elif daily_schedule in ["night_shift", "freelancer"]:
-        peak_day = "Late Weekends (Fri / Sat)"
+        peak_day = "Weekends (Fri / Sat)"
     elif daily_schedule == "student":
         peak_day = "Sunday Evenings"
     else:
-        peak_day = "Weekends (Sat / Sun)"
+        peak_day = "Weekends & Late Evenings"
 
     # ── E. Realistic Spatial & Contextual Intelligence ───────────────────────
     spatial_intel = infer_realistic_temporal_spatial_context(
@@ -302,6 +310,24 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     )
     environment_label = spatial_intel["environment_label"]
     environmental_rule = spatial_intel["environmental_rule"]
+
+    # Calculate Next Predicted High-Risk Window relative to current time
+    if current_hour < 12:
+        if any(13 <= h <= 17 for h in urge_hours):
+            next_predicted_window = "Today, 02:00 PM - 04:30 PM"
+            next_predicted_context = "Midday Screen Fatigue"
+        else:
+            next_predicted_window = f"Tonight, {peak_risk_window}"
+            next_predicted_context = f"Bedside Solitude in {environment_label}"
+    elif 12 <= current_hour < 18:
+        next_predicted_window = f"Tonight, {peak_risk_window}"
+        next_predicted_context = f"Post-Work Decompression in {environment_label}"
+    elif 18 <= current_hour < 23:
+        next_predicted_window = f"Tonight, {peak_risk_window}"
+        next_predicted_context = f"Nighttime Bedside with {primary_dev}"
+    else:
+        next_predicted_window = "Active Right Now (Late-Night Screen Solitude)"
+        next_predicted_context = f"Active Bedside Hazard with {primary_dev}"
 
     # ── F. Check-in Multi-Day Telemetry Analysis ─────────────────────────────
     latest_checkin = recent_checkins[0] if recent_checkins else None
@@ -340,8 +366,8 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
 
     stress_pts = 25 if current_stress >= 8 else (16 if current_stress >= 6 else (8 if current_stress >= 4 else 0))
     sleep_pts = 20 if (current_sleep_hours < 5.5 or current_sleep_quality <= 3) else (12 if (current_sleep_hours < 6.5 or current_sleep_quality <= 5) else 0)
-    urge_velocity_pts = min(today_urges_count * 12, 24)
-    checkin_urge_pts = 15 if checkin_urge_intensity >= 7 else (8 if checkin_urge_intensity >= 4 else 0)
+    urge_velocity_pts = min(today_urges_count * 14, 28)
+    checkin_urge_pts = 16 if checkin_urge_intensity >= 7 else (8 if checkin_urge_intensity >= 4 else 0)
     mood_pts = 10 if current_mood in ["Sad", "Anxious", "Lonely", "Overwhelmed", "Frustrated", "Angry"] else 0
 
     total_risk = base_risk + stress_pts + sleep_pts + urge_velocity_pts + checkin_urge_pts + mood_pts
@@ -361,18 +387,18 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
 
     if current_stress >= 6:
         cause_suffix = f" ({checkin_stress_causes[0]})" if checkin_stress_causes else ""
-        active_catalysts.append(f"Acute Cortisol & Stress ({current_stress}/10){cause_suffix}")
+        active_catalysts.append(f"Acute Stress ({current_stress}/10){cause_suffix}")
 
     if current_sleep_hours < 6.5 or current_sleep_quality <= 5:
-        active_catalysts.append(f"Prefrontal Fatigue / Sleep Debt ({current_sleep_hours:.1f}h)")
+        active_catalysts.append(f"Sleep Deficit ({current_sleep_hours:.1f}h)")
 
     if current_mood in ["Anxious", "Lonely", "Sad", "Overwhelmed", "Frustrated"]:
-        active_catalysts.append(f"Emotional Dysphoria ({current_mood})")
+        active_catalysts.append(f"Emotional State ({current_mood})")
 
     active_catalysts.append(f"{primary_dev} in {environment_label}")
 
     first_sign_info = FIRST_SIGN_PROTOCOLS.get(ob_first_sign, FIRST_SIGN_PROTOCOLS["craving"])
-    active_catalysts.append(f"Warning Cue: {first_sign_info['title']}")
+    active_catalysts.append(f"Early Warning Cue: {first_sign_info['title']}")
 
     if session_reasons:
         top_reason = Counter(session_reasons).most_common(1)[0][0]
@@ -385,25 +411,25 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
 
     # ── I. Contextual Primary Vulnerability Synthesis ─────────────────────────
     if current_stress >= 7:
-        primary_vulnerability = f"Elevated stress load ({current_stress}/10) lowering dopamine inhibition during {peak_risk_window} in {environment_label}."
+        primary_vulnerability = f"Elevated stress load ({current_stress}/10) lowering impulse control during {peak_risk_window} in {environment_label}."
     elif current_sleep_hours < 6.0:
-        primary_vulnerability = f"Prefrontal willpower deficit from sleep debt ({current_sleep_hours:.1f}h) during {peak_risk_window} hours."
+        primary_vulnerability = f"Willpower deficit from sleep debt ({current_sleep_hours:.1f}h) during {peak_risk_window} hours."
     elif today_urges_count >= 1 or checkin_urge_intensity >= 6:
-        primary_vulnerability = f"Active physiological urge momentum during {peak_risk_window} in {environment_label}."
-    elif "boredom" in ob_triggers or "loneliness" in ob_triggers:
-        primary_vulnerability = f"Unstructured idle downtime in {environment_label} triggering dopamine seeking on {primary_dev}."
+        primary_vulnerability = f"Active craving wave recorded today. High dopamine seeking predicted during {peak_risk_window} in {environment_label}."
+    elif streak_val >= 7:
+        primary_vulnerability = f"Clean streak momentum is high ({streak_val}d). Guard against overconfidence and idle screen time in {environment_label}."
     else:
-        primary_vulnerability = f"{spatial_intel['context_description']} during {peak_risk_window}."
+        primary_vulnerability = f"Unstructured idle screen time on {primary_dev} during {peak_risk_window} in {environment_label}."
 
     if latest_autopsy and getattr(latest_autopsy, "generated_golden_rule", None):
         environmental_rule = latest_autopsy.generated_golden_rule
-        active_catalysts.insert(0, f"Fracture Point: {latest_autopsy.first_compromise_title}")
+        active_catalysts.insert(0, f"Recent Trigger: {latest_autopsy.first_compromise_title}")
 
     # ── J. 3-Tier Tactical Defense Protocol ──────────────────────────────────
     step1_action = first_sign_info["action"]
     step2_device_rule = environmental_rule
     top_tech = helpful_techniques[0] if helpful_techniques else "Urge Surfing (3-Min)"
-    step3_transmute = f"Engage {top_tech}: Transmute vital physical energy through 15 pushups, a cold splash, or 4-7-8 Pranayama."
+    step3_transmute = f"Engage {top_tech}: Transmute vital physical energy through deep breathing, a cold splash, or pushups."
 
     tactical_defense = f"1) {step1_action} 2) {step2_device_rule} 3) {step3_transmute}"
 
@@ -417,7 +443,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "riskScore": min(95, risk_score + 6),
             "color": "#00E5FF",
             "peakTime": peak_risk_window,
-            "recommendation": f"Pre-commit to digital shutdown: put {primary_dev} into grayscale/DND 30 minutes before this window.",
+            "recommendation": f"Pre-commit to screen cutoff: keep {primary_dev} away from bed 30 minutes before this window.",
         },
         {
             "id": "trig-environmental",
@@ -447,7 +473,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "riskScore": min(92, max(45, (current_stress * 10) + 15)),
             "color": "#EF4444" if current_stress >= 6 else "#10B981",
             "peakTime": "Late Afternoons & Evenings",
-            "recommendation": "Execute 5 minutes of Nadi Shodhana Pranayama to normalize autonomic arousal.",
+            "recommendation": "Execute 5 minutes of Nadi Shodhana Pranayama to balance sympathetic stress response.",
         },
         {
             "id": "trig-cognitive",
@@ -457,12 +483,16 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "riskScore": min(85, max(40, risk_score - 12)),
             "color": "#EC4899",
             "peakTime": peak_risk_window,
-            "recommendation": "Implement strict website blocking and remove infinite-scroll apps from your primary home screen.",
+            "recommendation": "Set strict daily app limits and remove infinite-scroll apps from your primary home screen.",
         },
     ]
 
     return {
         "peak_risk_window": peak_risk_window,
+        "next_predicted_window": next_predicted_window,
+        "next_predicted_context": next_predicted_context,
+        "today_weekday": today_weekday_name,
+        "today_status_label": f"TODAY ({today_weekday_name.upper()})",
         "primary_vulnerability": primary_vulnerability,
         "tactical_defense": tactical_defense,
         "vitality_boost_quote": (

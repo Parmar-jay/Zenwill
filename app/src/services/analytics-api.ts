@@ -168,6 +168,10 @@ export interface RelapseAutopsyResult {
 }
 export interface TriggerIntelligence {
   peak_risk_window: string;
+  next_predicted_window?: string;
+  next_predicted_context?: string;
+  today_weekday?: string;
+  today_status_label?: string;
   primary_vulnerability: string;
   tactical_defense: string;
   vitality_boost_quote: string;
