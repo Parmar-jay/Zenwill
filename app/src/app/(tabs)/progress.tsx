@@ -32,6 +32,7 @@ export default function ProgressTabScreen() {
 
   const {
     streak,
+    maxStreak,
     mindStrength,
     history,
     lastLoggedStatus,
@@ -72,7 +73,11 @@ export default function ProgressTabScreen() {
   const totalLogs = history.length;
   const retainedLogs = history.filter((h) => h.status === 'retained').length;
   const successRate = totalLogs > 0 ? Math.round((retainedLogs / totalLogs) * 100) : (streak > 0 ? 100 : 0);
-  const highestStreak = history.length > 0 ? Math.max(...history.map((h) => h.streakAfter), streak) : streak;
+  const highestStreak = Math.max(
+    maxStreak || 0,
+    streak || 0,
+    ...(history.map((h) => (typeof h.streakAfter === 'number' ? h.streakAfter : 0)))
+  );
 
   // Recent 7 entries for timeline
   const recentHistory = history.slice(0, 7);

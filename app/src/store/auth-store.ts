@@ -58,13 +58,16 @@ const syncUserStats = (response: AuthResponse) => {
     const today = new Date().toISOString().split('T')[0];
     const lastRetainDate = response.last_retain_date || null;
     const lastRetainStatus = response.last_retain_status || null;
+    const dbStreak = typeof response.streak === 'number' ? response.streak : 0;
+    const dbMax = typeof response.max_streak === 'number' ? response.max_streak : dbStreak;
 
-    useHabitStore.setState({
-      streak: typeof response.streak === 'number' ? response.streak : 0,
+    useHabitStore.setState((state) => ({
+      streak: dbStreak,
+      maxStreak: Math.max(state.maxStreak || 0, dbMax, dbStreak),
       mindStrength: typeof response.mind_strength === 'number' ? response.mind_strength : 50,
       lastLoggedDate: lastRetainDate === today ? today : null,
       lastLoggedStatus: lastRetainDate === today ? ((lastRetainStatus as any) || 'retained') : null,
-    });
+    }));
     if (typeof response.total_points === 'number' && response.total_points > 0) {
       useDailyMissionStore.setState({ totalPoints: response.total_points });
     }

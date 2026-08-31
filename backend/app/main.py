@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import init_db
-from app.routers import auth, profile, mind_profile, checkin, journal, missions, coach, emergency, analytics, events, community, purpose
+from app.routers import auth, profile, mind_profile, checkin, journal, missions, coach, emergency, analytics, events, community, purpose, spartan_cells, battlefield
 
 
 import asyncio
@@ -61,6 +61,8 @@ app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
 app.include_router(community.router, prefix="/api/v1")
 app.include_router(purpose.router, prefix="/api/v1")
+app.include_router(spartan_cells.router, prefix="/api/v1")
+app.include_router(battlefield.router, prefix="/api/v1")
 
 
 @app.get("/")

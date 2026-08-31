@@ -145,7 +145,9 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
     )
     await autopsy.insert()
 
-    # 4. Safely Update User Streak & Retain Status in Database
+    # 4. Safely Update User Streak & Retain Status in Database (Locking Best Streak)
+    if streak_before > (user.max_streak or 0):
+        user.max_streak = streak_before
     user.streak = 0
     user.last_retain_status = "relapsed"
     user.last_retain_date = today_str
@@ -158,6 +160,13 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
         profile.last_relapse_at = datetime.utcnow()
         profile.updated_at = datetime.utcnow()
         await profile.save()
+
+    # 6. Recalculate Spartan Cell Total Streak dynamically
+    try:
+        from app.services.spartan_cell_service import recalculate_user_cell_streak
+        await recalculate_user_cell_streak(user_id_str)
+    except Exception:
+        pass
 
     # Construct genuine, practical reframing message based on real user numbers
     if streak_before > 0:

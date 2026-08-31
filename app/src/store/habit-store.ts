@@ -5,6 +5,7 @@ import { profileApi } from '@/services/profile-api';
 
 export interface HabitState {
   streak: number;
+  maxStreak: number;
   mindStrength: number;
   lastLoggedDate: string | null; // format: YYYY-MM-DD
   lastLoggedStatus: 'retained' | 'relapsed' | null;
@@ -43,6 +44,7 @@ export const useHabitStore = create<HabitState>()(
   persist(
     (set, get) => ({
       streak: 0,
+      maxStreak: 0,
       mindStrength: 0,
       lastLoggedDate: null,
       lastLoggedStatus: null,
@@ -104,14 +106,18 @@ export const useHabitStore = create<HabitState>()(
           }
           let nextStreak = state.streak;
           let nextStrength = state.mindStrength;
+          let nextMaxStreak = Math.max(state.maxStreak || 0, state.streak);
 
           if (retained) {
             // Only increment streak if not already logged today
             if (state.lastLoggedDate !== today) {
               nextStreak += 1;
               nextStrength = Math.min(nextStrength + 50, 1000);
+              nextMaxStreak = Math.max(nextMaxStreak, nextStreak);
             }
           } else {
+            // Locking previous streak before resetting to 0
+            nextMaxStreak = Math.max(nextMaxStreak, state.streak);
             nextStreak = 0;
             nextStrength = 0; // Reset streak immediately on relapse
           }
@@ -130,6 +136,7 @@ export const useHabitStore = create<HabitState>()(
           profileApi
             .updateMe({
               streak: nextStreak,
+              max_streak: nextMaxStreak,
               mind_strength: nextStrength,
               last_retain_date: today,
               last_retain_status: retained ? 'retained' : 'relapsed',
@@ -138,6 +145,7 @@ export const useHabitStore = create<HabitState>()(
 
           return {
             streak: nextStreak,
+            maxStreak: nextMaxStreak,
             mindStrength: nextStrength,
             lastLoggedDate: today,
             lastLoggedStatus: retained ? 'retained' : 'relapsed',
@@ -147,9 +155,11 @@ export const useHabitStore = create<HabitState>()(
       },
 
       resetChallenge: () => {
-        profileApi.updateMe({ streak: 0, mind_strength: 0, last_retain_date: null, last_retain_status: null }).catch(() => {});
+        const currentMax = get().maxStreak || get().streak || 0;
+        profileApi.updateMe({ streak: 0, max_streak: currentMax, mind_strength: 0, last_retain_date: null, last_retain_status: null }).catch(() => {});
         set({
           streak: 0,
+          maxStreak: currentMax,
           mindStrength: 0,
           lastLoggedDate: null,
           lastLoggedStatus: null,
@@ -161,6 +171,7 @@ export const useHabitStore = create<HabitState>()(
         // Clears state locally without sending an API update (used for logout)
         set({
           streak: 0,
+          maxStreak: 0,
           mindStrength: 0,
           lastLoggedDate: null,
           lastLoggedStatus: null,
@@ -182,6 +193,7 @@ export const useHabitStore = create<HabitState>()(
             const lastRetainDate = profile.last_retain_date || null;
             const lastRetainStatus = profile.last_retain_status || null;
             const liveStreak = typeof profile.streak === 'number' ? profile.streak : 0;
+            const dbMaxStreak = typeof profile.max_streak === 'number' ? profile.max_streak : 0;
             const liveStrength = typeof profile.ai_mindset_score === 'number' ? profile.ai_mindset_score : (typeof profile.mind_strength === 'number' ? profile.mind_strength : 50);
 
             set((state) => {
@@ -200,8 +212,11 @@ export const useHabitStore = create<HabitState>()(
                 ? Math.max(liveStreak, state.streak)
                 : (statusToKeep === 'relapsed' ? 0 : liveStreak);
 
+              const resolvedMaxStreak = Math.max(dbMaxStreak, state.maxStreak || 0, liveStreak, resolvedStreak);
+
               return {
                 streak: resolvedStreak,
+                maxStreak: resolvedMaxStreak,
                 mindStrength: liveStrength,
                 lastLoggedDate: dateToKeep,
                 lastLoggedStatus: statusToKeep,

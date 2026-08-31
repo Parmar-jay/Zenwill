@@ -28,6 +28,7 @@ import { useOnboardingStore } from '@/store/onboarding-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useHabitStore } from '@/store/habit-store';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
+import { useSpartanStore } from '@/store/spartan-store';
 import { SmoothSkeleton, PageEntrance } from '@/components/ui/smooth-loader';
 import { analyticsApi, UserRecommendations, RecommendationActionTask, getCachedRecommendations } from '@/services/analytics-api';
 
@@ -62,6 +63,8 @@ export const ALL_QUICK_ACTIONS: QuickActionDef[] = [
   { id: 'trigger-intel', title: 'Trigger Intel', subtitle: 'Trigger analytics', icon: 'flash-outline', route: '/trigger-intelligence', category: 'Analytics', color: '#F97316' },
   { id: 'leaderboard', title: 'Leaderboard', subtitle: 'Rankings & streaks', icon: 'trophy-outline', route: '/community/leaderboard', category: 'Community', color: '#F59E0B' },
   { id: 'progress', title: 'Progress', subtitle: 'Milestones & analytics', icon: 'stats-chart-outline', route: '/progress', category: 'Analytics', color: '#00E5FF' },
+  { id: 'spartan-cell', title: 'Spartan Cell', subtitle: '5-20 Man Squad Stakes', icon: 'shield-half-outline', route: '/community/cell', category: 'Community', color: '#00E5FF' },
+  { id: 'battlefield', title: 'Battlefield', subtitle: 'Live 90s Urge Rescue', icon: 'flame-outline', route: '/emergency/battlefield', category: 'Core', color: '#EF4444' },
   { id: 'billing', title: 'Pro Upgrade', subtitle: 'Subscription & features', icon: 'card-outline', route: '/billing', category: 'Account', color: '#EAB308' },
 ];
 
@@ -206,13 +209,16 @@ export default function HomeScreen() {
     resetChallenge,
   } = useHabitStore();
 
-  // Daily Mission Store
+  // Daily Mission Store & Spartan Store
   const { todayTasks, totalPoints, completeTask, checkAndResetMidnight } = useDailyMissionStore();
+  const { myCell, activeBattle } = useSpartanStore();
 
   useEffect(() => {
     checkAndResetMidnight();
     useHabitStore.getState().syncFromDatabase();
     useDailyMissionStore.getState().syncWithBackend().catch(() => { });
+    useSpartanStore.getState().fetchMyCell().catch(() => { });
+    useSpartanStore.getState().fetchActiveBattle().catch(() => { });
   }, []);
 
   useFocusEffect(
@@ -220,6 +226,8 @@ export default function HomeScreen() {
       checkAndResetMidnight();
       useHabitStore.getState().syncFromDatabase();
       useDailyMissionStore.getState().syncWithBackend().catch(() => { });
+      useSpartanStore.getState().fetchMyCell().catch(() => { });
+      useSpartanStore.getState().fetchActiveBattle().catch(() => { });
     }, [])
   );
 
@@ -1202,6 +1210,71 @@ export default function HomeScreen() {
               </View>
             </Animated.View>
 
+            {/* Spartan Live Battlefield & Cell Widget */}
+            <Animated.View
+              style={[
+                styles.spartanWidgetRow,
+                { opacity: fadeAnims.actions, transform: [{ translateY: slideAnims.actions }] },
+              ]}
+            >
+              {/* Left Widget: Spartan Cell */}
+              <TouchableOpacity
+                style={[
+                  styles.spartanCellWidget,
+                  myCell?.shield_status === 'gold' && styles.spartanWidgetGold,
+                ]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  triggerHaptic();
+                  router.push('/community/cell' as any);
+                }}
+              >
+                <View style={styles.spartanWidgetHeader}>
+                  <ThemedText style={styles.spartanWidgetEmoji}>🛡️</ThemedText>
+                  <View style={styles.spartanShieldPill}>
+                    <ThemedText style={styles.spartanShieldPillText}>
+                      {myCell?.shield_status === 'gold' ? 'GOLD SHIELD' : myCell ? 'SPARTAN CELL' : 'JOIN CELL'}
+                    </ThemedText>
+                  </View>
+                </View>
+                <ThemedText style={styles.spartanWidgetTitle} numberOfLines={1}>
+                  {myCell ? myCell.name : 'Spartan Squad'}
+                </ThemedText>
+                <ThemedText style={styles.spartanWidgetSub} numberOfLines={1}>
+                  {myCell ? `🔥 ${myCell.total_streak}d Collective Streak` : 'Shared Stakes • 20 Warriors'}
+                </ThemedText>
+              </TouchableOpacity>
+
+              {/* Right Widget: Spartan Battlefield Live Horn */}
+              <TouchableOpacity
+                style={[
+                  styles.spartanBattleWidget,
+                  activeBattle ? styles.spartanBattleActive : null,
+                ]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push('/emergency/battlefield' as any);
+                }}
+              >
+                <View style={styles.spartanWidgetHeader}>
+                  <ThemedText style={styles.spartanWidgetEmoji}>⚔️</ThemedText>
+                  <View style={[styles.spartanShieldPill, { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]}>
+                    <View style={styles.liveRedDot} />
+                    <ThemedText style={[styles.spartanShieldPillText, { color: '#EF4444' }]}>
+                      {activeBattle ? 'LIVE SOS' : 'BATTLE HORN'}
+                    </ThemedText>
+                  </View>
+                </View>
+                <ThemedText style={styles.spartanWidgetTitle} numberOfLines={1}>
+                  Battlefield
+                </ThemedText>
+                <ThemedText style={styles.spartanWidgetSub} numberOfLines={1}>
+                  {activeBattle ? `🚨 ${activeBattle.participant_count} Warriors in Wall` : '90s Live Urge Wall (+25 XP)'}
+                </ThemedText>
+              </TouchableOpacity>
+            </Animated.View>
+
             {/* Quick Actions Hub */}
             <Animated.View
               style={[
@@ -1609,7 +1682,7 @@ export default function HomeScreen() {
                   <Image
                     source={
                       recommendations?.recommended_meditation?.image_key &&
-                      MEDITATION_IMAGE_MAP[recommendations.recommended_meditation.image_key]
+                        MEDITATION_IMAGE_MAP[recommendations.recommended_meditation.image_key]
                         ? MEDITATION_IMAGE_MAP[recommendations.recommended_meditation.image_key]
                         : require('../../../assets/images/meditation_forest.png')
                     }
@@ -4140,5 +4213,80 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  spartanWidgetRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  spartanCellWidget: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.025)',
+    borderRadius: 16,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.2)',
+  },
+  spartanWidgetGold: {
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    backgroundColor: 'rgba(245, 158, 11, 0.03)',
+  },
+  spartanBattleWidget: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.025)',
+    borderRadius: 16,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  spartanBattleActive: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+  },
+  spartanWidgetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  spartanWidgetEmoji: {
+    fontSize: 18,
+  },
+  spartanShieldPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    gap: 4,
+  },
+  spartanShieldPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 0.6,
+  },
+  liveRedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+  },
+  spartanWidgetTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 2,
+    letterSpacing: -0.2,
+  },
+  spartanWidgetSub: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    fontWeight: '500',
+    lineHeight: 14,
   },
 });

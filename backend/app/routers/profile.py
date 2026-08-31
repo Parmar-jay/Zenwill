@@ -112,6 +112,11 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
 
     # 5. Compute AI Mindset Score (0 - 1000)
     streak_val = current_user.streak or 0
+    max_streak_val = max(current_user.max_streak or 0, streak_val)
+    if max_streak_val > (current_user.max_streak or 0):
+        current_user.max_streak = max_streak_val
+        await current_user.save()
+
     streak_score = min(350, streak_val * 15)
 
     checklist_score = 250
@@ -152,7 +157,7 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         onboarding_step=current_user.onboarding_step,
         created_at=current_user.created_at,
         streak=streak_val,
-        max_streak=current_user.max_streak or 0,
+        max_streak=max_streak_val,
         total_points=current_user.total_points or 0,
         mind_strength=ai_mindset_score,
         last_checkin_date=current_user.last_checkin_date,
@@ -206,6 +211,14 @@ async def update_my_profile(
         current_user.last_retain_status = payload.last_retain_status
 
     await current_user.save()
+
+    # Recalculate Spartan Cell total streak dynamically
+    if payload.streak is not None or payload.last_retain_status is not None or payload.last_checkin_date is not None:
+        try:
+            from app.services.spartan_cell_service import recalculate_user_cell_streak
+            await recalculate_user_cell_streak(user_id_str)
+        except Exception:
+            pass
 
     # Also update Onboarding record in MongoDB if provided
     onboarding_record = await Onboarding.find_one(

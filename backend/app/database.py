@@ -17,6 +17,8 @@ from app.models.direct_message import DirectMessage
 from app.models.onboarding import Onboarding
 from app.models.recommendation_task import RecommendationTaskCompletion
 from app.models.relapse_autopsy import RelapseAutopsy
+from app.models.spartan_cell import SpartanCell
+from app.models.battle_session import BattleSession
 
 DOCUMENT_MODELS = [
     User,
@@ -33,6 +35,8 @@ DOCUMENT_MODELS = [
     Onboarding,
     RecommendationTaskCompletion,
     RelapseAutopsy,
+    SpartanCell,
+    BattleSession,
 ]
 
 motor_client: AsyncIOMotorClient = None

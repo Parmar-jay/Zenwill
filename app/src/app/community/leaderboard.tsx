@@ -16,7 +16,9 @@ import * as Haptics from 'expo-haptics';
 
 import { useHabitStore } from '@/store/habit-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
+import { useSpartanStore } from '@/store/spartan-store';
 import { communityApi, CommunityRanking } from '@/services/community-api';
+import { SpartanCellData } from '@/services/spartan-api';
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -80,12 +82,14 @@ export default function CommunityLeaderboardScreen() {
   const router = useRouter();
   const { streak } = useHabitStore();
   const firstName = useOnboardingStore((state) => state.firstName) || 'Operative';
+  const { cellLeaderboard, fetchCellLeaderboard } = useSpartanStore();
 
+  const [viewMode, setViewMode] = useState<'warriors' | 'cells'>('warriors');
   const [activeTab, setActiveTab] = useState<'All-Time' | 'Monthly' | 'Weekly'>('All-Time');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [dbRankings, setDbRankings] = useState<CommunityRanking[]>([]);
 
-  // Fetch real user rankings from database API
+  // Fetch real user rankings & cell leaderboard
   useEffect(() => {
     fetchRealRankings();
   }, []);
@@ -93,6 +97,7 @@ export default function CommunityLeaderboardScreen() {
   useFocusEffect(
     React.useCallback(() => {
       fetchRealRankings();
+      fetchCellLeaderboard();
       useHabitStore.getState().syncFromDatabase();
     }, [])
   );
@@ -104,6 +109,7 @@ export default function CommunityLeaderboardScreen() {
       if (data) {
         setDbRankings(data);
       }
+      await fetchCellLeaderboard();
     } catch (e) {
       console.log('Error fetching real rankings from database:', e);
     } finally {
@@ -166,6 +172,12 @@ export default function CommunityLeaderboardScreen() {
   const podiumRank3 = leaderboardUsers[2] || null;
   const restRankings = leaderboardUsers.slice(3);
 
+  // Top 3 Podium Spartan Cells
+  const cellRank1 = cellLeaderboard[0] || null;
+  const cellRank2 = cellLeaderboard[1] || null;
+  const cellRank3 = cellLeaderboard[2] || null;
+  const restCells = cellLeaderboard.slice(3);
+
   return (
     <View style={styles.blackBg}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -189,8 +201,8 @@ export default function CommunityLeaderboardScreen() {
           </TouchableOpacity>
 
           <View style={{ alignItems: 'center', flex: 1 }}>
-            <ThemedText style={styles.categoryBadge}>REAL DATABASE RANKINGS</ThemedText>
-            <ThemedText style={styles.headerTitle}>Habit Streak Leaderboard</ThemedText>
+            <ThemedText style={styles.categoryBadge}>GLOBAL LIVE RANKINGS</ThemedText>
+            <ThemedText style={styles.headerTitle}>Leaderboard</ThemedText>
           </View>
 
           <TouchableOpacity
@@ -206,24 +218,57 @@ export default function CommunityLeaderboardScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Timeframe Filter Tabs */}
-          <View style={styles.tabRow}>
-            {(['All-Time', 'Monthly', 'Weekly'] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tabChip, activeTab === tab && styles.tabChipActive]}
-                activeOpacity={0.7}
-                onPress={() => {
-                  triggerHaptic();
-                  setActiveTab(tab);
-                }}
-              >
-                <ThemedText style={[styles.tabChipText, activeTab === tab && styles.tabChipTextActive]}>
-                  {tab} Streaks
-                </ThemedText>
-              </TouchableOpacity>
-            ))}
+          {/* Main Segment Switch: Warriors vs Spartan Cells */}
+          <View style={styles.mainSegmentRow}>
+            <TouchableOpacity
+              style={[styles.segmentBtn, viewMode === 'warriors' && styles.segmentBtnActive]}
+              activeOpacity={0.8}
+              onPress={() => {
+                triggerHaptic();
+                setViewMode('warriors');
+              }}
+            >
+              <Ionicons name="person" size={16} color={viewMode === 'warriors' ? '#000000' : '#94A3B8'} style={{ marginRight: 6 }} />
+              <ThemedText style={[styles.segmentBtnText, viewMode === 'warriors' && styles.segmentBtnTextActive]}>
+                Solo Warriors
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.segmentBtn, viewMode === 'cells' && styles.segmentBtnActive]}
+              activeOpacity={0.8}
+              onPress={() => {
+                triggerHaptic();
+                setViewMode('cells');
+              }}
+            >
+              <ThemedText style={{ marginRight: 6, fontSize: 14 }}>🛡️</ThemedText>
+              <ThemedText style={[styles.segmentBtnText, viewMode === 'cells' && styles.segmentBtnTextActive]}>
+                Spartan Cells
+              </ThemedText>
+            </TouchableOpacity>
           </View>
+
+          {/* Timeframe Filter Tabs (When in Warriors mode) */}
+          {viewMode === 'warriors' && (
+            <View style={styles.tabRow}>
+              {(['All-Time', 'Monthly', 'Weekly'] as const).map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.tabChip, activeTab === tab && styles.tabChipActive]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    triggerHaptic();
+                    setActiveTab(tab);
+                  }}
+                >
+                  <ThemedText style={[styles.tabChipText, activeTab === tab && styles.tabChipTextActive]}>
+                    {tab} Streaks
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Loading Indicator */}
           {isLoading ? (
@@ -231,7 +276,82 @@ export default function CommunityLeaderboardScreen() {
               <ActivityIndicator size="large" color="#00E5FF" />
               <ThemedText style={styles.loadingText}>Fetching real database streaks...</ThemedText>
             </View>
+          ) : viewMode === 'cells' ? (
+            /* ── SPARTAN CELLS LEADERBOARD VIEW ── */
+            <>
+              {/* Cell Hub Shortcut Banner */}
+              <TouchableOpacity
+                style={styles.cellShortcutBanner}
+                activeOpacity={0.8}
+                onPress={() => {
+                  triggerHaptic();
+                  router.push('/community/cell' as any);
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={styles.cellShortcutTitle}>🛡️ Enter Your Spartan Cell Hub</ThemedText>
+                  <ThemedText style={styles.cellShortcutSub}>
+                    View your squad roster, Gold Shield status, or establish a new 20-man cell.
+                  </ThemedText>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#00E5FF" />
+              </TouchableOpacity>
+
+              {/* Cell Rankings List */}
+              <View style={styles.listSection}>
+                <ThemedText style={styles.sectionTitle}>Global Spartan Cells ({cellLeaderboard.length})</ThemedText>
+
+                {cellLeaderboard.length === 0 ? (
+                  <View style={styles.emptyListState}>
+                    <ThemedText style={{ fontSize: 36, marginBottom: 8 }}>🛡️</ThemedText>
+                    <ThemedText style={styles.emptyListTitle}>No Spartan Cells Established</ThemedText>
+                    <ThemedText style={styles.emptyListSub}>
+                      Be the first Commander to create a Spartan Cell and claim the #1 global rank!
+                    </ThemedText>
+                  </View>
+                ) : (
+                  <View style={styles.rankingsList}>
+                    {cellLeaderboard.map((cell, idx) => (
+                      <View key={cell.id} style={styles.cellRankCard}>
+                        <View style={styles.cellRankNumBox}>
+                          <ThemedText style={[
+                            styles.cellRankNumText,
+                            idx === 0 ? { color: '#F59E0B' } : idx === 1 ? { color: '#CBD5E1' } : idx === 2 ? { color: '#D97706' } : { color: '#64748B' }
+                          ]}>
+                            #{idx + 1}
+                          </ThemedText>
+                        </View>
+
+                        <View style={styles.cellRankInfo}>
+                          <View style={styles.cellRankTitleRow}>
+                            <ThemedText style={styles.cellRankName}>{cell.name}</ThemedText>
+                            <View style={[
+                              styles.shieldMiniBadge,
+                              cell.shield_status === 'gold' ? styles.shieldMiniGold : styles.shieldMiniActive
+                            ]}>
+                              <ThemedText style={styles.shieldMiniText}>
+                                {cell.shield_status === 'gold' ? '🛡️ GOLD' : '🛡️ SHIELD'}
+                              </ThemedText>
+                            </View>
+                          </View>
+                          <ThemedText style={styles.cellRankMotto}>{cell.motto}</ThemedText>
+                          <ThemedText style={styles.cellRankMeta}>
+                            Commander: {cell.leader_name} • {cell.member_count} Warriors
+                          </ThemedText>
+                        </View>
+
+                        <View style={styles.cellRankStreakBox}>
+                          <ThemedText style={styles.cellRankStreakText}>🔥 {cell.total_streak}d</ThemedText>
+                          <ThemedText style={styles.cellRankStreakSub}>Squad Streak</ThemedText>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </>
           ) : (
+            /* ── SOLO WARRIORS LEADERBOARD VIEW ── */
             <>
               {/* Top 3 Podium Section (Only Real DB Users) */}
               <View style={styles.podiumSection}>
@@ -668,5 +788,127 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#F59E0B',
+  },
+  mainSegmentRow: {
+    flexDirection: 'row',
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 4,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#00E5FF',
+  },
+  segmentBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  segmentBtnTextActive: {
+    color: '#000000',
+    fontWeight: '800',
+  },
+  cellShortcutBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0B1120',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+  },
+  cellShortcutTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  cellShortcutSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 15,
+  },
+  cellRankCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    gap: 10,
+  },
+  cellRankNumBox: {
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cellRankNumText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  cellRankInfo: {
+    flex: 1,
+  },
+  cellRankTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  cellRankName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  shieldMiniBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+  },
+  shieldMiniGold: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  shieldMiniActive: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+  },
+  shieldMiniText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#F59E0B',
+  },
+  cellRankMotto: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+    marginBottom: 2,
+  },
+  cellRankMeta: {
+    fontSize: 10,
+    color: '#64748B',
+  },
+  cellRankStreakBox: {
+    alignItems: 'flex-end',
+  },
+  cellRankStreakText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+  cellRankStreakSub: {
+    fontSize: 9,
+    color: '#64748B',
   },
 });

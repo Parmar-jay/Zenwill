@@ -196,14 +196,16 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
     ).sort("-created_at").limit(50).to_list()
 
-    # 5. Fetch Latest Relapse Autopsy Record
+    # 5. Fetch Latest Relapse Autopsy Record (using created_at sorting)
     latest_autopsy = await RelapseAutopsy.find(
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
-    ).sort("-timestamp").first_or_none()
+    ).sort("-created_at").first_or_none()
 
     # ── A. Base User Parameters ───────────────────────────────────────────────
     user_name = user.name or (onboarding.first_name if onboarding else "Operative")
     streak_val = user.streak or 0
+    last_status = getattr(user, "last_retain_status", None)
+    is_post_relapse = streak_val == 0 or last_status == "relapsed"
     mind_strength = user.mind_strength or 500
 
     occupation = getattr(onboarding, "occupation", "") if onboarding else ""
@@ -214,6 +216,9 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     ob_device = (getattr(onboarding, "primary_device", "phone") or "phone").lower()
     ob_urge_times = getattr(onboarding, "urge_times", []) if onboarding else []
     primary_dev = ob_device.replace("_", " ").title()
+
+    if latest_autopsy and latest_autopsy.device_involved:
+        primary_dev = latest_autopsy.device_involved.replace("_", " ").title()
 
     # ── B. Timestamp & Temporal Distribution Analysis ─────────────────────────
     total_urges_count = len(emergency_sessions)
@@ -233,7 +238,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     effectiveness_rate = (
         int((len(effective_sessions) / max(total_urges_count, 1)) * 100)
         if emergency_sessions
-        else (95 if streak_val > 7 else 88)
+        else (95 if streak_val > 7 else (72 if is_post_relapse else 88))
     )
 
     urge_hours: List[int] = []
@@ -264,7 +269,10 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             urge_days.append(e.created_at.strftime("%A"))
 
     # ── C. Circadian Peak Window Computation ─────────────────────────────────
-    if urge_hours:
+    if is_post_relapse and latest_autopsy and latest_autopsy.approximate_time_window:
+        peak_risk_window = latest_autopsy.approximate_time_window
+        window_start_hour = 23 if ("night" in peak_risk_window.lower() or "bed" in peak_risk_window.lower()) else 14
+    elif urge_hours:
         hour_counts = Counter(urge_hours)
         peak_hour = max(hour_counts, key=hour_counts.get)
         peak_risk_window = _format_hour_window(peak_hour, 2)
@@ -311,6 +319,11 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     environment_label = spatial_intel["environment_label"]
     environmental_rule = spatial_intel["environmental_rule"]
 
+    if latest_autopsy and latest_autopsy.physical_environment:
+        environment_label = latest_autopsy.physical_environment
+    if latest_autopsy and latest_autopsy.generated_golden_rule:
+        environmental_rule = latest_autopsy.generated_golden_rule
+
     # Calculate Next Predicted High-Risk Window relative to current time
     if window_start_hour < 12:
         time_prefix = "Today" if current_hour < window_start_hour else "Tomorrow"
@@ -354,7 +367,9 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             checkin_stress_causes.extend(c.stress_causes)
 
     # ── G. Dynamic Multi-Variable Risk Score (0–100) ─────────────────────────
-    if streak_val >= 90:
+    if is_post_relapse:
+        base_risk = 72
+    elif streak_val >= 90:
         base_risk = 14
     elif streak_val >= 30:
         base_risk = 22
@@ -374,10 +389,10 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     mood_pts = 10 if current_mood in ["Sad", "Anxious", "Lonely", "Overwhelmed", "Frustrated", "Angry"] else 0
 
     total_risk = base_risk + stress_pts + sleep_pts + urge_velocity_pts + checkin_urge_pts + mood_pts
-    risk_score = max(12, min(95, total_risk))
+    risk_score = max(15, min(95, total_risk))
 
-    if risk_score >= 75:
-        risk_level = "CRITICAL VULNERABILITY"
+    if risk_score >= 75 or is_post_relapse:
+        risk_level = "CRITICAL (POST-RELAPSE VULNERABILITY)" if is_post_relapse else "CRITICAL VULNERABILITY"
     elif risk_score >= 50:
         risk_level = "ELEVATED VULNERABILITY"
     elif risk_score >= 30:
@@ -387,22 +402,31 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
 
     # ── H. Environmental & Behavioral Active Domino Triggers ──────────────────
     active_catalysts = []
-    if current_sleep_hours < 6.5 or current_sleep_quality <= 4:
-        active_catalysts.append(f"Sleep Deficit ({current_sleep_hours:.1f}h)")
-    if current_stress >= 6:
-        active_catalysts.append(f"High Stress ({current_stress}/10)")
-    if checkin_triggers:
-        top_checkin_trigger = Counter(checkin_triggers).most_common(1)[0][0]
-        active_catalysts.append(top_checkin_trigger)
-    active_catalysts.append(f"{primary_dev} in {environment_label}")
+    if is_post_relapse and latest_autopsy:
+        active_catalysts.append(f"Recent Domino: {latest_autopsy.first_compromise_title}")
+        active_catalysts.append(f"Vulnerable Space: {latest_autopsy.physical_environment}")
+        active_catalysts.append(f"Precursor: {latest_autopsy.emotional_precursor.title()}")
+    else:
+        if current_sleep_hours < 6.5 or current_sleep_quality <= 4:
+            active_catalysts.append(f"Sleep Deficit ({current_sleep_hours:.1f}h)")
+        if current_stress >= 6:
+            active_catalysts.append(f"High Stress ({current_stress}/10)")
+        if checkin_triggers:
+            top_checkin_trigger = Counter(checkin_triggers).most_common(1)[0][0]
+            active_catalysts.append(top_checkin_trigger)
+        active_catalysts.append(f"{primary_dev} in {environment_label}")
+
     first_sign_info = FIRST_SIGN_PROTOCOLS.get(ob_first_sign, FIRST_SIGN_PROTOCOLS["craving"])
-    if first_sign_info.get("cue"):
-        active_catalysts.append(f"Early Warning Cue: {first_sign_info['cue']}")
     if today_urges_count > 0:
         active_catalysts.append("Urge SOS Reset")
 
     # ── I. Concise Dynamic Primary Vulnerability Statement ───────────────────
-    if today_urges_count > 0 or checkin_urge_intensity >= 6:
+    if is_post_relapse:
+        if latest_autopsy:
+            primary_vulnerability = f"Post-Relapse Rebound Window: Guard against the chaser effect and repeat compromise ({latest_autopsy.first_compromise_title} in {latest_autopsy.physical_environment}). Enforce your Golden Firewall Rule immediately."
+        else:
+            primary_vulnerability = "Post-Relapse Rebuilding Phase: Prefrontal control is sensitized. Lock down solitary screen access and follow immediate physical grounding."
+    elif today_urges_count > 0 or checkin_urge_intensity >= 6:
         primary_vulnerability = f"Active craving wave recorded today. High dopamine seeking predicted during {peak_risk_window} in {environment_label}."
     elif current_stress >= 7:
         primary_vulnerability = f"High mental fatigue & stress ({current_stress}/10) weakens impulse control around {peak_risk_window}."
@@ -412,10 +436,6 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         primary_vulnerability = f"Clean streak momentum is high ({streak_val}d). Guard against overconfidence and idle screen time in {environment_label}."
     else:
         primary_vulnerability = f"Unstructured idle screen time on {primary_dev} during {peak_risk_window} in {environment_label}."
-
-    if latest_autopsy and getattr(latest_autopsy, "generated_golden_rule", None):
-        environmental_rule = latest_autopsy.generated_golden_rule
-        active_catalysts.insert(0, f"Recent Trigger: {latest_autopsy.first_compromise_title}")
 
     # ── J. 3-Tier Tactical Defense Protocol ──────────────────────────────────
     step1_action = first_sign_info["action"]
@@ -427,22 +447,29 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     tactical_defense = f"1) {step1_action} 2) {step2_device_rule} 3) {step3_transmute}"
 
     # ── K. Future Trigger Forecast & Preemptive Shield ────────────────────────
-    predicted_probability = min(92, max(28, risk_score + (10 if current_stress >= 6 else 0) + (10 if current_sleep_hours < 6.0 else 0)))
+    predicted_probability = min(95, max(35, risk_score + (15 if is_post_relapse else 0) + (10 if current_stress >= 6 else 0)))
 
-    if current_stress >= 7:
+    if is_post_relapse and latest_autopsy:
+        forecast_root = f"Chaser effect and dopamine rebound in {latest_autopsy.physical_environment}"
+        predicted_trigger = f"Chaser Wave: {latest_autopsy.first_compromise_title}"
+    elif current_stress >= 7:
         forecast_root = f"High stress level ({current_stress}/10) depleting prefrontal willpower"
+        predicted_trigger = f"Stress Decompression on {primary_dev}"
     elif current_sleep_hours < 6.0:
         forecast_root = f"Sleep deficit ({current_sleep_hours:.1f}h) impairing impulse control"
+        predicted_trigger = f"Late-Night Fatigue Browsing"
     elif today_urges_count >= 1 or checkin_urge_intensity >= 6:
         forecast_root = "Active craving velocity recorded today"
+        predicted_trigger = "Urge Resurgence Wave"
     else:
         forecast_root = f"Unstructured solitary screen time on {primary_dev} in {environment_label}"
+        predicted_trigger = f"Late Evening / Bedside {primary_dev} Solitude" if current_hour >= 16 else f"Midday Screen Slump with {primary_dev}"
 
     future_trigger_forecast = {
         "predicted_window": next_predicted_window,
         "predicted_context": next_predicted_context,
         "probability_pct": predicted_probability,
-        "predicted_trigger_name": f"Late Evening / Bedside {primary_dev} Solitude" if current_hour >= 16 else f"Midday Screen Slump with {primary_dev}",
+        "predicted_trigger_name": predicted_trigger,
         "root_catalyst": forecast_root,
         "preemptive_action": f"Pre-commit before {peak_risk_window}: {environmental_rule}",
     }
@@ -453,8 +480,8 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "id": "slot-morning",
             "time_label": "06:00 AM - 12:00 PM",
             "period_name": "Morning Awakening",
-            "risk_score": max(15, min(45, int(risk_score * 0.4))),
-            "risk_level": "LOW",
+            "risk_score": max(20, min(55, int(risk_score * 0.45) + (15 if is_post_relapse else 0))),
+            "risk_level": "MODERATE" if is_post_relapse else "LOW",
             "key_hazard": f"Checking {primary_dev} in bed before getting up",
             "shield_protocol": "Hydrate with water and complete morning check-in before touching feeds.",
             "is_current": current_hour < 12,
@@ -463,8 +490,8 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "id": "slot-midday",
             "time_label": "12:00 PM - 06:00 PM",
             "period_name": "Midday Focus & Energy",
-            "risk_score": max(25, min(65, int(risk_score * 0.7))),
-            "risk_level": "MODERATE",
+            "risk_score": max(30, min(75, int(risk_score * 0.7) + (10 if is_post_relapse else 0))),
+            "risk_level": "ELEVATED" if is_post_relapse else "MODERATE",
             "key_hazard": f"Post-lunch mental slump and work stress grazing on {primary_dev}",
             "shield_protocol": "Take a 5-minute walking break away from screens and practice 3 PM breathwork.",
             "is_current": 12 <= current_hour < 18,
@@ -473,8 +500,8 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "id": "slot-evening",
             "time_label": "06:00 PM - 10:00 PM",
             "period_name": "Evening Decompression",
-            "risk_score": max(40, min(85, int(risk_score * 0.85))),
-            "risk_level": "ELEVATED",
+            "risk_score": max(50, min(88, int(risk_score * 0.85) + (10 if is_post_relapse else 0))),
+            "risk_level": "CRITICAL" if is_post_relapse else "ELEVATED",
             "key_hazard": f"Unstructured solitary lounging in {environment_label}",
             "shield_protocol": "Keep ambient room lighting bright and engage dedicated physical/social tasks.",
             "is_current": 18 <= current_hour < 22,
@@ -483,8 +510,8 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "id": "slot-night",
             "time_label": "10:00 PM - 02:00 AM",
             "period_name": "Peak Circadian Window",
-            "risk_score": min(95, max(60, risk_score + 10)),
-            "risk_level": "CRITICAL" if risk_score >= 60 else "ELEVATED",
+            "risk_score": min(95, max(75 if is_post_relapse else 60, risk_score + 10)),
+            "risk_level": "CRITICAL",
             "key_hazard": f"Late-night private screen time in {environment_label}",
             "shield_protocol": environmental_rule,
             "is_current": current_hour >= 22 or current_hour < 6,
@@ -492,7 +519,21 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     ]
 
     # ── M. Granular Triggers Breakdown Array (5 Categories) ───────────────────
-    triggers_breakdown: List[Dict[str, Any]] = [
+    triggers_breakdown: List[Dict[str, Any]] = []
+
+    if is_post_relapse and latest_autopsy:
+        triggers_breakdown.append({
+            "id": "trig-compromise-domino",
+            "name": f"Compromise Domino: {latest_autopsy.first_compromise_title}",
+            "category": "Environmental",
+            "frequency": max(total_urges_count, 1),
+            "riskScore": 95,
+            "color": "#EF4444",
+            "peakTime": latest_autopsy.approximate_time_window or peak_risk_window,
+            "recommendation": environmental_rule,
+        })
+
+    triggers_breakdown.extend([
         {
             "id": "trig-circadian",
             "name": f"Circadian Window ({peak_risk_window})",
@@ -535,15 +576,15 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         },
         {
             "id": "trig-cognitive",
-            "name": "Digital Novelty Seeking",
+            "name": f"Digital Stimulus on {primary_dev}",
             "category": "Cognitive",
             "frequency": max(total_urges_count, 1),
             "riskScore": min(85, max(40, risk_score - 12)),
             "color": "#EC4899",
             "peakTime": peak_risk_window,
-            "recommendation": "Set strict daily app limits and remove infinite-scroll apps from your primary home screen.",
+            "recommendation": f"Establish a physical quarantine boundary for your {primary_dev} before bedtime.",
         },
-    ]
+    ])
 
     return {
         "peak_risk_window": peak_risk_window,
