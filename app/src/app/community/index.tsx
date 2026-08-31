@@ -349,16 +349,23 @@ export default function CommunityWorldChatScreen() {
       const fetched = await communityApi.getMessages(50);
       if (fetched && Array.isArray(fetched)) {
         setMessages((prev) => {
-          const fetchedIds = new Set(fetched.map((f) => f.id));
-          // Preserve any in-flight or unconfirmed message that is not yet in fetched
-          const unconfirmedPrev = prev.filter((p) => {
-            if (fetchedIds.has(p.id)) return false;
-            const alreadyInFetched = fetched.some(
-              (f) => f.content === p.content && f.user_id === p.user_id
-            );
-            return !alreadyInFetched;
-          });
-          return [...fetched, ...unconfirmedPrev];
+          const inFlight = prev.filter(
+            (p) =>
+              typeof p.id === 'string' &&
+              p.id.startsWith('temp-') &&
+              !fetched.some((f) => f.content === p.content && f.user_id === p.user_id)
+          );
+
+          // Deduplicate by message ID preserving clean chronological order
+          const seen = new Set<string>();
+          const deduped: WorldChatMessage[] = [];
+          for (const m of [...fetched, ...inFlight]) {
+            if (m && m.id && !seen.has(m.id)) {
+              seen.add(m.id);
+              deduped.push(m);
+            }
+          }
+          return deduped;
         });
 
         // First-time position restoration: scroll to where user last saw

@@ -1230,10 +1230,21 @@ export default function HomeScreen() {
                 }}
               >
                 <View style={styles.spartanWidgetHeader}>
-                  <ThemedText style={styles.spartanWidgetEmoji}>🛡️</ThemedText>
-                  <View style={styles.spartanShieldPill}>
-                    <ThemedText style={styles.spartanShieldPillText}>
-                      {myCell?.shield_status === 'gold' ? 'GOLD SHIELD' : myCell ? 'SPARTAN CELL' : 'JOIN CELL'}
+                  <ThemedText style={styles.spartanWidgetEmoji}>
+                    {myCell ? getGamifiedRank(myCell.total_streak ?? 0).badge : '🛡️'}
+                  </ThemedText>
+                  <View style={[
+                    styles.spartanShieldPill,
+                    myCell && {
+                      backgroundColor: `${getGamifiedRank(myCell.total_streak ?? 0).color}22`,
+                      borderColor: `${getGamifiedRank(myCell.total_streak ?? 0).color}60`,
+                    }
+                  ]}>
+                    <ThemedText style={[
+                      styles.spartanShieldPillText,
+                      myCell && { color: getGamifiedRank(myCell.total_streak ?? 0).color }
+                    ]}>
+                      {myCell ? getGamifiedRank(myCell.total_streak ?? 0).name.toUpperCase() : 'JOIN CELL'}
                     </ThemedText>
                   </View>
                 </View>
@@ -1262,7 +1273,7 @@ export default function HomeScreen() {
                   <View style={[styles.spartanShieldPill, { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]}>
                     <View style={styles.liveRedDot} />
                     <ThemedText style={[styles.spartanShieldPillText, { color: '#EF4444' }]}>
-                      {activeBattle ? 'LIVE SOS' : 'BATTLE HORN'}
+                      {activeBattle ? 'LIVE SOS' : 'BATTLE FIELD'}
                     </ThemedText>
                   </View>
                 </View>

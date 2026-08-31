@@ -32,40 +32,38 @@ const MOTTO_PRESETS = [
   'Transmute desire into power.',
 ];
 
-// Vector Spartan Shield Graphic (Cross-platform consistent, never clipped)
-const SpartanShieldVector = ({ size = 56, color = '#00E5FF' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
-    <Defs>
-      <SvgLinearGradient id="shieldGrad" x1="0" y1="0" x2="0" y2="1">
-        <Stop offset="0%" stopColor={color} stopOpacity="0.3" />
-        <Stop offset="100%" stopColor={color} stopOpacity="0.05" />
-      </SvgLinearGradient>
-    </Defs>
-    {/* Shield Outer Rim */}
-    <Path
-      d="M32 4L10 14V30C10 44.5 19.5 56 32 60C44.5 56 54 44.5 54 30V14L32 4Z"
-      fill="url(#shieldGrad)"
-      stroke={color}
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    {/* Inner Spartan Lambda / Chevron */}
-    <Path
-      d="M23 40L32 20L41 40"
-      stroke={color}
-      strokeWidth="3.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <Path
-      d="M26 34H38"
-      stroke={color}
-      strokeWidth="2.5"
-      strokeLinecap="round"
-    />
-  </Svg>
-);
+export interface GamifiedRank {
+  id: string;
+  badge: string;
+  name: string;
+  minDays: number;
+  maxDays: number;
+  color: string;
+}
+
+export const GAMIFIED_RANKS: GamifiedRank[] = [
+  { id: 'bronze-1', badge: '🥉', name: 'Bronze I', minDays: 1, maxDays: 7, color: '#D97706' },
+  { id: 'bronze-2', badge: '🥉', name: 'Bronze II', minDays: 8, maxDays: 14, color: '#E58A35' },
+  { id: 'bronze-3', badge: '🥉', name: 'Bronze III', minDays: 15, maxDays: 30, color: '#F59E0B' },
+  { id: 'silver-1', badge: '🥈', name: 'Silver I', minDays: 31, maxDays: 45, color: '#CBD5E1' },
+  { id: 'silver-2', badge: '🥈', name: 'Silver II', minDays: 46, maxDays: 60, color: '#E2E8F0' },
+  { id: 'silver-3', badge: '🥈', name: 'Silver III', minDays: 61, maxDays: 90, color: '#F1F5F9' },
+  { id: 'gold-1', badge: '🥇', name: 'Gold I', minDays: 91, maxDays: 120, color: '#FBBF24' },
+  { id: 'gold-2', badge: '🥇', name: 'Gold II', minDays: 121, maxDays: 180, color: '#F59E0B' },
+  { id: 'gold-3', badge: '🥇', name: 'Gold III', minDays: 181, maxDays: 270, color: '#FFD700' },
+  { id: 'platinum', badge: '💎', name: 'Platinum', minDays: 271, maxDays: 365, color: '#00E5FF' },
+  { id: 'diamond', badge: '⚔️', name: 'Diamond', minDays: 366, maxDays: 730, color: '#38BDF8' },
+  { id: 'master', badge: '👑', name: 'Master', minDays: 731, maxDays: 1095, color: '#A855F7' },
+  { id: 'grandmaster', badge: '🌟', name: 'Grandmaster', minDays: 1096, maxDays: 1825, color: '#EC4899' },
+  { id: 'sage', badge: '🔱', name: 'Sage', minDays: 1826, maxDays: 3650, color: '#10B981' },
+  { id: 'legend', badge: '☀️', name: 'Legend', minDays: 3651, maxDays: Infinity, color: '#FF5722' },
+];
+
+export const getGamifiedRank = (days: number): GamifiedRank => {
+  if (days <= 0) return GAMIFIED_RANKS[0];
+  const found = GAMIFIED_RANKS.find((r) => days >= r.minDays && days <= r.maxDays);
+  return found || GAMIFIED_RANKS[GAMIFIED_RANKS.length - 1];
+};
 
 export default function SpartanCellScreen() {
   const router = useRouter();
@@ -330,7 +328,7 @@ export default function SpartanCellScreen() {
           </TouchableOpacity>
         </View>
 
-        {isLoadingCell ? (
+        {isLoadingCell && !myCell ? (
           <View style={styles.centerLoading}>
             <ActivityIndicator size="large" color="#00E5FF" />
             <ThemedText style={styles.loadingText}>Syncing Cohort Discipline Matrix...</ThemedText>
@@ -340,13 +338,14 @@ export default function SpartanCellScreen() {
           <ScrollView
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollInner}
-            showsVerticalScrollIndicator={false}
           >
             {/* Cell Banner Card */}
             <View style={styles.cellHeroCard}>
               <View style={styles.cellHeroHeader}>
                 <View style={styles.cellBadgeIcon}>
-                  <SpartanShieldVector size={32} color="#00E5FF" />
+                  <ThemedText style={styles.cellBadgeText}>
+                    {myCell.name ? myCell.name.charAt(0).toUpperCase() : 'A'}
+                  </ThemedText>
                 </View>
                 <View style={styles.cellNameGroup}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -378,8 +377,9 @@ export default function SpartanCellScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Total Collective Streak & Cohort Stats */}
+            {/* Exact 2-Column Stats Grid */}
             <View style={styles.statsRow}>
+              {/* Left Tall Card: Collective Cohort Retention */}
               <View style={styles.mainStreakCard}>
                 <View style={styles.streakIconRow}>
                   <ThemedText style={styles.fireEmoji}>🔥</ThemedText>
@@ -387,17 +387,22 @@ export default function SpartanCellScreen() {
                 </View>
                 <ThemedText style={styles.streakCardTitle}>COLLECTIVE COHORT RETENTION</ThemedText>
                 <ThemedText style={styles.streakCardSub}>
-                  Combined clean days of all {myCell.member_count} members. Drops if any member relapses.
+                  Combined clean days of all {myCell.members?.length || 1} members. Drops if any member relapses.
                 </ThemedText>
               </View>
 
+              {/* Right Stacked Column: Active Members & Cohort Honor */}
               <View style={styles.sideStatsCol}>
                 <View style={styles.smallStatCard}>
-                  <ThemedText style={styles.smallStatValue}>{myCell.member_count}/{myCell.max_members}</ThemedText>
+                  <ThemedText style={styles.smallStatValue}>
+                    {myCell.members?.length || 1}/{myCell.max_members || 20}
+                  </ThemedText>
                   <ThemedText style={styles.smallStatLabel}>ACTIVE MEMBERS</ThemedText>
                 </View>
                 <View style={styles.smallStatCard}>
-                  <ThemedText style={[styles.smallStatValue, { color: '#F59E0B' }]}>{myCell.collective_xp} XP</ThemedText>
+                  <ThemedText style={[styles.smallStatValue, { color: '#F59E0B' }]}>
+                    {myCell.collective_xp ?? 100} XP
+                  </ThemedText>
                   <ThemedText style={styles.smallStatLabel}>COHORT HONOR</ThemedText>
                 </View>
               </View>
@@ -410,7 +415,7 @@ export default function SpartanCellScreen() {
             ]}>
               <View style={styles.shieldHeaderRow}>
                 <Ionicons
-                  name={isGoldShield ? 'shield-checkmark' : isCrackedShield ? 'warning-outline' : 'shield'}
+                  name={isGoldShield ? 'shield-checkmark' : isCrackedShield ? 'warning-outline' : 'shield-outline'}
                   size={24}
                   color={isGoldShield ? '#F59E0B' : isCrackedShield ? '#EF4444' : '#00E5FF'}
                 />
@@ -444,7 +449,7 @@ export default function SpartanCellScreen() {
             <View style={styles.rosterSection}>
               <View style={styles.rosterHeaderRow}>
                 <ThemedText style={styles.rosterTitle}>
-                  COHORT MEMBERS ({myCell.members?.length || 0}/{myCell.max_members})
+                  COHORT MEMBERS ({myCell.members?.length || 0}/{myCell.max_members || 20})
                 </ThemedText>
                 <ThemedText style={styles.rosterSortLabel}>Ordered by Retention</ThemedText>
               </View>
@@ -452,15 +457,27 @@ export default function SpartanCellScreen() {
               <View style={styles.rosterList}>
                 {myCell.members?.map((member, index) => {
                   const isCurrentUser = member.user_id === String(user?.id || '');
+                  const memberStreak = typeof member.streak === 'number' ? member.streak : 0;
+                  const memberRank = getGamifiedRank(memberStreak);
+
                   return (
                     <View
                       key={`${member.user_id}-${index}`}
                       style={[styles.memberRow, isCurrentUser && styles.memberRowSelf]}
                     >
                       <View style={styles.memberLeftGroup}>
-                        <View style={styles.memberAvatarBox}>
-                          <ThemedText style={styles.memberAvatarText}>
-                            {member.name ? member.name.charAt(0).toUpperCase() : 'M'}
+                        <View style={styles.memberRankIndexBox}>
+                          <ThemedText style={styles.memberRankIndexText}>#{index + 1}</ThemedText>
+                        </View>
+                        <View style={[
+                          styles.memberAvatarBox,
+                          {
+                            backgroundColor: `${memberRank.color}15`,
+                            borderColor: `${memberRank.color}40`,
+                          }
+                        ]}>
+                          <ThemedText style={[styles.memberAvatarText, { color: memberRank.color }]}>
+                            {memberRank.badge}
                           </ThemedText>
                         </View>
                         <View style={styles.memberInfoCol}>
@@ -474,13 +491,23 @@ export default function SpartanCellScreen() {
                               </View>
                             )}
                           </View>
-                          <ThemedText style={styles.memberTierText}>{member.rank_tier}</ThemedText>
+                          <View style={[
+                            styles.memberRankPill,
+                            {
+                              backgroundColor: `${memberRank.color}15`,
+                              borderColor: `${memberRank.color}40`,
+                            }
+                          ]}>
+                            <Text style={[styles.memberRankNameText, { color: memberRank.color }]}>
+                              {memberRank.name}
+                            </Text>
+                          </View>
                         </View>
                       </View>
 
                       <View style={styles.memberRightGroup}>
                         <View style={styles.streakBadge}>
-                          <ThemedText style={styles.streakText}>🔥 {member.streak}d</ThemedText>
+                          <ThemedText style={styles.streakText}>🔥 {memberStreak}d</ThemedText>
                         </View>
 
                         {member.today_checked_in ? (
@@ -544,7 +571,7 @@ export default function SpartanCellScreen() {
             <View style={styles.unaffiliatedHero}>
               <View style={styles.crestAura}>
                 <View style={styles.shieldGlowCircle}>
-                  <SpartanShieldVector size={50} color="#00E5FF" />
+                  <Ionicons name="shield-checkmark" size={42} color="#00E5FF" />
                 </View>
               </View>
 
@@ -554,22 +581,28 @@ export default function SpartanCellScreen() {
                 Isolation weakens resolve. In an Accountability Cell, individual streaks unite into a collective cohort shield. When 100% of members check in daily, your cohort maintains Gold Shield status (+20% XP boost).
               </ThemedText>
 
-              {/* Value Pillar Bar (Guaranteed No Overflow) */}
+              {/* Value Pillar Bar */}
               <View style={styles.pillarStrip}>
                 <View style={styles.pillarItem}>
-                  <Ionicons name="flash" size={15} color="#F59E0B" />
+                  <View style={[styles.pillarIconBadge, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                    <Ionicons name="flash" size={14} color="#F59E0B" />
+                  </View>
                   <ThemedText style={styles.pillarTitle}>Pooled Streak</ThemedText>
                   <ThemedText style={styles.pillarDesc}>Shared Stakes</ThemedText>
                 </View>
                 <View style={styles.pillarDivider} />
                 <View style={styles.pillarItem}>
-                  <Ionicons name="shield-checkmark" size={15} color="#00E5FF" />
+                  <View style={[styles.pillarIconBadge, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
+                    <Ionicons name="shield-checkmark" size={14} color="#00E5FF" />
+                  </View>
                   <ThemedText style={styles.pillarTitle}>Gold Shield</ThemedText>
                   <ThemedText style={styles.pillarDesc}>+20% Boost</ThemedText>
                 </View>
                 <View style={styles.pillarDivider} />
                 <View style={styles.pillarItem}>
-                  <Ionicons name="people" size={15} color="#10B981" />
+                  <View style={[styles.pillarIconBadge, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                    <Ionicons name="people" size={14} color="#10B981" />
+                  </View>
                   <ThemedText style={styles.pillarTitle}>20 Members</ThemedText>
                   <ThemedText style={styles.pillarDesc}>Max Capacity</ThemedText>
                 </View>
@@ -667,7 +700,7 @@ export default function SpartanCellScreen() {
             <View style={styles.modalCard}>
               <View style={styles.modalHeaderRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <SpartanShieldVector size={24} color="#00E5FF" />
+                  <Ionicons name="shield-checkmark" size={24} color="#00E5FF" />
                   <ThemedText style={styles.modalTitle}>Establish Accountability Cell</ThemedText>
                 </View>
                 <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.modalCloseBtn}>
@@ -941,6 +974,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  cellBadgeText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#00E5FF',
+  },
   cellNameGroup: {
     flex: 1,
   },
@@ -1160,7 +1198,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: 'rgba(255, 255, 255, 0.025)',
     borderRadius: 14,
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
   },
@@ -1173,77 +1212,99 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    marginRight: 8,
+  },
+  memberRankIndexBox: {
+    width: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberRankIndexText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: 'rgba(255, 255, 255, 0.45)',
   },
   memberAvatarBox: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: 10,
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.25)',
   },
   memberAvatarText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#00E5FF',
+    fontSize: 16,
   },
   memberInfoCol: {
     flex: 1,
+    justifyContent: 'center',
   },
   memberNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   memberNameText: {
     fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
+    flexShrink: 1,
   },
   leaderPill: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
     borderWidth: 0.5,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
   },
   leaderPillText: {
-    fontSize: 8.5,
+    fontSize: 8,
     fontWeight: '900',
     color: '#F59E0B',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
-  memberTierText: {
-    fontSize: 10.5,
-    color: '#94A3B8',
-    marginTop: 1,
+  memberRankPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    borderWidth: 0.5,
+    marginTop: 3,
+  },
+  memberRankNameText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   memberRightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   streakBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   streakText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   checkedInPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
     gap: 3,
   },
   checkedInText: {
@@ -1258,7 +1319,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.3)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 8,
     gap: 3,
   },
@@ -1364,8 +1425,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.07)',
     width: '100%',
@@ -1375,25 +1436,93 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  pillarIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  pillarVal: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  pillarLbl: {
+    fontSize: 9.5,
+    color: '#94A3B8',
+    fontWeight: '600',
   },
   pillarDivider: {
     width: 1,
-    height: 26,
+    height: 32,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   pillarTitle: {
     fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginTop: 2,
+    marginBottom: 2,
     textAlign: 'center',
   },
   pillarDesc: {
     fontSize: 9.5,
     color: '#94A3B8',
     fontWeight: '500',
-    marginTop: 1,
     textAlign: 'center',
+  },
+  honorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(245, 158, 11, 0.05)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+    marginBottom: 12,
+  },
+  honorLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  honorIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  honorTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#F59E0B',
+    letterSpacing: 0.6,
+  },
+  honorSub: {
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: 1,
+  },
+  honorBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+  },
+  honorPointsText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#F59E0B',
   },
   heroActionRow: {
     flexDirection: 'row',

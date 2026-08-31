@@ -40,7 +40,9 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   fetchMyCell: async () => {
     try {
-      set({ isLoadingCell: true });
+      if (!get().myCell) {
+        set({ isLoadingCell: true });
+      }
       const cell = await spartanApi.getMyCell();
       set({ myCell: cell, isLoadingCell: false });
       return cell;

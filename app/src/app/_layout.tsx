@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, Platform } from 'react-native';
 import { Stack, useSegments, useRouter, useRootNavigationState } from 'expo-router';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -160,8 +160,10 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            animation: 'fade',
+            animation: Platform.OS === 'android' ? 'fade_from_bottom' : 'default',
+            animationDuration: 180,
             contentStyle: { backgroundColor: '#000000' },
+            freezeOnBlur: true,
           }}
         >
           <Stack.Screen name="index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />

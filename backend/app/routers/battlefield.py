@@ -121,18 +121,6 @@ async def trigger_battle_horn_sos(
     )
     await session.insert()
 
-    # Broadcast Live Battle Horn Alert to World Chat
-    alert_msg = CommunityMessage(
-        user_id="spartan_battle_horn",
-        author_name="🚨 SPARTAN BATTLE HORN",
-        author_rank="SOS Live Alert",
-        author_badge="⚔️",
-        author_streak=user_streak,
-        content=f"🚨 Brother {user_name} is standing against an urge wave in {location}. 90-Second Sync Room active — Enter the Battlefield now!",
-        created_at=now,
-    )
-    await alert_msg.insert()
-
     return BattleSessionResponse(
         id=str(session.id),
         initiator_id=session.initiator_id,

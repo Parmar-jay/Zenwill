@@ -157,16 +157,25 @@ async def join_spartan_cell(
         # Already member
         return await recalculate_cell_stats(cell)
 
-    if len(cell.member_ids) >= cell.max_members:
-        raise HTTPException(status_code=400, detail="This Spartan Cell has reached its maximum capacity of 20 warriors.")
-
-    # Remove user from any prior cell
-    prior_cells = await SpartanCell.find({"member_ids": user_id_str}).to_list()
+    # Remove user from any prior cell (if not the target cell)
+    prior_cells = await SpartanCell.find({
+        "$or": [
+            {"member_ids": user_id_str},
+            {"member_ids": current_user.email},
+        ]
+    }).to_list()
     for pc in prior_cells:
-        pc.member_ids = [m for m in pc.member_ids if m != user_id_str]
-        await recalculate_cell_stats(pc)
+        if str(pc.id) != str(cell.id):
+            pc.member_ids = [m for m in pc.member_ids if m != user_id_str and m != current_user.email]
+            if not pc.member_ids:
+                await pc.delete()
+            else:
+                if pc.leader_id == user_id_str or pc.leader_id == current_user.email:
+                    pc.leader_id = pc.member_ids[0]
+                await recalculate_cell_stats(pc)
 
-    cell.member_ids.append(user_id_str)
+    if user_id_str not in cell.member_ids:
+        cell.member_ids.append(user_id_str)
     updated_cell = await recalculate_cell_stats(cell)
 
     return SpartanCellSummary(
@@ -193,7 +202,14 @@ async def get_my_spartan_cell(
 ):
     """Retrieve current authenticated user's Spartan Cell with live recalculated stats."""
     user_id_str = str(current_user.id)
-    cell = await SpartanCell.find_one({"member_ids": user_id_str})
+    cell = await SpartanCell.find_one({
+        "$or": [
+            {"member_ids": user_id_str},
+            {"member_ids": current_user.email},
+            {"leader_id": user_id_str},
+            {"leader_id": current_user.email},
+        ]
+    })
     if not cell:
         return None
 
@@ -301,25 +317,12 @@ async def nudge_cell_member(
     payload: NudgeMemberRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Sends a brotherhood accountability nudge to a cell member whose shield is cracked."""
-    sender_name = current_user.name or "Brother Warrior"
+    """Sends a brotherhood accountability reminder to a cell member."""
     target_name = payload.target_user_name
-
-    # Post an encouragement alert to community messages
-    msg = CommunityMessage(
-        user_id="spartan_system",
-        author_name="⚔️ Spartan Cell Shield",
-        author_rank="Gold Shield",
-        author_badge="🛡️",
-        author_streak=0,
-        content=f"⚔️ {sender_name} just nudged Brother {target_name}: 'Hold the line today, Brother! The Cell Shield needs your check-in.'",
-        created_at=datetime.utcnow(),
-    )
-    await msg.insert()
 
     return {
         "status": "success",
-        "message": f"Brotherhood nudge sent to {target_name}. The line holds strong!",
+        "message": f"Brotherhood reminder sent to {target_name}. The line holds strong!",
     }
 
 

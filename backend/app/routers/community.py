@@ -24,7 +24,14 @@ def format_ist_time(dt: Optional[datetime]) -> str:
         dt = dt.replace(tzinfo=timezone.utc).astimezone(IST)
     else:
         dt = dt.astimezone(IST)
-    return dt.strftime("%I:%M %p")
+    
+    now_ist = datetime.now(IST)
+    if dt.date() == now_ist.date():
+        return dt.strftime("%I:%M %p")
+    elif dt.date() == (now_ist - timedelta(days=1)).date():
+        return "Yesterday, " + dt.strftime("%I:%M %p")
+    else:
+        return dt.strftime("%b %d, %I:%M %p")
 
 
 class CreateMessageRequest(BaseModel):
@@ -93,7 +100,20 @@ def get_rank_info_for_days(days: int):
 async def get_world_chat_messages(limit: int = 50):
     """Retrieve recent World Chat messages from database with instant batch resolution."""
     try:
-        messages = await CommunityMessage.find_all().sort("-created_at").limit(limit).to_list()
+        # Permanently purge any legacy system/battle horn notifications from MongoDB
+        await CommunityMessage.find({
+            "$or": [
+                {"user_id": {"$regex": "^spartan_", "$options": "i"}},
+                {"author_name": {"$regex": "BATTLE HORN|🚨|Spartan Cell Shield", "$options": "i"}},
+                {"content": {"$regex": "90-Second Sync Room active|nudged Brother", "$options": "i"}},
+            ]
+        }).delete()
+
+        # Fetch only genuine real user messages
+        messages = await CommunityMessage.find({
+            "user_id": {"$nin": ["spartan_battle_horn", "spartan_system", "system"]},
+            "author_name": {"$not": {"$regex": "BATTLE HORN|🚨|Shield", "$options": "i"}},
+        }).sort("-created_at").limit(limit).to_list()
         messages.sort(key=lambda m: m.created_at)
 
         # Comprehensive batch lookup: map users by ObjectId, id string, email, and name
@@ -283,7 +303,7 @@ async def post_world_chat_message(payload: CreateMessageRequest):
             author_badge=new_msg.author_badge,
             author_streak=new_msg.author_streak,
             content=new_msg.content,
-            created_at=new_msg.created_at.strftime("%I:%M %p"),
+            created_at=format_ist_time(new_msg.created_at),
             likes_count=0,
         )
     except Exception as e:
@@ -297,7 +317,7 @@ async def post_world_chat_message(payload: CreateMessageRequest):
             author_badge=payload.author_badge,
             author_streak=payload.author_streak,
             content=payload.content,
-            created_at=now.strftime("%I:%M %p"),
+            created_at=format_ist_time(now),
             likes_count=0,
         )
 
@@ -307,14 +327,14 @@ _LEADERBOARD_CACHE = {"timestamp": 0, "rankings": []}
 
 @router.get("/rankings", response_model=List[CommunityRankingItem])
 async def get_community_rankings():
-    """Retrieve real community member rankings directly from MongoDB User collection, refreshed every 3 hours."""
+    """Retrieve real community member rankings directly from MongoDB User collection with instant live syncing."""
     global _LEADERBOARD_CACHE
     import time
     now_ts = time.time()
-    three_hours_seconds = 3 * 3600
+    # Low cache (5 seconds) to prevent spam while delivering real-time live rankings
+    cache_ttl = 5
 
-    # If cache is valid (< 3 hours old) and non-empty, return cached real rankings
-    if _LEADERBOARD_CACHE["rankings"] and (now_ts - _LEADERBOARD_CACHE["timestamp"]) < three_hours_seconds:
+    if _LEADERBOARD_CACHE["rankings"] and (now_ts - _LEADERBOARD_CACHE["timestamp"]) < cache_ttl:
         return _LEADERBOARD_CACHE["rankings"]
 
     try:

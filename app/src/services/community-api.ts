@@ -73,11 +73,25 @@ let memoryCachedMessages: WorldChatMessage[] = [];
 let memoryCachedDmConversations: ConversationSummaryItem[] = [];
 let memoryDeletedConvIds: Set<string> = new Set();
 
+const sanitizeWorldMessages = (msgs: any[]): WorldChatMessage[] => {
+  if (!Array.isArray(msgs)) return [];
+  return msgs.filter((m) => {
+    if (!m) return false;
+    const uid = String(m.user_id || '').toLowerCase();
+    const name = String(m.author_name || '').toUpperCase();
+    const content = String(m.content || '').toLowerCase();
+    if (uid.startsWith('spartan_') || uid === 'system') return false;
+    if (name.includes('BATTLE HORN') || name.includes('🚨') || name.includes('SHIELD')) return false;
+    if (content.includes('90-second sync room active') || content.includes('nudged brother')) return false;
+    return true;
+  });
+};
+
 // Immediately hydrate cache from disk in background
 AsyncStorage.getItem(STORAGE_CHAT_KEY).then((cached) => {
   if (cached && memoryCachedMessages.length === 0) {
     try {
-      memoryCachedMessages = JSON.parse(cached);
+      memoryCachedMessages = sanitizeWorldMessages(JSON.parse(cached));
     } catch (e) {}
   }
 });
@@ -92,7 +106,7 @@ AsyncStorage.getItem(STORAGE_DM_KEY).then((cached) => {
 
 export const getCachedMessages = (): WorldChatMessage[] => memoryCachedMessages;
 export const setCachedMessages = (msgs: WorldChatMessage[]) => {
-  memoryCachedMessages = msgs;
+  memoryCachedMessages = sanitizeWorldMessages(msgs);
 };
 
 export const getCachedDmConversations = (): ConversationSummaryItem[] => memoryCachedDmConversations;
@@ -107,9 +121,10 @@ export const communityApi = {
     try {
       const messages = await api.get<WorldChatMessage[]>(`/community/messages?limit=${limit}`);
       if (messages && messages.length > 0) {
-        memoryCachedMessages = messages;
-        AsyncStorage.setItem(STORAGE_CHAT_KEY, JSON.stringify(messages)).catch(() => {});
-        return messages;
+        const clean = sanitizeWorldMessages(messages);
+        memoryCachedMessages = clean;
+        AsyncStorage.setItem(STORAGE_CHAT_KEY, JSON.stringify(clean)).catch(() => {});
+        return clean;
       }
     } catch (e) {
       console.log('[Community API] getMessages backend notice:', e);
@@ -122,7 +137,7 @@ export const communityApi = {
     try {
       const cached = await AsyncStorage.getItem(STORAGE_CHAT_KEY);
       if (cached) {
-        memoryCachedMessages = JSON.parse(cached);
+        memoryCachedMessages = sanitizeWorldMessages(JSON.parse(cached));
         return memoryCachedMessages;
       }
     } catch (e) {

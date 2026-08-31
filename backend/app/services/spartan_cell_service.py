@@ -9,13 +9,27 @@ from app.models.user import User
 
 async def get_user_safely(uid: str) -> Optional[User]:
     """
-    Robust user lookup from MongoDB across Beanie ObjectId, string ID, and email.
+    Robust multi-strategy user lookup from MongoDB across string IDs, ObjectIds, emails, and usernames.
     """
     if not uid:
         return None
     uid_str = str(uid).strip()
     
-    # 1. Try direct Beanie ID get
+    # 1. Direct query matching standard string id or _id or email
+    try:
+        u = await User.find_one({
+            "$or": [
+                {"id": uid_str},
+                {"_id": uid_str},
+                {"email": uid_str.lower()},
+            ]
+        })
+        if u:
+            return u
+    except Exception:
+        pass
+
+    # 2. Beanie Document.get
     try:
         u = await User.get(uid_str)
         if u:
@@ -23,7 +37,7 @@ async def get_user_safely(uid: str) -> Optional[User]:
     except Exception:
         pass
 
-    # 2. Try ObjectId find
+    # 3. BSON ObjectId lookup
     try:
         if ObjectId.is_valid(uid_str):
             u = await User.find_one({"_id": ObjectId(uid_str)})
@@ -32,15 +46,9 @@ async def get_user_safely(uid: str) -> Optional[User]:
     except Exception:
         pass
 
-    # 3. Try string email or fallback string fields
+    # 4. Fallback by name if identifier was passed as name
     try:
-        u = await User.find_one({
-            "$or": [
-                {"email": uid_str.lower()},
-                {"id": uid_str},
-                {"_id": uid_str},
-            ]
-        })
+        u = await User.find_one({"name": uid_str})
         if u:
             return u
     except Exception:
@@ -75,8 +83,8 @@ def get_rank_badge_for_streak(days: int) -> Dict[str, str]:
 
 async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     """
-    Deeply and accurately recalculates collective streak, live member details, 
-    and Cohort Honor (cumulative member XP) directly from MongoDB user documents.
+    Deeply recalculates collective streak, live member details, and Cohort Honor (cumulative XP)
+    directly from active MongoDB user documents.
     """
     today_str = date.today().isoformat()
     total_streak_accum = 0
@@ -100,11 +108,13 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     for m_id in cell.member_ids:
         user = await get_user_safely(m_id)
         if not user:
-            # Fallback to existing member cache if user temporarily unresolvable
+            # Fallback to existing cached member item if user temporarily unresolvable
             prev = next((pm for pm in (cell.members or []) if pm.get("user_id") == m_id), None)
             if prev:
-                total_streak_accum += int(prev.get("streak", 0))
-                total_xp_accum += int(prev.get("xp", 0) or 0)
+                s_val = int(prev.get("streak", 0) or 0)
+                xp_val = int(prev.get("xp", 0) or 0)
+                total_streak_accum += s_val
+                total_xp_accum += xp_val
                 updated_members.append(prev)
             continue
         
@@ -114,18 +124,28 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
         total_xp_accum += user_points
         rank_info = get_rank_badge_for_streak(user_streak)
 
-        # Check if user submitted daily check-in today
-        has_checked_in_today = (user.last_checkin_date == today_str) or (getattr(user, "last_retain_date", None) == today_str)
+        # Check if user confirmed daily retention today
+        has_checked_in_today = (
+            (user.last_checkin_date == today_str) or 
+            (getattr(user, "last_retain_date", None) == today_str)
+        )
         if has_checked_in_today:
             checked_in_count += 1
 
-        is_leader = (str(user.id) == cell.leader_id or user.email == cell.leader_id)
+        is_leader = (
+            str(user.id) == cell.leader_id or 
+            user.email == cell.leader_id or 
+            (user.name and user.name == cell.leader_name)
+        )
         if is_leader:
             cell.leader_name = user.name or "Commander"
+            cell.leader_id = str(user.id)
+
+        user_display_name = user.name or (user.email.split("@")[0] if user.email else "Warrior")
 
         updated_members.append({
             "user_id": str(user.id),
-            "name": user.name or "Spartan Warrior",
+            "name": user_display_name,
             "streak": user_streak,
             "xp": user_points,
             "rank_tier": rank_info["rank_tier"],
@@ -160,8 +180,8 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
 
 async def recalculate_user_cell_streak(user_id_str: str) -> None:
     """
-    Helper invoked whenever a user retains, checks in, earns points, or relapses
-    to instantly update their cell's total streak and Cohort Honor.
+    Helper invoked whenever a user checks in, earns XP, updates profile, or relapses
+    to immediately recalculate all associated Spartan Cells in MongoDB.
     """
     try:
         user = await get_user_safely(user_id_str)
@@ -169,13 +189,17 @@ async def recalculate_user_cell_streak(user_id_str: str) -> None:
             {"member_ids": user_id_str},
             {"leader_id": user_id_str},
         ]
-        if user and user.email:
-            query_clauses.extend([
-                {"member_ids": user.email},
-                {"leader_id": user.email},
-                {"member_ids": str(user.id)},
-                {"leader_id": str(user.id)},
-            ])
+        if user:
+            if user.email:
+                query_clauses.extend([
+                    {"member_ids": user.email},
+                    {"leader_id": user.email},
+                ])
+            if str(user.id) != user_id_str:
+                query_clauses.extend([
+                    {"member_ids": str(user.id)},
+                    {"leader_id": str(user.id)},
+                ])
         
         cells = await SpartanCell.find({"$or": query_clauses}).to_list()
         for cell in cells:

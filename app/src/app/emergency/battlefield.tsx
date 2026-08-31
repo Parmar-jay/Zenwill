@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Defs, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
+import Svg, { Circle, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
@@ -76,12 +76,15 @@ export default function SpartanBattlefieldScreen() {
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [isInitiating, setIsInitiating] = useState<boolean>(false);
   const [floatingRunes, setFloatingRunes] = useState<FloatingRune[]>([]);
+  const [nowMs, setNowMs] = useState<number>(Date.now());
 
   // Smooth Animations
   const victoryScale = useRef(new Animated.Value(0.8)).current;
+  const breathScaleAnim = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<any>(null);
   const phaseTimerRef = useRef<any>(null);
   const pollRef = useRef<any>(null);
+  const clockRef = useRef<any>(null);
 
   const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
     try {
@@ -91,6 +94,16 @@ export default function SpartanBattlefieldScreen() {
         else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
     } catch {}
+  }, []);
+
+  // Update wall clock every second for individual participant timeline calculation
+  useEffect(() => {
+    clockRef.current = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => {
+      if (clockRef.current) clearInterval(clockRef.current);
+    };
   }, []);
 
   // Initialize or Join Battle Session
@@ -119,9 +132,10 @@ export default function SpartanBattlefieldScreen() {
 
     initSession();
 
+    // Fast 1.5s real-time poll for live feeds and user timelines
     pollRef.current = setInterval(() => {
       fetchActiveBattle().catch(() => {});
-    }, 2500);
+    }, 1500);
 
     return () => {
       isMounted = false;
@@ -157,9 +171,9 @@ export default function SpartanBattlefieldScreen() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [activeBattle?.id]);
+  }, [activeBattle?.id, victoryScale, completeBattle, triggerHaptic]);
 
-  // Synchronized Diaphragmatic Breath Phase Loop
+  // Synchronized Diaphragmatic Breath Phase Loop with Smooth Breathing Scale
   useEffect(() => {
     let isCancelled = false;
 
@@ -170,6 +184,25 @@ export default function SpartanBattlefieldScreen() {
       const phaseDurationSec = Math.round(phase.duration / 1000);
       setPhaseSecondsRemaining(phaseDurationSec);
       triggerHaptic('light');
+
+      // Smooth Scale Transition
+      if (idx === 0) {
+        // Inhale: expand
+        Animated.timing(breathScaleAnim, {
+          toValue: 1.06,
+          duration: phase.duration,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      } else if (idx === 2) {
+        // Exhale: contract
+        Animated.timing(breathScaleAnim, {
+          toValue: 0.98,
+          duration: phase.duration,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      }
 
       let currentSec = phaseDurationSec;
       if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
@@ -194,7 +227,7 @@ export default function SpartanBattlefieldScreen() {
       isCancelled = true;
       if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
     };
-  }, [isCompleted]);
+  }, [isCompleted, breathScaleAnim, triggerHaptic]);
 
   // Spawn Twitch/Live-Stream Floating Reaction Rune
   const handleSendRune = async (runeText: string, color: string) => {
@@ -255,6 +288,11 @@ export default function SpartanBattlefieldScreen() {
   const progressRatio = Math.max(0, Math.min(1, secondsLeft / TOTAL_SESSION_SECONDS));
   const strokeDashoffset = CIRCUMFERENCE * (1 - progressRatio);
 
+  // Parse real-time reactions feed in chronological order
+  const liveReactions = useMemo(() => {
+    return (activeBattle?.reactions || []).slice(-15).reverse();
+  }, [activeBattle?.reactions]);
+
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -308,9 +346,9 @@ export default function SpartanBattlefieldScreen() {
               </View>
             </View>
 
-            {/* Simple, Clean, High-Contrast SVG Countdown Ring */}
+            {/* Simple, Clean, High-Contrast SVG Countdown Ring with Smooth Breath Scaling */}
             <View style={styles.centerStage}>
-              <View style={styles.svgWrapper}>
+              <Animated.View style={[styles.svgWrapper, { transform: [{ scale: breathScaleAnim }] }]}>
                 <Svg width={CIRCLE_SIZE} height={CIRCLE_SIZE} viewBox={`0 0 ${CIRCLE_SIZE} ${CIRCLE_SIZE}`}>
                   <Defs>
                     <SvgLinearGradient id="timerGrad" x1="0" y1="0" x2="1" y2="1">
@@ -359,7 +397,7 @@ export default function SpartanBattlefieldScreen() {
                     </Text>
                   </View>
                 </View>
-              </View>
+              </Animated.View>
 
               {/* Floating Real-Time Reaction Runes */}
               {floatingRunes.map((rune) => (
@@ -393,11 +431,11 @@ export default function SpartanBattlefieldScreen() {
               <ThemedText style={styles.guidanceTip}>{currentPhase.tip}</ThemedText>
             </View>
 
-            {/* Shield Brothers Standing Live Strip */}
+            {/* Shield Brothers Standing Live Strip with Individual Timelines */}
             <View style={styles.warriorsSection}>
               <View style={styles.sectionTitleRow}>
                 <Ionicons name="shield-checkmark-outline" size={14} color="#00E5FF" />
-                <ThemedText style={styles.sectionTitleText}>WARRIORS STANDING WITH YOU LIVE ({participantCount})</ThemedText>
+                <ThemedText style={styles.sectionTitleText}>WARRIORS IN ROOM WITH INDIVIDUAL TIMELINES ({participantCount})</ThemedText>
               </View>
 
               <ScrollView
@@ -407,21 +445,45 @@ export default function SpartanBattlefieldScreen() {
               >
                 {activeBattle?.participants?.map((p, idx) => {
                   const isCurrent = p.user_id === String(user?.id || '');
+                  
+                  // Compute individual duration in the room
+                  let userElapsedSec = 90 - secondsLeft;
+                  if (p.joined_at) {
+                    const joinedMs = new Date(p.joined_at).getTime();
+                    if (!isNaN(joinedMs) && joinedMs > 0) {
+                      userElapsedSec = Math.max(1, Math.min(90, Math.floor((nowMs - joinedMs) / 1000)));
+                    }
+                  }
+                  const userTimelinePct = Math.min(100, Math.round((userElapsedSec / 90) * 100));
+
                   return (
                     <View key={`${p.user_id}-${idx}`} style={[styles.warriorPill, isCurrent && styles.warriorPillSelf]}>
-                      <View style={[styles.warriorAvatar, isCurrent && { backgroundColor: 'rgba(0, 229, 255, 0.3)' }]}>
-                        <ThemedText style={styles.warriorAvatarText}>
-                          {p.name ? p.name.charAt(0).toUpperCase() : 'W'}
-                        </ThemedText>
-                        <View style={styles.onlineDot} />
+                      <View style={styles.warriorTopRow}>
+                        <View style={[styles.warriorAvatar, isCurrent && { backgroundColor: 'rgba(0, 229, 255, 0.3)' }]}>
+                          <ThemedText style={styles.warriorAvatarText}>
+                            {p.name ? p.name.charAt(0).toUpperCase() : 'W'}
+                          </ThemedText>
+                          <View style={styles.onlineDot} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={[styles.warriorName, isCurrent && { color: '#00E5FF', fontWeight: '800' }]} numberOfLines={1}>
+                            {p.name || 'Spartan'} {isCurrent ? '(You)' : ''}
+                          </ThemedText>
+                          <ThemedText style={styles.warriorStatusSub}>
+                            {isCurrent ? '⚡ Active Shield' : '🛡️ Holding Line'}
+                          </ThemedText>
+                        </View>
                       </View>
-                      <View style={{ flexShrink: 1 }}>
-                        <ThemedText style={[styles.warriorName, isCurrent && { color: '#00E5FF', fontWeight: '800' }]} numberOfLines={1}>
-                          {p.name || 'Spartan'} {isCurrent ? '(You)' : ''}
-                        </ThemedText>
-                        <ThemedText style={styles.warriorStatusSub}>
-                          {isCurrent ? 'Active Shield' : 'Holding Line'}
-                        </ThemedText>
+
+                      {/* Individual Participant Timeline Progress Bar */}
+                      <View style={styles.memberTimelineContainer}>
+                        <View style={styles.memberTimelineTrack}>
+                          <View style={[styles.memberTimelineFill, { width: `${userTimelinePct}%` }]} />
+                        </View>
+                        <View style={styles.memberTimelineMeta}>
+                          <ThemedText style={styles.memberTimelineTimeText}>{userElapsedSec}s in sync</ThemedText>
+                          <ThemedText style={styles.memberTimelinePctText}>{userTimelinePct}%</ThemedText>
+                        </View>
                       </View>
                     </View>
                   );
@@ -452,23 +514,41 @@ export default function SpartanBattlefieldScreen() {
               </View>
             </View>
 
-            {/* Live Incoming Tactical War Room Feed */}
-            {activeBattle?.reactions && activeBattle.reactions.length > 0 && (
-              <View style={styles.streamSection}>
-                <ThemedText style={styles.streamTitle}>TACTICAL WAR ROOM FEED</ThemedText>
-                <View style={styles.streamList}>
-                  {activeBattle.reactions.slice(-5).map((r, i) => (
-                    <View key={i} style={styles.streamItem}>
-                      <Ionicons name="flash" size={12} color="#F59E0B" style={{ marginRight: 6 }} />
-                      <ThemedText style={styles.streamText}>
-                        <ThemedText style={styles.streamAuthor}>{r.user_name}: </ThemedText>
-                        {r.rune}
-                      </ThemedText>
-                    </View>
-                  ))}
-                </View>
+            {/* Live Real-Time Activity Feed of Every User */}
+            <View style={styles.feedSection}>
+              <View style={styles.feedHeaderRow}>
+                <Ionicons name="radio-outline" size={14} color="#10B981" />
+                <ThemedText style={styles.feedTitle}>LIVE ROOM TELEMETRY FEED</ThemedText>
               </View>
-            )}
+
+              <View style={styles.feedContainer}>
+                {liveReactions.length === 0 ? (
+                  <ThemedText style={styles.feedEmptyText}>
+                    Sync room active. Tap reaction runes above to broadcast live encouragement to the shield wall!
+                  </ThemedText>
+                ) : (
+                  liveReactions.map((rec, rIdx) => {
+                    const isSelf = rec.user_id === String(user?.id || '');
+                    return (
+                      <View key={`${rec.created_at}-${rIdx}`} style={[styles.feedItem, isSelf && styles.feedItemSelf]}>
+                        <View style={styles.feedDot} />
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.feedMetaRow}>
+                            <ThemedText style={styles.feedAuthorName}>
+                              {rec.user_name || 'Warrior'} {isSelf ? '(You)' : ''}
+                            </ThemedText>
+                            <ThemedText style={styles.feedTime}>
+                              {rec.created_at ? new Date(rec.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Live'}
+                            </ThemedText>
+                          </View>
+                          <ThemedText style={styles.feedRuneContent}>{rec.rune}</ThemedText>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            </View>
 
             <View style={{ height: 40 }} />
           </ScrollView>
@@ -478,27 +558,27 @@ export default function SpartanBattlefieldScreen() {
         {isCompleted && (
           <View style={styles.victoryOverlay}>
             <Animated.View style={[styles.victoryCard, { transform: [{ scale: victoryScale }] }]}>
-              <View style={styles.victoryTrophyCircle}>
-                <ThemedText style={{ fontSize: 44 }}>🏆</ThemedText>
+              <View style={styles.victoryIconCircle}>
+                <Ionicons name="shield-checkmark" size={38} color="#00E5FF" />
               </View>
-              <ThemedText style={styles.victoryTitle}>THE SHIELD WALL HELD!</ThemedText>
+              <ThemedText style={styles.victoryTitle}>URGE WAVE CONQUERED</ThemedText>
               <ThemedText style={styles.victoryBody}>
-                You stood shoulder-to-shoulder with your brothers for 90 full seconds. The urge wave is transmuted into pure sovereignty.
+                The line held strong. You and your Spartan brothers stood united in synchronous breath.
               </ThemedText>
               <View style={styles.victoryRewardBadge}>
-                <Ionicons name="shield-checkmark" size={17} color="#F59E0B" style={{ marginRight: 6 }} />
-                <ThemedText style={styles.victoryRewardText}>+25 Brotherhood Honor Points Awarded</ThemedText>
+                <Ionicons name="flash" size={16} color="#F59E0B" style={{ marginRight: 6 }} />
+                <ThemedText style={styles.victoryRewardText}>+25 Honor Points Added to Cohort Honor</ThemedText>
               </View>
 
               <TouchableOpacity
                 style={styles.victoryBtn}
                 activeOpacity={0.85}
                 onPress={() => {
-                  triggerHaptic('medium');
+                  triggerHaptic('light');
                   router.back();
                 }}
               >
-                <ThemedText style={styles.victoryBtnText}>Return to Headquarters</ThemedText>
+                <ThemedText style={styles.victoryBtnText}>Return Victorious</ThemedText>
               </TouchableOpacity>
             </Animated.View>
           </View>
@@ -541,26 +621,20 @@ const styles = StyleSheet.create({
   liveBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginBottom: 3,
-    borderWidth: 0.5,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    gap: 6,
+    marginBottom: 2,
   },
   liveDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#EF4444',
-    marginRight: 5,
   },
   liveBadgeText: {
     fontSize: 9.5,
-    fontWeight: '800',
-    color: '#EF4444',
-    letterSpacing: 0.8,
+    fontWeight: '900',
+    color: '#00E5FF',
+    letterSpacing: 1.2,
   },
   headerTitle: {
     fontSize: 16,
@@ -574,9 +648,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   loadingText: {
-    fontSize: 14,
+    fontSize: 13.5,
     color: '#94A3B8',
-    marginTop: 14,
+    marginTop: 12,
     fontWeight: '600',
   },
   scrollContent: {
@@ -589,129 +663,122 @@ const styles = StyleSheet.create({
   initiatorCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    backgroundColor: 'rgba(0, 229, 255, 0.05)',
     borderRadius: 16,
     padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
     marginBottom: 12,
-    gap: 12,
+    gap: 10,
   },
   initiatorLeftGlow: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
   },
   initiatorTextWrapper: {
     flex: 1,
   },
   initiatorHeadline: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 2,
   },
   initiatorSub: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: '#94A3B8',
     lineHeight: 15,
   },
   centerStage: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 210,
+    paddingVertical: 12,
     position: 'relative',
-    marginVertical: 4,
   },
   svgWrapper: {
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
-    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   timerCenterContent: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
-    height: '100%',
   },
   timerNumberRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    marginBottom: 4,
+    alignItems: 'baseline',
   },
   timerBigNumber: {
-    fontSize: 52,
+    fontSize: 50,
     fontWeight: '900',
     color: '#FFFFFF',
-    letterSpacing: -1,
+    letterSpacing: -2,
     lineHeight: 56,
   },
   timerUnitText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: '#00E5FF',
     marginLeft: 2,
-    marginBottom: 6,
   },
   phasePill: {
+    marginTop: 4,
     paddingHorizontal: 10,
-    paddingVertical: 3.5,
-    borderRadius: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
     borderWidth: 1,
   },
   phasePillText: {
-    fontSize: 11.5,
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.8,
   },
   floatingRuneContainer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 20,
     alignSelf: 'center',
-    zIndex: 100,
   },
   floatingRuneBubble: {
-    backgroundColor: 'rgba(10, 16, 28, 0.94)',
+    backgroundColor: 'rgba(7, 12, 22, 0.95)',
+    borderWidth: 1.5,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
     shadowRadius: 8,
     elevation: 8,
   },
   floatingRuneText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '900',
   },
   guidanceBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: 'rgba(255, 255, 255, 0.025)',
     borderRadius: 14,
-    paddingVertical: 10,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     borderWidth: 1,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   guidanceTip: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontWeight: '600',
-    textAlign: 'center',
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.8)',
     flex: 1,
+    lineHeight: 16,
+    fontWeight: '500',
   },
   warriorsSection: {
     marginBottom: 14,
@@ -720,43 +787,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   sectionTitleText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#00E5FF',
+    fontSize: 10,
+    fontWeight: '900',
+    color: 'rgba(255, 255, 255, 0.5)',
     letterSpacing: 0.8,
   },
   warriorScroll: {
     gap: 8,
   },
   warriorPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.035)',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 14,
+    padding: 10,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 16,
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    gap: 8,
+    width: 155,
   },
   warriorPillSelf: {
     borderColor: 'rgba(0, 229, 255, 0.4)',
-    backgroundColor: 'rgba(0, 229, 255, 0.06)',
+    backgroundColor: 'rgba(0, 229, 255, 0.04)',
+  },
+  warriorTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
   },
   warriorAvatar: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(0, 229, 255, 0.2)',
+    borderRadius: 9,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   warriorAvatarText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
     color: '#00E5FF',
   },
@@ -764,23 +834,51 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -1,
     right: -1,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: '#10B981',
-    borderWidth: 1.5,
-    borderColor: '#000',
+    borderWidth: 1,
+    borderColor: '#000000',
   },
   warriorName: {
-    fontSize: 12.5,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#FFFFFF',
-    maxWidth: 110,
   },
   warriorStatusSub: {
     fontSize: 9.5,
     color: '#94A3B8',
     fontWeight: '500',
+  },
+  memberTimelineContainer: {
+    marginTop: 2,
+  },
+  memberTimelineTrack: {
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  memberTimelineFill: {
+    height: '100%',
+    backgroundColor: '#00E5FF',
+    borderRadius: 2,
+  },
+  memberTimelineMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  memberTimelineTimeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#00E5FF',
+  },
+  memberTimelinePctText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#64748B',
   },
   runesSection: {
     marginBottom: 14,
@@ -788,62 +886,104 @@ const styles = StyleSheet.create({
   runesHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginBottom: 10,
+    gap: 6,
+    marginBottom: 8,
   },
   runesTitle: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 10,
+    fontWeight: '900',
+    color: 'rgba(255, 255, 255, 0.5)',
     letterSpacing: 0.8,
   },
   runesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   runeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1.2,
-    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 5,
   },
   runeButtonText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
-  streamSection: {
+  feedSection: {
     backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
+    marginBottom: 14,
   },
-  streamTitle: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: 'rgba(255, 255, 255, 0.45)',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  streamList: {
-    gap: 6,
-  },
-  streamItem: {
+  feedHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
   },
-  streamText: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
+  feedTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: 'rgba(255, 255, 255, 0.5)',
+    letterSpacing: 0.8,
+  },
+  feedContainer: {
+    gap: 6,
+  },
+  feedEmptyText: {
+    fontSize: 11,
+    color: '#64748B',
     lineHeight: 16,
+    textAlign: 'center',
+    paddingVertical: 8,
   },
-  streamAuthor: {
+  feedItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.025)',
+    borderRadius: 10,
+    padding: 8,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  feedItemSelf: {
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    backgroundColor: 'rgba(0, 229, 255, 0.03)',
+  },
+  feedDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#00E5FF',
+    marginTop: 5,
+  },
+  feedMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  feedAuthorName: {
+    fontSize: 11,
     fontWeight: '800',
-    color: '#00E5FF',
+    color: '#FFFFFF',
+  },
+  feedTime: {
+    fontSize: 9.5,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  feedRuneContent: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontWeight: '500',
   },
   victoryOverlay: {
     position: 'absolute',
@@ -858,29 +998,31 @@ const styles = StyleSheet.create({
   },
   victoryCard: {
     width: '100%',
-    backgroundColor: '#0C1220',
+    backgroundColor: '#0B1120',
     borderRadius: 22,
     padding: 24,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#F59E0B',
-    shadowColor: '#F59E0B',
+    borderColor: '#00E5FF',
+    shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 20,
     elevation: 10,
   },
-  victoryTrophyCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+  victoryIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
   },
   victoryTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: 0.5,
@@ -893,6 +1035,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 16,
+    paddingHorizontal: 6,
   },
   victoryRewardBadge: {
     flexDirection: 'row',
@@ -918,7 +1061,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   victoryBtnText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.3,

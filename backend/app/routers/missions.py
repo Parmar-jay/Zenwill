@@ -123,6 +123,13 @@ async def complete_mission_by_category(
     current_user.total_points = (current_user.total_points or 0) + xp_gain
     await current_user.save()
 
+    # Recalculate Spartan Cell Cohort Honor in real time
+    try:
+        from app.services.spartan_cell_service import recalculate_user_cell_streak
+        await recalculate_user_cell_streak(str(current_user.id))
+    except Exception:
+        pass
+
     # Fetch updated list of today's missions
     updated_missions = await Mission.find(
         Mission.user_id == str(current_user.id),
@@ -224,6 +231,13 @@ async def complete_mission(
     await record_mission_complete(profile, mission.mind_strength_reward)
     current_user.total_points = (current_user.total_points or 0) + mission.xp_reward
     await current_user.save()
+
+    # Recalculate Spartan Cell Cohort Honor in real time
+    try:
+        from app.services.spartan_cell_service import recalculate_user_cell_streak
+        await recalculate_user_cell_streak(str(current_user.id))
+    except Exception:
+        pass
 
     return MissionCompleteResponse(
         success=True,
