@@ -102,6 +102,13 @@ async def submit_checkin(
     current_user.last_checkin_date = checkin_date.isoformat()
     await current_user.save()
 
+    # Recalculate Spartan Cell total streak and Gold Shield status
+    try:
+        from app.services.spartan_cell_service import recalculate_user_cell_streak
+        await recalculate_user_cell_streak(str(current_user.id))
+    except Exception:
+        pass
+
     # Mark or insert completed check-in mission in MongoDB
     try:
         from app.models.mission import Mission

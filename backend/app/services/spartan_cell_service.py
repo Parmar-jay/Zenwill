@@ -2,23 +2,51 @@ import random
 import string
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional
+from bson import ObjectId
 from app.models.spartan_cell import SpartanCell
 from app.models.user import User
-from app.models.daily_checkin import DailyCheckin
-
-
-from bson import ObjectId
 
 
 async def get_user_safely(uid: str) -> Optional[User]:
+    """
+    Robust user lookup from MongoDB across Beanie ObjectId, string ID, and email.
+    """
     if not uid:
         return None
-    clauses: List[Dict[str, Any]] = [{"email": uid}, {"id": uid}]
+    uid_str = str(uid).strip()
+    
+    # 1. Try direct Beanie ID get
     try:
-        clauses.append({"_id": ObjectId(uid)})
+        u = await User.get(uid_str)
+        if u:
+            return u
     except Exception:
         pass
-    return await User.find_one({"$or": clauses})
+
+    # 2. Try ObjectId find
+    try:
+        if ObjectId.is_valid(uid_str):
+            u = await User.find_one({"_id": ObjectId(uid_str)})
+            if u:
+                return u
+    except Exception:
+        pass
+
+    # 3. Try string email or fallback string fields
+    try:
+        u = await User.find_one({
+            "$or": [
+                {"email": uid_str.lower()},
+                {"id": uid_str},
+                {"_id": uid_str},
+            ]
+        })
+        if u:
+            return u
+    except Exception:
+        pass
+
+    return None
 
 
 def generate_cell_join_code() -> str:
@@ -47,9 +75,8 @@ def get_rank_badge_for_streak(days: int) -> Dict[str, str]:
 
 async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     """
-    Deeply recalculates collective streak, live member details, and Gold Shield status.
-    If 5 users are in a cell each with 10 days, total_streak = 50.
-    If one user relapses and loses 10 days, total_streak immediately falls to 40.
+    Deeply and accurately recalculates collective streak, live member details, 
+    and Cohort Honor (cumulative member XP) directly from MongoDB user documents.
     """
     today_str = date.today().isoformat()
     total_streak_accum = 0
@@ -57,13 +84,32 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     updated_members = []
     checked_in_count = 0
 
+    # Ensure leader_id is in member_ids
+    if cell.leader_id and cell.leader_id not in cell.member_ids:
+        cell.member_ids.append(cell.leader_id)
+
+    # Deduplicate member_ids while preserving order
+    seen_ids = set()
+    deduped_ids = []
+    for m in cell.member_ids:
+        if m and m not in seen_ids:
+            seen_ids.add(m)
+            deduped_ids.append(m)
+    cell.member_ids = deduped_ids
+
     for m_id in cell.member_ids:
         user = await get_user_safely(m_id)
         if not user:
+            # Fallback to existing member cache if user temporarily unresolvable
+            prev = next((pm for pm in (cell.members or []) if pm.get("user_id") == m_id), None)
+            if prev:
+                total_streak_accum += int(prev.get("streak", 0))
+                total_xp_accum += int(prev.get("xp", 0) or 0)
+                updated_members.append(prev)
             continue
         
-        user_streak = user.streak or 0
-        user_points = user.total_points or 0
+        user_streak = int(user.streak or 0)
+        user_points = int(user.total_points or 0)
         total_streak_accum += user_streak
         total_xp_accum += user_points
         rank_info = get_rank_badge_for_streak(user_streak)
@@ -74,11 +120,14 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
             checked_in_count += 1
 
         is_leader = (str(user.id) == cell.leader_id or user.email == cell.leader_id)
+        if is_leader:
+            cell.leader_name = user.name or "Commander"
 
         updated_members.append({
             "user_id": str(user.id),
             "name": user.name or "Spartan Warrior",
             "streak": user_streak,
+            "xp": user_points,
             "rank_tier": rank_info["rank_tier"],
             "badge": rank_info["badge"],
             "last_checkin_date": user.last_checkin_date,
@@ -96,9 +145,6 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     cell.members = updated_members
 
     # Shield Status Calculation:
-    # If 100% of members checked in today -> Gold Shield (+20% XP boost)
-    # If >= 70% checked in -> Active Shield
-    # If any member is pending/dark -> Cracked Shield (with Nudge Brother button)
     total_members_cnt = max(len(updated_members), 1)
     if checked_in_count == total_members_cnt:
         cell.shield_status = "gold"
@@ -114,11 +160,25 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
 
 async def recalculate_user_cell_streak(user_id_str: str) -> None:
     """
-    Helper invoked whenever a user retains or relapses to instantly update their cell's total streak.
+    Helper invoked whenever a user retains, checks in, earns points, or relapses
+    to instantly update their cell's total streak and Cohort Honor.
     """
     try:
-        cell = await SpartanCell.find_one({"member_ids": user_id_str})
-        if cell:
+        user = await get_user_safely(user_id_str)
+        query_clauses: List[Dict[str, Any]] = [
+            {"member_ids": user_id_str},
+            {"leader_id": user_id_str},
+        ]
+        if user and user.email:
+            query_clauses.extend([
+                {"member_ids": user.email},
+                {"leader_id": user.email},
+                {"member_ids": str(user.id)},
+                {"leader_id": str(user.id)},
+            ])
+        
+        cells = await SpartanCell.find({"$or": query_clauses}).to_list()
+        for cell in cells:
             await recalculate_cell_stats(cell)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[SpartanCellRecalculate Error] {e}")

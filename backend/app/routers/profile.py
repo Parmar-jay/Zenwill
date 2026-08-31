@@ -228,8 +228,13 @@ async def update_my_profile(
 
     await current_user.save()
 
-    # Recalculate Spartan Cell total streak dynamically
-    if payload.streak is not None or payload.last_retain_status is not None or payload.last_checkin_date is not None:
+    # Recalculate Spartan Cell total streak and Cohort Honor dynamically
+    if (payload.streak is not None or 
+        payload.total_points is not None or 
+        payload.name is not None or 
+        payload.last_retain_status is not None or 
+        payload.last_checkin_date is not None or 
+        payload.last_retain_date is not None):
         try:
             from app.services.spartan_cell_service import recalculate_user_cell_streak
             await recalculate_user_cell_streak(user_id_str)
