@@ -53,6 +53,21 @@ async def handle_user_scheduled_deletion_check(user: User):
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest):
     email = payload.email.lower().strip()
+    clean_name = payload.name.strip() if payload.name else None
+
+    # Check if display name is already taken by another user
+    if clean_name:
+        import re
+        name_user = await User.find_one({
+            "name": {"$regex": f"^{re.escape(clean_name)}$", "$options": "i"},
+            "email": {"$ne": email}
+        })
+        if name_user:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The display name '{clean_name}' is already taken by another warrior. Please choose a unique name."
+            )
+
     # Check if email already exists
     existing = await User.find_one(User.email == email)
     if existing:
@@ -61,7 +76,7 @@ async def register(payload: RegisterRequest):
         else:
             # Overwrite unverified account details and send new OTP
             existing.hashed_password = hash_password(payload.password)
-            existing.name = payload.name or email.split("@")[0]
+            existing.name = clean_name or email.split("@")[0]
             otp_code = generate_otp_code()
             existing.otp_code = otp_code
             existing.otp_expires_at = datetime.utcnow() + timedelta(minutes=10)

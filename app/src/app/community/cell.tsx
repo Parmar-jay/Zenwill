@@ -7,7 +7,6 @@ import {
   ScrollView,
   TextInput,
   Modal,
-  Alert,
   ActivityIndicator,
   Platform,
   Share,
@@ -16,7 +15,7 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
@@ -34,16 +33,12 @@ const MOTTO_PRESETS = [
 ];
 
 // Vector Spartan Shield Graphic (Cross-platform consistent, never clipped)
-const SpartanShieldVector = ({ size = 64, color = '#00E5FF' }: { size?: number; color?: string }) => (
+const SpartanShieldVector = ({ size = 56, color = '#00E5FF' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
     <Defs>
       <SvgLinearGradient id="shieldGrad" x1="0" y1="0" x2="0" y2="1">
         <Stop offset="0%" stopColor={color} stopOpacity="0.3" />
         <Stop offset="100%" stopColor={color} stopOpacity="0.05" />
-      </SvgLinearGradient>
-      <SvgLinearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
-        <Stop offset="0%" stopColor="#F59E0B" />
-        <Stop offset="100%" stopColor="#D97706" />
       </SvgLinearGradient>
     </Defs>
     {/* Shield Outer Rim */}
@@ -142,7 +137,7 @@ export default function SpartanCellScreen() {
     if (!newCellName.trim() || newCellName.trim().length < 3) {
       setCustomDialog({
         visible: true,
-        title: 'Invalid Squad Name',
+        title: 'Invalid Cell Name',
         message: 'Cell name must be at least 3 characters.',
         type: 'info',
         confirmText: 'Got It',
@@ -157,10 +152,10 @@ export default function SpartanCellScreen() {
       setNewCellName('');
       setCustomDialog({
         visible: true,
-        title: 'Spartan Cell Established',
-        message: 'Your squad has been created. Share your join code with fellow warriors to start building your collective shield!',
+        title: 'Accountability Cell Formed',
+        message: 'Your accountability cell has been established. Share your join code with fellow members to begin building collective retention!',
         type: 'success',
-        confirmText: 'Enter Shield Wall',
+        confirmText: 'View Dashboard',
       });
     } catch (err: any) {
       setCustomDialog({
@@ -176,8 +171,8 @@ export default function SpartanCellScreen() {
   };
 
   const handleJoinCell = async (codeToJoin?: string) => {
-    const code = codeToJoin || joinCodeInput;
-    if (!code || code.trim().length < 4) {
+    const raw = codeToJoin || joinCodeInput;
+    if (!raw || raw.trim().length < 2) {
       setCustomDialog({
         visible: true,
         title: 'Invalid Code',
@@ -187,18 +182,22 @@ export default function SpartanCellScreen() {
       });
       return;
     }
+    let cleanCode = raw.trim().toUpperCase();
+    if (!cleanCode.startsWith('SP-')) {
+      cleanCode = `SP-${cleanCode}`;
+    }
     triggerHaptic('medium');
     setActionLoading(true);
     try {
-      await joinCell(code.trim());
+      await joinCell(cleanCode);
       setIsJoinModalVisible(false);
       setJoinCodeInput('');
       setCustomDialog({
         visible: true,
-        title: 'Shield Wall Joined',
-        message: 'You are now an active warrior of this Spartan Cell! Your daily streak now reinforces your brothers.',
+        title: 'Cohort Joined',
+        message: 'You are now an active member of this Accountability Cell. Your daily retention now strengthens the collective cohort shield.',
         type: 'success',
-        confirmText: 'Stand with Squad',
+        confirmText: 'Enter Cohort',
       });
     } catch (err: any) {
       setCustomDialog({
@@ -216,10 +215,10 @@ export default function SpartanCellScreen() {
   const handleLeaveCell = () => {
     setCustomDialog({
       visible: true,
-      title: 'Depart Spartan Cell',
-      message: 'Are you sure you want to leave your squad? Your streak will no longer contribute to the collective total.',
+      title: 'Leave Accountability Cell',
+      message: 'Are you sure you want to depart this cohort? Your streak will no longer contribute to the collective total.',
       type: 'danger',
-      confirmText: 'Depart',
+      confirmText: 'Leave Cell',
       cancelText: 'Cancel',
       onConfirm: async () => {
         triggerHaptic('heavy');
@@ -240,8 +239,8 @@ export default function SpartanCellScreen() {
   const handleDeleteCell = () => {
     setCustomDialog({
       visible: true,
-      title: 'Disband Spartan Cell',
-      message: 'As Commander, permanently disbanding this cell will delete it from the leaderboard and release all 20 member slots. This action cannot be undone.',
+      title: 'Disband Accountability Cell',
+      message: 'As Leader, permanently disbanding this cell will dissolve the cohort and release all member slots. This action cannot be undone.',
       type: 'danger',
       confirmText: 'Disband & Delete',
       cancelText: 'Cancel',
@@ -254,7 +253,7 @@ export default function SpartanCellScreen() {
           setCustomDialog({
             visible: true,
             title: 'Cell Disbanded',
-            message: 'The Spartan Cell has been dissolved.',
+            message: 'The accountability cell has been dissolved.',
             type: 'info',
             confirmText: 'OK',
           });
@@ -280,7 +279,8 @@ export default function SpartanCellScreen() {
       setNudgeNotice(msg);
       setTimeout(() => setNudgeNotice(null), 4000);
     } catch {
-      Alert.alert('Nudge Notice', `Nudge sent to Brother ${member.name}!`);
+      setNudgeNotice(`Reminder sent to ${member.name}!`);
+      setTimeout(() => setNudgeNotice(null), 4000);
     }
   };
 
@@ -289,7 +289,7 @@ export default function SpartanCellScreen() {
     triggerHaptic('light');
     try {
       await Share.share({
-        message: `🛡️ Join my Spartan Cell "${myCell.name}" on ZenWill! Collective streak: ${myCell.total_streak} days. Join code: ${myCell.join_code}`,
+        message: `🛡️ Join my Accountability Cell "${myCell.name}" on ZenWill — the neuroscience-backed platform for dopamine mastery, daily retention, and shared brotherhood discipline.\n\nCollective Cohort Streak: ${myCell.total_streak} Days\nJoin Code: ${myCell.join_code}\n\nDownload ZenWill & master your dopamine: https://zenwill.me`,
       });
     } catch {}
   };
@@ -314,8 +314,8 @@ export default function SpartanCellScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerTitleGroup}>
-            <ThemedText style={styles.headerCategory}>SQUAD ACCOUNTABILITY</ThemedText>
-            <ThemedText style={styles.headerTitle}>Spartan Cell Hub</ThemedText>
+            <ThemedText style={styles.headerCategory}>DISCIPLINE & ACCOUNTABILITY</ThemedText>
+            <ThemedText style={styles.headerTitle}>Accountability Cell Hub</ThemedText>
           </View>
 
           <TouchableOpacity
@@ -333,10 +333,10 @@ export default function SpartanCellScreen() {
         {isLoadingCell ? (
           <View style={styles.centerLoading}>
             <ActivityIndicator size="large" color="#00E5FF" />
-            <ThemedText style={styles.loadingText}>Syncing Spartan Squad Matrix...</ThemedText>
+            <ThemedText style={styles.loadingText}>Syncing Cohort Discipline Matrix...</ThemedText>
           </View>
         ) : myCell ? (
-          /* ── ACTIVE SPARTAN CELL VIEW ── */
+          /* ── ACTIVE COHORT VIEW ── */
           <ScrollView
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollInner}
@@ -346,14 +346,14 @@ export default function SpartanCellScreen() {
             <View style={styles.cellHeroCard}>
               <View style={styles.cellHeroHeader}>
                 <View style={styles.cellBadgeIcon}>
-                  <SpartanShieldVector size={36} color="#00E5FF" />
+                  <SpartanShieldVector size={32} color="#00E5FF" />
                 </View>
                 <View style={styles.cellNameGroup}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <ThemedText style={styles.cellNameText}>{myCell.name}</ThemedText>
                     {isLeader && (
                       <View style={styles.commanderBadge}>
-                        <ThemedText style={styles.commanderBadgeText}>COMMANDER</ThemedText>
+                        <ThemedText style={styles.commanderBadgeText}>LEADER</ThemedText>
                       </View>
                     )}
                   </View>
@@ -373,32 +373,32 @@ export default function SpartanCellScreen() {
                 </View>
                 <View style={styles.shareCodeBtn}>
                   <Ionicons name="share-social-outline" size={15} color="#00E5FF" />
-                  <ThemedText style={styles.shareCodeText}>Invite Brother</ThemedText>
+                  <ThemedText style={styles.shareCodeText}>Invite Member</ThemedText>
                 </View>
               </TouchableOpacity>
             </View>
 
-            {/* Total Collective Streak & Squad Stats */}
+            {/* Total Collective Streak & Cohort Stats */}
             <View style={styles.statsRow}>
               <View style={styles.mainStreakCard}>
                 <View style={styles.streakIconRow}>
                   <ThemedText style={styles.fireEmoji}>🔥</ThemedText>
                   <ThemedText style={styles.collectiveStreakNumber}>{myCell.total_streak}</ThemedText>
                 </View>
-                <ThemedText style={styles.streakCardTitle}>COLLECTIVE CELL STREAK</ThemedText>
+                <ThemedText style={styles.streakCardTitle}>COLLECTIVE COHORT RETENTION</ThemedText>
                 <ThemedText style={styles.streakCardSub}>
-                  Combined clean days of all {myCell.member_count} warriors. Drops if any brother relapses.
+                  Combined clean days of all {myCell.member_count} members. Drops if any member relapses.
                 </ThemedText>
               </View>
 
               <View style={styles.sideStatsCol}>
                 <View style={styles.smallStatCard}>
                   <ThemedText style={styles.smallStatValue}>{myCell.member_count}/{myCell.max_members}</ThemedText>
-                  <ThemedText style={styles.smallStatLabel}>WARRIORS</ThemedText>
+                  <ThemedText style={styles.smallStatLabel}>ACTIVE MEMBERS</ThemedText>
                 </View>
                 <View style={styles.smallStatCard}>
                   <ThemedText style={[styles.smallStatValue, { color: '#F59E0B' }]}>{myCell.collective_xp} XP</ThemedText>
-                  <ThemedText style={styles.smallStatLabel}>SQUAD HONOR</ThemedText>
+                  <ThemedText style={styles.smallStatLabel}>COHORT HONOR</ThemedText>
                 </View>
               </View>
             </View>
@@ -419,20 +419,20 @@ export default function SpartanCellScreen() {
                     styles.shieldTitleText,
                     { color: isGoldShield ? '#F59E0B' : isCrackedShield ? '#EF4444' : '#00E5FF' }
                   ]}>
-                    {isGoldShield ? 'GOLD SHIELD ACTIVE (+20% XP)' : isCrackedShield ? 'SHIELD CRACKED (ACTION NEEDED)' : 'SHIELD DEFENSE ACTIVE'}
+                    {isGoldShield ? 'GOLD SHIELD ACTIVE (+20% XP)' : isCrackedShield ? 'SHIELD PENDING (ACTION REQUIRED)' : 'DISCIPLINE SHIELD ACTIVE'}
                   </ThemedText>
                   <ThemedText style={styles.shieldSubText}>
                     {isGoldShield
-                      ? '100% of warriors checked in today! 20% XP boost active for the entire squad.'
+                      ? '100% of cohort members confirmed retention today! +20% XP boost active for the entire squad.'
                       : isCrackedShield
-                      ? 'One or more brothers have not checked in. Nudge them to secure the squad Gold Shield.'
-                      : 'Keep daily check-ins consistent to unlock the Gold Shield before midnight.'}
+                      ? 'One or more members have pending daily check-ins. Send reminders to secure the cohort Gold Shield.'
+                      : 'Maintain consistent daily check-ins across all members to unlock the Gold Shield before midnight.'}
                   </ThemedText>
                 </View>
               </View>
             </View>
 
-            {/* Nudge Notification Notice */}
+            {/* Notification Notice */}
             {nudgeNotice && (
               <View style={styles.nudgeNoticeBox}>
                 <Ionicons name="checkmark-circle" size={15} color="#10B981" />
@@ -440,13 +440,13 @@ export default function SpartanCellScreen() {
               </View>
             )}
 
-            {/* Warrior Roster Strip (Up to 20 Members) */}
+            {/* Cohort Members Roster */}
             <View style={styles.rosterSection}>
               <View style={styles.rosterHeaderRow}>
                 <ThemedText style={styles.rosterTitle}>
-                  WARRIOR ROSTER ({myCell.members?.length || 0}/{myCell.max_members})
+                  COHORT MEMBERS ({myCell.members?.length || 0}/{myCell.max_members})
                 </ThemedText>
-                <ThemedText style={styles.rosterSortLabel}>Ranked by Streak</ThemedText>
+                <ThemedText style={styles.rosterSortLabel}>Ordered by Retention</ThemedText>
               </View>
 
               <View style={styles.rosterList}>
@@ -458,8 +458,10 @@ export default function SpartanCellScreen() {
                       style={[styles.memberRow, isCurrentUser && styles.memberRowSelf]}
                     >
                       <View style={styles.memberLeftGroup}>
-                        <View style={styles.memberBadgeBox}>
-                          <ThemedText style={styles.memberBadgeEmoji}>{member.badge || '🥉'}</ThemedText>
+                        <View style={styles.memberAvatarBox}>
+                          <ThemedText style={styles.memberAvatarText}>
+                            {member.name ? member.name.charAt(0).toUpperCase() : 'M'}
+                          </ThemedText>
                         </View>
                         <View style={styles.memberInfoCol}>
                           <View style={styles.memberNameRow}>
@@ -484,7 +486,7 @@ export default function SpartanCellScreen() {
                         {member.today_checked_in ? (
                           <View style={styles.checkedInPill}>
                             <Ionicons name="checkmark" size={12} color="#10B981" />
-                            <ThemedText style={styles.checkedInText}>Done</ThemedText>
+                            <ThemedText style={styles.checkedInText}>Retained</ThemedText>
                           </View>
                         ) : (
                           <TouchableOpacity
@@ -493,8 +495,8 @@ export default function SpartanCellScreen() {
                             onPress={() => handleNudge(member)}
                             disabled={isNudging}
                           >
-                            <Ionicons name="hand-right-outline" size={12} color="#EF4444" />
-                            <ThemedText style={styles.nudgeBtnText}>Nudge</ThemedText>
+                            <Ionicons name="notifications-outline" size={12} color="#EF4444" />
+                            <ThemedText style={styles.nudgeBtnText}>Remind</ThemedText>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -514,7 +516,7 @@ export default function SpartanCellScreen() {
                   disabled={actionLoading}
                 >
                   <Ionicons name="trash-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.disbandBtnText}>Disband Spartan Cell (Commander)</ThemedText>
+                  <ThemedText style={styles.disbandBtnText}>Disband Accountability Cell (Leader)</ThemedText>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
@@ -524,7 +526,7 @@ export default function SpartanCellScreen() {
                   disabled={actionLoading}
                 >
                   <Ionicons name="exit-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.leaveBtnText}>Depart Spartan Cell</ThemedText>
+                  <ThemedText style={styles.leaveBtnText}>Leave Accountability Cell</ThemedText>
                 </TouchableOpacity>
               )}
             </View>
@@ -532,44 +534,48 @@ export default function SpartanCellScreen() {
             <View style={{ height: 40 }} />
           </ScrollView>
         ) : (
-          /* ── UNAFFILIATED: EPIC SPARTAN CELL ESTABLISHMENT VIEW ── */
+          /* ── UNAFFILIATED: ESTABLISHMENT VIEW ── */
           <ScrollView
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollInner}
             showsVerticalScrollIndicator={false}
           >
-            {/* Ultra-Polished Holographic Crest Hero */}
+            {/* Holographic Crest Hero */}
             <View style={styles.unaffiliatedHero}>
-              {/* Outer Glowing Radial Aura */}
               <View style={styles.crestAura}>
                 <View style={styles.shieldGlowCircle}>
-                  <SpartanShieldVector size={58} color="#00E5FF" />
+                  <SpartanShieldVector size={50} color="#00E5FF" />
                 </View>
               </View>
 
-              <ThemedText style={styles.unaffiliatedCategory}>SQUAD SHARED STAKES</ThemedText>
-              <ThemedText style={styles.unaffiliatedTitle}>5–20 Man Spartan Cells</ThemedText>
+              <ThemedText style={styles.unaffiliatedCategory}>SHARED COMMITMENT & REINFORCEMENT</ThemedText>
+              <ThemedText style={styles.unaffiliatedTitle}>5–20 Member Accountability Cells</ThemedText>
               <ThemedText style={styles.unaffiliatedBody}>
-                Solitary battles fail in secrecy. In a Spartan Cell, individual streaks are pooled into a collective squad shield. If 100% of brothers check in daily, your squad unlocks the Gold Shield (+20% XP boost).
+                Isolation weakens resolve. In an Accountability Cell, individual streaks unite into a collective cohort shield. When 100% of members check in daily, your cohort maintains Gold Shield status (+20% XP boost).
               </ThemedText>
 
-              {/* Value Pillar Badges */}
-              <View style={styles.pillarRow}>
-                <View style={styles.pillarBadge}>
-                  <Ionicons name="flash" size={13} color="#F59E0B" />
-                  <ThemedText style={styles.pillarText}>Pooled Streak</ThemedText>
+              {/* Value Pillar Bar (Guaranteed No Overflow) */}
+              <View style={styles.pillarStrip}>
+                <View style={styles.pillarItem}>
+                  <Ionicons name="flash" size={15} color="#F59E0B" />
+                  <ThemedText style={styles.pillarTitle}>Pooled Streak</ThemedText>
+                  <ThemedText style={styles.pillarDesc}>Shared Stakes</ThemedText>
                 </View>
-                <View style={styles.pillarBadge}>
-                  <Ionicons name="shield-checkmark" size={13} color="#00E5FF" />
-                  <ThemedText style={styles.pillarText}>Gold Shield</ThemedText>
+                <View style={styles.pillarDivider} />
+                <View style={styles.pillarItem}>
+                  <Ionicons name="shield-checkmark" size={15} color="#00E5FF" />
+                  <ThemedText style={styles.pillarTitle}>Gold Shield</ThemedText>
+                  <ThemedText style={styles.pillarDesc}>+20% Boost</ThemedText>
                 </View>
-                <View style={styles.pillarBadge}>
-                  <Ionicons name="people" size={13} color="#10B981" />
-                  <ThemedText style={styles.pillarText}>20 Warriors</ThemedText>
+                <View style={styles.pillarDivider} />
+                <View style={styles.pillarItem}>
+                  <Ionicons name="people" size={15} color="#10B981" />
+                  <ThemedText style={styles.pillarTitle}>20 Members</ThemedText>
+                  <ThemedText style={styles.pillarDesc}>Max Capacity</ThemedText>
                 </View>
               </View>
 
-              {/* Hero Action Buttons */}
+              {/* Action Buttons */}
               <View style={styles.heroActionRow}>
                 <TouchableOpacity
                   style={styles.createCellBtn}
@@ -580,7 +586,7 @@ export default function SpartanCellScreen() {
                   }}
                 >
                   <Ionicons name="add-circle" size={19} color="#000000" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.createCellBtnText}>Establish New Cell</ThemedText>
+                  <ThemedText style={styles.createCellBtnText}>Establish Cell</ThemedText>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -601,14 +607,17 @@ export default function SpartanCellScreen() {
             <View style={styles.publicSection}>
               <View style={styles.publicHeaderRow}>
                 <Ionicons name="globe-outline" size={14} color="#00E5FF" />
-                <ThemedText style={styles.publicSectionTitle}>OPEN SPARTAN CELLS RECRUITING</ThemedText>
+                <ThemedText style={styles.publicSectionTitle}>OPEN COHORTS RECRUITING</ThemedText>
               </View>
 
               {publicCells.length === 0 ? (
                 <View style={styles.emptyPublicCard}>
-                  <Ionicons name="shield-outline" size={32} color="#334155" style={{ marginBottom: 8 }} />
+                  <View style={styles.emptyIconCircle}>
+                    <Ionicons name="shield-outline" size={24} color="#64748B" />
+                  </View>
+                  <ThemedText style={styles.emptyPublicTitle}>No Open Cohorts Active</ThemedText>
                   <ThemedText style={styles.emptyPublicText}>
-                    No open cells looking for warriors right now. Be the Commander to establish a new cell!
+                    Establish a new accountability cell to lead fellow members and climb the global ranks.
                   </ThemedText>
                 </View>
               ) : (
@@ -626,7 +635,7 @@ export default function SpartanCellScreen() {
 
                     <View style={styles.publicCellFooter}>
                       <ThemedText style={styles.publicMembersCount}>
-                        {cell.member_count}/{cell.max_members} Warriors • Commander: {cell.leader_name}
+                        {cell.member_count}/{cell.max_members} Members • Leader: {cell.leader_name}
                       </ThemedText>
 
                       <TouchableOpacity
@@ -647,7 +656,7 @@ export default function SpartanCellScreen() {
           </ScrollView>
         )}
 
-        {/* Modal: Establish Spartan Cell */}
+        {/* Modal: Establish Accountability Cell */}
         <Modal
           visible={isCreateModalVisible}
           transparent
@@ -658,25 +667,25 @@ export default function SpartanCellScreen() {
             <View style={styles.modalCard}>
               <View style={styles.modalHeaderRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <SpartanShieldVector size={26} color="#00E5FF" />
-                  <ThemedText style={styles.modalTitle}>Establish Spartan Cell</ThemedText>
+                  <SpartanShieldVector size={24} color="#00E5FF" />
+                  <ThemedText style={styles.modalTitle}>Establish Accountability Cell</ThemedText>
                 </View>
                 <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.modalCloseBtn}>
                   <Ionicons name="close" size={20} color="#94A3B8" />
                 </TouchableOpacity>
               </View>
 
-              <ThemedText style={styles.inputLabel}>SQUAD NAME</ThemedText>
+              <ThemedText style={styles.inputLabel}>CELL NAME</ThemedText>
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g. Iron Phalanx, Ojas Vanguard"
+                placeholder="e.g. Sovereign Phalanx, Iron Vanguard"
                 placeholderTextColor="#64748B"
                 value={newCellName}
                 onChangeText={setNewCellName}
                 maxLength={40}
               />
 
-              <ThemedText style={styles.inputLabel}>CHOOSE BATTLE MOTTO</ThemedText>
+              <ThemedText style={styles.inputLabel}>CHOOSE CELL MOTTO</ThemedText>
               <TextInput
                 style={styles.textInput}
                 placeholder="e.g. We hold the line together."
@@ -714,7 +723,7 @@ export default function SpartanCellScreen() {
                 {actionLoading ? (
                   <ActivityIndicator color="#000000" />
                 ) : (
-                  <ThemedText style={styles.submitModalBtnText}>Establish & Become Commander</ThemedText>
+                  <ThemedText style={styles.submitModalBtnText}>Establish & Become Leader</ThemedText>
                 )}
               </TouchableOpacity>
             </View>
@@ -733,23 +742,32 @@ export default function SpartanCellScreen() {
               <View style={styles.modalHeaderRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="key" size={20} color="#00E5FF" />
-                  <ThemedText style={styles.modalTitle}>Join Spartan Cell</ThemedText>
+                  <ThemedText style={styles.modalTitle}>Join Accountability Cell</ThemedText>
                 </View>
                 <TouchableOpacity onPress={() => setIsJoinModalVisible(false)} style={styles.modalCloseBtn}>
                   <Ionicons name="close" size={20} color="#94A3B8" />
                 </TouchableOpacity>
               </View>
 
-              <ThemedText style={styles.inputLabel}>ENTER SQUAD JOIN CODE</ThemedText>
-              <TextInput
-                style={[styles.textInput, styles.joinCodeInput]}
-                placeholder="SP-XXXX"
-                placeholderTextColor="#64748B"
-                value={joinCodeInput}
-                onChangeText={setJoinCodeInput}
-                autoCapitalize="characters"
-                maxLength={10}
-              />
+              <ThemedText style={styles.inputLabel}>ENTER COHORT JOIN CODE</ThemedText>
+              <View style={styles.joinCodeInputContainer}>
+                <View style={styles.codePrefixBadge}>
+                  <ThemedText style={styles.codePrefixText}>SP -</ThemedText>
+                </View>
+                <TextInput
+                  style={styles.joinCodeInnerInput}
+                  placeholder="A49Q"
+                  placeholderTextColor="#475569"
+                  value={joinCodeInput}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/^sp-?/i, '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                    setJoinCodeInput(clean);
+                  }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={6}
+                />
+              </View>
 
               <TouchableOpacity
                 style={styles.submitModalBtn}
@@ -760,14 +778,14 @@ export default function SpartanCellScreen() {
                 {actionLoading ? (
                   <ActivityIndicator color="#00E5FF" />
                 ) : (
-                  <ThemedText style={styles.submitModalBtnText}>Join Shield Wall</ThemedText>
+                  <ThemedText style={styles.submitModalBtnText}>Join Accountability Cohort</ThemedText>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
 
-        {/* Custom Glassmorphic Dark Dialog (Replaces white system Alert) */}
+        {/* Custom Glassmorphic Dark Dialog */}
         {customDialog && customDialog.visible && (
           <Modal
             visible={customDialog.visible}
@@ -862,7 +880,7 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '800',
     color: '#00E5FF',
-    letterSpacing: 1,
+    letterSpacing: 1.2,
     marginBottom: 2,
   },
   headerTitle: {
@@ -914,8 +932,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cellBadgeIcon: {
-    width: 48,
-    height: 48,
+    width: 46,
+    height: 46,
     borderRadius: 14,
     backgroundColor: 'rgba(0, 229, 255, 0.08)',
     borderWidth: 1,
@@ -933,7 +951,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   commanderBadge: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 6,
@@ -1156,16 +1174,20 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
-  memberBadgeBox: {
+  memberAvatarBox: {
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
   },
-  memberBadgeEmoji: {
-    fontSize: 16,
+  memberAvatarText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#00E5FF',
   },
   memberInfoCol: {
     flex: 1,
@@ -1232,9 +1254,9 @@ const styles = StyleSheet.create({
   nudgeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -1288,9 +1310,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   crestAura: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     backgroundColor: 'rgba(0, 229, 255, 0.06)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1299,9 +1321,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0, 229, 255, 0.15)',
   },
   shieldGlowCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: 'rgba(0, 229, 255, 0.12)',
     borderWidth: 1.5,
     borderColor: 'rgba(0, 229, 255, 0.35)',
@@ -1321,7 +1343,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   unaffiliatedTitle: {
-    fontSize: 19,
+    fontSize: 18.5,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: -0.3,
@@ -1336,26 +1358,42 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 8,
   },
-  pillarRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 18,
-  },
-  pillarBadge: {
+  pillarStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 10,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 4,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+    width: '100%',
+    marginBottom: 18,
   },
-  pillarText: {
+  pillarItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillarDivider: {
+    width: 1,
+    height: 26,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  pillarTitle: {
     fontSize: 11,
-    fontWeight: '700',
-    color: 'rgba(255, 255, 255, 0.85)',
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  pillarDesc: {
+    fontSize: 9.5,
+    color: '#94A3B8',
+    fontWeight: '500',
+    marginTop: 1,
+    textAlign: 'center',
   },
   heroActionRow: {
     flexDirection: 'row',
@@ -1413,16 +1451,35 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   emptyPublicCard: {
-    paddingVertical: 24,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  emptyPublicTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
   emptyPublicText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 17,
-    maxWidth: '85%',
+    lineHeight: 16,
+    maxWidth: '90%',
   },
   publicCellCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.025)',
@@ -1529,13 +1586,38 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
     marginBottom: 14,
   },
-  joinCodeInput: {
-    textTransform: 'uppercase',
-    letterSpacing: 3,
-    fontSize: 20,
-    textAlign: 'center',
+  joinCodeInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  codePrefixBadge: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(0, 229, 255, 0.25)',
+  },
+  codePrefixText: {
+    fontSize: 16,
     fontWeight: '900',
     color: '#00E5FF',
+    letterSpacing: 1.5,
+  },
+  joinCodeInnerInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
   mottoPresetRow: {
     gap: 8,

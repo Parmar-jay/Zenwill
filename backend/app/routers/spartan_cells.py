@@ -67,9 +67,10 @@ async def create_spartan_cell(
 
     # Check if name is taken
     clean_name = payload.name.strip()
-    name_exists = await SpartanCell.find_one({"name": clean_name})
+    import re
+    name_exists = await SpartanCell.find_one({"name": {"$regex": f"^{re.escape(clean_name)}$", "$options": "i"}})
     if name_exists:
-        raise HTTPException(status_code=400, detail="A Spartan Cell with this name already exists. Choose a unique battle name.")
+        raise HTTPException(status_code=400, detail=f"An Accountability Cell named '{clean_name}' already exists. Please choose a unique name.")
 
     # Generate unique join code
     join_code = generate_cell_join_code()
@@ -136,9 +137,19 @@ async def join_spartan_cell(
 ):
     """Join an existing Spartan Cell via unique 6-character code."""
     user_id_str = str(current_user.id)
-    clean_code = payload.join_code.strip().upper()
+    raw_code = payload.join_code.strip().upper()
+    pure_code = raw_code.replace("SP-", "").replace("SP ", "").replace("SP", "").strip()
 
-    cell = await SpartanCell.find_one({"$or": [{"join_code": clean_code}, {"join_code": f"SP-{clean_code}"}, {"id": clean_code}]})
+    cell = await SpartanCell.find_one({
+        "$or": [
+            {"join_code": raw_code},
+            {"join_code": f"SP-{raw_code}"},
+            {"join_code": f"SP-{pure_code}"},
+            {"join_code": pure_code},
+            {"id": raw_code},
+            {"id": pure_code},
+        ]
+    })
     if not cell:
         raise HTTPException(status_code=404, detail="Invalid Cell Code. Please check the code and try again.")
 

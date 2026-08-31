@@ -190,7 +190,23 @@ async def update_my_profile(
     user_id_str = str(current_user.id)
 
     if payload.name is not None:
-        current_user.name = payload.name
+        clean_name = payload.name.strip()
+        if len(clean_name) < 2:
+            raise HTTPException(status_code=400, detail="Display name must be at least 2 characters.")
+        
+        # Check if another user already has this display name (case-insensitive)
+        import re
+        query = {
+            "name": {"$regex": f"^{re.escape(clean_name)}$", "$options": "i"},
+            "_id": {"$ne": current_user.id}
+        }
+        existing_user = await User.find_one(query)
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The display name '{clean_name}' is already taken by another warrior. Please choose a unique name."
+            )
+        current_user.name = clean_name
     if payload.onboarding_step is not None:
         current_user.onboarding_step = payload.onboarding_step
     if payload.streak is not None:
@@ -324,7 +340,19 @@ async def submit_onboarding(
     current_user.is_onboarded = True
     current_user.onboarding_step = 6
     if payload.firstName:
-        current_user.name = payload.firstName
+        clean_name = payload.firstName.strip()
+        import re
+        query = {
+            "name": {"$regex": f"^{re.escape(clean_name)}$", "$options": "i"},
+            "_id": {"$ne": current_user.id}
+        }
+        existing_user = await User.find_one(query)
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail=f"The display name '{clean_name}' is already taken by another warrior. Please choose a unique name."
+            )
+        current_user.name = clean_name
 
     await current_user.save()
 
