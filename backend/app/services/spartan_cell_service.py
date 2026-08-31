@@ -53,6 +53,7 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     """
     today_str = date.today().isoformat()
     total_streak_accum = 0
+    total_xp_accum = 0
     updated_members = []
     checked_in_count = 0
 
@@ -62,7 +63,9 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
             continue
         
         user_streak = user.streak or 0
+        user_points = user.total_points or 0
         total_streak_accum += user_streak
+        total_xp_accum += user_points
         rank_info = get_rank_badge_for_streak(user_streak)
 
         # Check if user submitted daily check-in today
@@ -89,6 +92,7 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     updated_members.sort(key=lambda m: (not m["is_leader"], -m["streak"]))
 
     cell.total_streak = total_streak_accum
+    cell.collective_xp = total_xp_accum
     cell.members = updated_members
 
     # Shield Status Calculation:

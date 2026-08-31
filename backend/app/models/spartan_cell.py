@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+# pyrefly: ignore [missing-import]
 from beanie import Document, Indexed
 from pydantic import Field
 
@@ -20,9 +21,12 @@ class CellMember(Document):
 
 class SpartanCell(Document):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    # pyrefly: ignore [invalid-annotation]
     name: Indexed(str, unique=True)
     motto: str = "We hold the line together."
+    # pyrefly: ignore [invalid-annotation]
     join_code: Indexed(str, unique=True)  # 6-character unique alphanumeric code
+    # pyrefly: ignore [invalid-annotation]
     leader_id: Indexed(str)
     leader_name: str = "Commander"
     

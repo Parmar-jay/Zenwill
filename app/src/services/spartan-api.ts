@@ -79,6 +79,10 @@ export const spartanApi = {
     return api.post<{ status: string; message: string }>('/spartan-cells/leave');
   },
 
+  async deleteCell(): Promise<{ status: string; message: string }> {
+    return api.post<{ status: string; message: string }>('/spartan-cells/delete');
+  },
+
   async getCellLeaderboard(limit: number = 50): Promise<SpartanCellData[]> {
     return api.get<SpartanCellData[]>(`/spartan-cells/leaderboard?limit=${limit}`);
   },

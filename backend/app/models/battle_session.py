@@ -1,12 +1,14 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+# pyrefly: ignore [missing-import]
 from beanie import Document, Indexed
 from pydantic import Field
 
 
 class BattleSession(Document):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    # pyrefly: ignore [invalid-annotation]
     initiator_id: Indexed(str)
     initiator_name: str = "Brother Warrior"
     initiator_streak: int = 0

@@ -14,7 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Defs, RadialGradient, Stop, LinearGradient as SvgLinearGradient, Rect } from 'react-native-svg';
+import Svg, { Circle, Defs, RadialGradient, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
@@ -22,19 +22,41 @@ import { useAuthStore } from '../../store/auth-store';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const TOTAL_SESSION_SECONDS = 90;
+const CIRCLE_SIZE = 190;
+const STROKE_WIDTH = 5;
+const RADIUS = (CIRCLE_SIZE - STROKE_WIDTH * 2) / 2;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
 const REACTION_RUNES = [
   { id: 'rune-1', text: 'Hold the line ⚔️', icon: 'shield-outline', color: '#00E5FF', bg: 'rgba(0, 229, 255, 0.12)' },
   { id: 'rune-2', text: 'Transmute it 🔥', icon: 'flame-outline', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' },
   { id: 'rune-3', text: 'You are sovereign 👑', icon: 'ribbon-outline', color: '#10B981', bg: 'rgba(16, 185, 129, 0.12)' },
   { id: 'rune-4', text: 'Breathe with me 🛡️', icon: 'water-outline', color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)' },
   { id: 'rune-5', text: 'Pure Ojas ⚡', icon: 'flash-outline', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.12)' },
+  { id: 'rune-6', text: 'Unbreakable 💎', icon: 'diamond-outline', color: '#A855F7', bg: 'rgba(168, 85, 247, 0.12)' },
+  { id: 'rune-7', text: 'Stand firm 🛡️', icon: 'shield-checkmark-outline', color: '#06B6D4', bg: 'rgba(6, 182, 212, 0.12)' },
+  { id: 'rune-8', text: 'Iron will 🦾', icon: 'fitness-outline', color: '#EC4899', bg: 'rgba(236, 72, 153, 0.12)' },
+  { id: 'rune-9', text: 'Victory is ours 🏆', icon: 'trophy-outline', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' },
+  { id: 'rune-10', text: 'Channel the surge 🌊', icon: 'boat-outline', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.12)' },
+  { id: 'rune-11', text: 'Stay rooted 🌲', icon: 'leaf-outline', color: '#22C55E', bg: 'rgba(34, 197, 94, 0.12)' },
 ];
 
 const BREATH_PHASES = [
-  { label: 'INHALE', sub: 'Draw life-force inward', duration: 4000, targetScale: 1.28, color: '#00E5FF', tip: 'Slow, deep breath through the nose. Fill the diaphragm completely.' },
-  { label: 'HOLD', sub: 'Transmute into sovereignty', duration: 4000, targetScale: 1.28, color: '#F59E0B', tip: 'Feel raw urge energy transforming into stillness and willpower.' },
-  { label: 'EXHALE', sub: 'Release all tension', duration: 6000, targetScale: 0.92, color: '#10B981', tip: 'Smooth, controlled exhale through the mouth. Ground your energy.' },
+  { label: 'INHALE', sub: 'Draw strength inward', duration: 4000, color: '#00E5FF', tip: 'Slow, deep breath through the nose. Fill the diaphragm completely.' },
+  { label: 'HOLD', sub: 'Transmute into willpower', duration: 4000, color: '#F59E0B', tip: 'Stillness. Transmute raw urge energy into willpower and focus.' },
+  { label: 'EXHALE', sub: 'Release all tension', duration: 6000, color: '#10B981', tip: 'Controlled, smooth exhale through the mouth. Ground your energy.' },
 ];
+
+interface FloatingRune {
+  id: string;
+  text: string;
+  color: string;
+  animY: Animated.Value;
+  animOpacity: Animated.Value;
+  animScale: Animated.Value;
+  xOffset: number;
+}
 
 export default function SpartanBattlefieldScreen() {
   const router = useRouter();
@@ -50,15 +72,15 @@ export default function SpartanBattlefieldScreen() {
 
   const [secondsLeft, setSecondsLeft] = useState<number>(90);
   const [phaseIndex, setPhaseIndex] = useState<number>(0);
+  const [phaseSecondsRemaining, setPhaseSecondsRemaining] = useState<number>(4);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
   const [isInitiating, setIsInitiating] = useState<boolean>(false);
+  const [floatingRunes, setFloatingRunes] = useState<FloatingRune[]>([]);
 
-  // Dynamic Animations
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const outerRingAnim = useRef(new Animated.Value(1)).current;
-  const glowAnim = useRef(new Animated.Value(0.35)).current;
+  // Smooth Animations
   const victoryScale = useRef(new Animated.Value(0.8)).current;
   const timerRef = useRef<any>(null);
+  const phaseTimerRef = useRef<any>(null);
   const pollRef = useRef<any>(null);
 
   const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
@@ -105,10 +127,11 @@ export default function SpartanBattlefieldScreen() {
       isMounted = false;
       if (pollRef.current) clearInterval(pollRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
+      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
     };
   }, []);
 
-  // Countdown Timer
+  // Simple, Rock-Solid 90s Countdown Timer
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setSecondsLeft((prev) => {
@@ -136,7 +159,7 @@ export default function SpartanBattlefieldScreen() {
     };
   }, [activeBattle?.id]);
 
-  // Synchronized Diaphragmatic Breath Resonance Loop
+  // Synchronized Diaphragmatic Breath Phase Loop
   useEffect(() => {
     let isCancelled = false;
 
@@ -144,43 +167,81 @@ export default function SpartanBattlefieldScreen() {
       if (isCancelled || isCompleted) return;
       const phase = BREATH_PHASES[idx];
       setPhaseIndex(idx);
+      const phaseDurationSec = Math.round(phase.duration / 1000);
+      setPhaseSecondsRemaining(phaseDurationSec);
       triggerHaptic('light');
 
-      Animated.parallel([
-        Animated.timing(pulseAnim, {
-          toValue: phase.targetScale,
-          duration: phase.duration,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(outerRingAnim, {
-          toValue: phase.targetScale * 1.15,
-          duration: phase.duration,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: idx === 1 ? 0.95 : 0.45,
-          duration: phase.duration,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
+      let currentSec = phaseDurationSec;
+      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
+      phaseTimerRef.current = setInterval(() => {
+        currentSec -= 1;
+        if (currentSec >= 0) {
+          setPhaseSecondsRemaining(currentSec);
+        }
+      }, 1000);
+
+      setTimeout(() => {
+        if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
         if (!isCancelled && !isCompleted) {
           runBreathPhase((idx + 1) % BREATH_PHASES.length);
         }
-      });
+      }, phase.duration);
     }
 
     runBreathPhase(0);
 
     return () => {
       isCancelled = true;
+      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
     };
   }, [isCompleted]);
 
-  const handleSendRune = async (runeText: string) => {
+  // Spawn Twitch/Live-Stream Floating Reaction Rune
+  const handleSendRune = async (runeText: string, color: string) => {
     triggerHaptic('medium');
+
+    const runeId = `${Date.now()}-${Math.random()}`;
+    const animY = new Animated.Value(0);
+    const animOpacity = new Animated.Value(1);
+    const animScale = new Animated.Value(0.7);
+    const xOffset = Math.floor(Math.random() * 180) - 90;
+
+    const newFloatingRune: FloatingRune = {
+      id: runeId,
+      text: runeText,
+      color,
+      animY,
+      animOpacity,
+      animScale,
+      xOffset,
+    };
+
+    setFloatingRunes((prev) => [...prev, newFloatingRune]);
+
+    Animated.parallel([
+      Animated.timing(animY, {
+        toValue: -260,
+        duration: 1700,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.spring(animScale, {
+        toValue: 1.15,
+        friction: 4,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.delay(1000),
+        Animated.timing(animOpacity, {
+          toValue: 0,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start(() => {
+      setFloatingRunes((prev) => prev.filter((r) => r.id !== runeId));
+    });
+
     if (activeBattle?.id) {
       await sendReactionRune(activeBattle.id, runeText);
     }
@@ -189,6 +250,10 @@ export default function SpartanBattlefieldScreen() {
   const currentPhase = BREATH_PHASES[phaseIndex];
   const participantCount = activeBattle?.participant_count || 1;
   const initiatorName = activeBattle?.initiator_name || 'Brother Warrior';
+
+  // SVG Progress calculation
+  const progressRatio = Math.max(0, Math.min(1, secondsLeft / TOTAL_SESSION_SECONDS));
+  const strokeDashoffset = CIRCUMFERENCE * (1 - progressRatio);
 
   return (
     <View style={styles.container}>
@@ -209,15 +274,12 @@ export default function SpartanBattlefieldScreen() {
           <View style={styles.headerTitleGroup}>
             <View style={styles.liveBadgeRow}>
               <View style={styles.liveDot} />
-              <ThemedText style={styles.liveBadgeText}>90s SHIELD ROOM ACTIVE</ThemedText>
+              <ThemedText style={styles.liveBadgeText}>90s SHIELD WALL ACTIVE</ThemedText>
             </View>
             <ThemedText style={styles.headerTitle}>Spartan Battlefield</ThemedText>
           </View>
 
-          <View style={styles.honorBadge}>
-            <Ionicons name="shield" size={13} color="#F59E0B" />
-            <ThemedText style={styles.honorBadgeText}>+25 XP</ThemedText>
-          </View>
+          <View style={{ width: 38 }} />
         </View>
 
         {isInitiating ? (
@@ -231,7 +293,7 @@ export default function SpartanBattlefieldScreen() {
             contentContainerStyle={styles.scrollInner}
             showsVerticalScrollIndicator={false}
           >
-            {/* Initiator Live Alert Card */}
+            {/* Initiator Banner Alert */}
             <View style={styles.initiatorCard}>
               <View style={styles.initiatorLeftGlow}>
                 <ThemedText style={{ fontSize: 22 }}>⚔️</ThemedText>
@@ -241,50 +303,97 @@ export default function SpartanBattlefieldScreen() {
                   Brother {initiatorName} sounded the Horn
                 </ThemedText>
                 <ThemedText style={styles.initiatorSub}>
-                  {participantCount} {participantCount === 1 ? 'Spartan stands' : 'Spartans stand'} locked in synchronous diaphragmatic breathing.
+                  {participantCount} {participantCount === 1 ? 'Spartan standing' : 'Spartans standing'} united against the urge wave in synchronous breath.
                 </ThemedText>
               </View>
             </View>
 
-            {/* Central Synchronized Resonance Core */}
+            {/* Simple, Clean, High-Contrast SVG Countdown Ring */}
             <View style={styles.centerStage}>
-              {/* Outer Atmospheric Aura */}
-              <Animated.View
-                style={[
-                  styles.outerAtmosphere,
-                  {
-                    opacity: glowAnim,
-                    transform: [{ scale: outerRingAnim }],
-                  },
-                ]}
-              />
+              <View style={styles.svgWrapper}>
+                <Svg width={CIRCLE_SIZE} height={CIRCLE_SIZE} viewBox={`0 0 ${CIRCLE_SIZE} ${CIRCLE_SIZE}`}>
+                  <Defs>
+                    <SvgLinearGradient id="timerGrad" x1="0" y1="0" x2="1" y2="1">
+                      <Stop offset="0%" stopColor="#00E5FF" />
+                      <Stop offset="50%" stopColor={currentPhase.color} />
+                      <Stop offset="100%" stopColor="#10B981" />
+                    </SvgLinearGradient>
+                  </Defs>
 
-              {/* Inner Breath Resonance Ring */}
-              <Animated.View
-                style={[
-                  styles.breathCircle,
-                  {
-                    borderColor: currentPhase.color,
-                    shadowColor: currentPhase.color,
-                    transform: [{ scale: pulseAnim }],
-                  },
-                ]}
-              >
-                <ThemedText style={styles.timerNumber}>{secondsLeft}s</ThemedText>
-                <ThemedText style={[styles.phaseLabelText, { color: currentPhase.color }]}>
-                  {currentPhase.label}
-                </ThemedText>
-                <ThemedText style={styles.phaseSubText}>{currentPhase.sub}</ThemedText>
-              </Animated.View>
+                  {/* Track Circle */}
+                  <Circle
+                    cx={CIRCLE_SIZE / 2}
+                    cy={CIRCLE_SIZE / 2}
+                    r={RADIUS}
+                    stroke="rgba(255, 255, 255, 0.07)"
+                    strokeWidth={STROKE_WIDTH}
+                    fill="#070C16"
+                  />
+
+                  {/* Animated Progress Ring */}
+                  <Circle
+                    cx={CIRCLE_SIZE / 2}
+                    cy={CIRCLE_SIZE / 2}
+                    r={RADIUS}
+                    stroke="url(#timerGrad)"
+                    strokeWidth={STROKE_WIDTH}
+                    fill="transparent"
+                    strokeDasharray={`${CIRCUMFERENCE} ${CIRCUMFERENCE}`}
+                    strokeDashoffset={strokeDashoffset}
+                    strokeLinecap="round"
+                    transform={`rotate(-90 ${CIRCLE_SIZE / 2} ${CIRCLE_SIZE / 2})`}
+                  />
+                </Svg>
+
+                {/* Central Numbers Content */}
+                <View style={styles.timerCenterContent}>
+                  <View style={styles.timerNumberRow}>
+                    <Text style={styles.timerBigNumber}>{secondsLeft}</Text>
+                    <Text style={styles.timerUnitText}>s</Text>
+                  </View>
+
+                  {/* Phase Pill */}
+                  <View style={[styles.phasePill, { backgroundColor: currentPhase.color + '22', borderColor: currentPhase.color }]}>
+                    <Text style={[styles.phasePillText, { color: currentPhase.color }]}>
+                      {currentPhase.label} • {phaseSecondsRemaining}s
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Floating Real-Time Reaction Runes */}
+              {floatingRunes.map((rune) => (
+                <Animated.View
+                  key={rune.id}
+                  style={[
+                    styles.floatingRuneContainer,
+                    {
+                      transform: [
+                        { translateX: rune.xOffset },
+                        { translateY: rune.animY },
+                        { scale: rune.animScale },
+                      ],
+                      opacity: rune.animOpacity,
+                    },
+                  ]}
+                  pointerEvents="none"
+                >
+                  <View style={[styles.floatingRuneBubble, { borderColor: rune.color }]}>
+                    <Text style={[styles.floatingRuneText, { color: rune.color }]}>
+                      {rune.text}
+                    </Text>
+                  </View>
+                </Animated.View>
+              ))}
             </View>
 
-            {/* Dynamic Neuro-Reset Tip */}
-            <View style={styles.guidanceBox}>
-              <Ionicons name="sparkles" size={14} color={currentPhase.color} style={{ marginRight: 8 }} />
+            {/* Dynamic Neuro-Reset Tip Banner */}
+            <View style={[styles.guidanceBox, { borderColor: currentPhase.color + '35' }]}>
+              <Ionicons name="sparkles" size={15} color={currentPhase.color} style={{ marginRight: 8 }} />
               <ThemedText style={styles.guidanceTip}>{currentPhase.tip}</ThemedText>
             </View>
 
-            {/* Shield Brothers Online Strip with Full Names */}
+            {/* Shield Brothers Standing Live Strip */}
             <View style={styles.warriorsSection}>
               <View style={styles.sectionTitleRow}>
                 <Ionicons name="shield-checkmark-outline" size={14} color="#00E5FF" />
@@ -320,34 +429,37 @@ export default function SpartanBattlefieldScreen() {
               </ScrollView>
             </View>
 
-            {/* 1-Tap Reaction Runes Grid */}
+            {/* Brotherhood Reaction Runes Grid (11+ Reactions) */}
             <View style={styles.runesSection}>
-              <ThemedText style={styles.runesTitle}>BROTHERHOOD REACTION RUNES (1-TAP)</ThemedText>
+              <View style={styles.runesHeaderRow}>
+                <Ionicons name="flash-outline" size={14} color="#F59E0B" />
+                <ThemedText style={styles.runesTitle}>BROTHERHOOD RUNES (1-TAP BURST)</ThemedText>
+              </View>
               <View style={styles.runesGrid}>
                 {REACTION_RUNES.map((rune) => (
                   <TouchableOpacity
                     key={rune.id}
                     style={[styles.runeButton, { backgroundColor: rune.bg, borderColor: rune.color }]}
-                    activeOpacity={0.7}
-                    onPress={() => handleSendRune(rune.text)}
+                    activeOpacity={0.65}
+                    onPress={() => handleSendRune(rune.text, rune.color)}
                   >
                     <Ionicons name={rune.icon as any} size={15} color={rune.color} />
-                    <ThemedText style={[styles.runeButtonText, { color: rune.color }]}>
+                    <Text style={[styles.runeButtonText, { color: rune.color }]}>
                       {rune.text}
-                    </ThemedText>
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            {/* Live Incoming War Room Log Stream */}
+            {/* Live Incoming Tactical War Room Feed */}
             {activeBattle?.reactions && activeBattle.reactions.length > 0 && (
               <View style={styles.streamSection}>
-                <ThemedText style={styles.streamTitle}>TACTICAL WAR ROOM STREAM</ThemedText>
+                <ThemedText style={styles.streamTitle}>TACTICAL WAR ROOM FEED</ThemedText>
                 <View style={styles.streamList}>
-                  {activeBattle.reactions.slice(-4).map((r, i) => (
+                  {activeBattle.reactions.slice(-5).map((r, i) => (
                     <View key={i} style={styles.streamItem}>
-                      <Ionicons name="flash" size={13} color="#F59E0B" style={{ marginRight: 7 }} />
+                      <Ionicons name="flash" size={12} color="#F59E0B" style={{ marginRight: 6 }} />
                       <ThemedText style={styles.streamText}>
                         <ThemedText style={styles.streamAuthor}>{r.user_name}: </ThemedText>
                         {r.rune}
@@ -367,14 +479,14 @@ export default function SpartanBattlefieldScreen() {
           <View style={styles.victoryOverlay}>
             <Animated.View style={[styles.victoryCard, { transform: [{ scale: victoryScale }] }]}>
               <View style={styles.victoryTrophyCircle}>
-                <ThemedText style={{ fontSize: 42 }}>🏆</ThemedText>
+                <ThemedText style={{ fontSize: 44 }}>🏆</ThemedText>
               </View>
               <ThemedText style={styles.victoryTitle}>THE SHIELD WALL HELD!</ThemedText>
               <ThemedText style={styles.victoryBody}>
-                You stood shoulder-to-shoulder with your brothers for 90 full seconds. The urge wave is conquered.
+                You stood shoulder-to-shoulder with your brothers for 90 full seconds. The urge wave is transmuted into pure sovereignty.
               </ThemedText>
               <View style={styles.victoryRewardBadge}>
-                <Ionicons name="shield-checkmark" size={16} color="#F59E0B" style={{ marginRight: 6 }} />
+                <Ionicons name="shield-checkmark" size={17} color="#F59E0B" style={{ marginRight: 6 }} />
                 <ThemedText style={styles.victoryRewardText}>+25 Brotherhood Honor Points Awarded</ThemedText>
               </View>
 
@@ -456,22 +568,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: -0.2,
   },
-  honorBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.35)',
-  },
-  honorBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#F59E0B',
-    marginLeft: 4,
-  },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
@@ -488,17 +584,17 @@ const styles = StyleSheet.create({
   },
   scrollInner: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 12,
   },
   initiatorCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.25)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     borderRadius: 16,
-    padding: 13,
-    marginBottom: 16,
+    padding: 12,
+    marginBottom: 12,
     gap: 12,
   },
   initiatorLeftGlow: {
@@ -508,88 +604,117 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
   },
   initiatorTextWrapper: {
     flex: 1,
   },
   initiatorHeadline: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 2,
   },
   initiatorSub: {
-    fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.65)',
-    lineHeight: 16,
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: 15,
   },
   centerStage: {
     alignItems: 'center',
     justifyContent: 'center',
-    height: 250,
+    height: 210,
     position: 'relative',
     marginVertical: 4,
   },
-  outerAtmosphere: {
-    position: 'absolute',
-    width: 230,
-    height: 230,
-    borderRadius: 115,
-    backgroundColor: 'rgba(0, 229, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.2)',
-  },
-  breathCircle: {
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: '#070C16',
-    borderWidth: 2.5,
+  svgWrapper: {
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
+    position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 18,
-    elevation: 8,
   },
-  timerNumber: {
-    fontSize: 42,
+  timerCenterContent: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  timerNumberRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  timerBigNumber: {
+    fontSize: 52,
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: -1,
+    lineHeight: 56,
   },
-  phaseLabelText: {
-    fontSize: 13,
+  timerUnitText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#00E5FF',
+    marginLeft: 2,
+    marginBottom: 6,
+  },
+  phasePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  phasePillText: {
+    fontSize: 11.5,
     fontWeight: '900',
-    letterSpacing: 1.2,
-    marginTop: 2,
+    letterSpacing: 0.8,
   },
-  phaseSubText: {
-    fontSize: 9.5,
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontWeight: '600',
-    marginTop: 2,
+  floatingRuneContainer: {
+    position: 'absolute',
+    bottom: 30,
+    alignSelf: 'center',
+    zIndex: 100,
+  },
+  floatingRuneBubble: {
+    backgroundColor: 'rgba(10, 16, 28, 0.94)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  floatingRuneText: {
+    fontSize: 12.5,
+    fontWeight: '900',
   },
   guidanceBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   guidanceTip: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontWeight: '600',
     textAlign: 'center',
+    flex: 1,
   },
   warriorsSection: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   sectionTitleRow: {
     flexDirection: 'row',
@@ -618,8 +743,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   warriorPillSelf: {
-    borderColor: 'rgba(0, 229, 255, 0.35)',
-    backgroundColor: 'rgba(0, 229, 255, 0.05)',
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    backgroundColor: 'rgba(0, 229, 255, 0.06)',
   },
   warriorAvatar: {
     width: 28,
@@ -658,14 +783,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   runesSection: {
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  runesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 10,
   },
   runesTitle: {
     fontSize: 10.5,
     fontWeight: '800',
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: 'rgba(255, 255, 255, 0.6)',
     letterSpacing: 0.8,
-    marginBottom: 10,
   },
   runesGrid: {
     flexDirection: 'row',
@@ -678,7 +808,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 12,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.2,
     gap: 6,
   },
   runeButtonText: {
@@ -741,9 +871,9 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   victoryTrophyCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',

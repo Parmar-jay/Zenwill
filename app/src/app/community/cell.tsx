@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,66 @@ import {
   ActivityIndicator,
   Platform,
   Share,
+  Dimensions,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData } from '../../services/spartan-api';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const MOTTO_PRESETS = [
+  'We hold the line together.',
+  'Iron will, sovereign mind.',
+  'Brotherhood over impulse.',
+  'Unconquered in the storm.',
+  'Transmute desire into power.',
+];
+
+// Vector Spartan Shield Graphic (Cross-platform consistent, never clipped)
+const SpartanShieldVector = ({ size = 64, color = '#00E5FF' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+    <Defs>
+      <SvgLinearGradient id="shieldGrad" x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0%" stopColor={color} stopOpacity="0.3" />
+        <Stop offset="100%" stopColor={color} stopOpacity="0.05" />
+      </SvgLinearGradient>
+      <SvgLinearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+        <Stop offset="0%" stopColor="#F59E0B" />
+        <Stop offset="100%" stopColor="#D97706" />
+      </SvgLinearGradient>
+    </Defs>
+    {/* Shield Outer Rim */}
+    <Path
+      d="M32 4L10 14V30C10 44.5 19.5 56 32 60C44.5 56 54 44.5 54 30V14L32 4Z"
+      fill="url(#shieldGrad)"
+      stroke={color}
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    {/* Inner Spartan Lambda / Chevron */}
+    <Path
+      d="M23 40L32 20L41 40"
+      stroke={color}
+      strokeWidth="3.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M26 34H38"
+      stroke={color}
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    />
+  </Svg>
+);
 
 export default function SpartanCellScreen() {
   const router = useRouter();
@@ -34,16 +85,27 @@ export default function SpartanCellScreen() {
     createCell,
     joinCell,
     leaveCell,
+    deleteCell,
     nudgeMember,
   } = useSpartanStore();
 
   const [isCreateModalVisible, setIsCreateModalVisible] = useState<boolean>(false);
   const [isJoinModalVisible, setIsJoinModalVisible] = useState<boolean>(false);
   const [newCellName, setNewCellName] = useState<string>('');
-  const [newCellMotto, setNewCellMotto] = useState<string>('We hold the line together.');
+  const [newCellMotto, setNewCellMotto] = useState<string>(MOTTO_PRESETS[0]);
   const [joinCodeInput, setJoinCodeInput] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [nudgeNotice, setNudgeNotice] = useState<string | null>(null);
+
+  const [customDialog, setCustomDialog] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'danger' | 'info';
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+  } | null>(null);
 
   const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
     try {
@@ -70,9 +132,21 @@ export default function SpartanCellScreen() {
     }, [loadData])
   );
 
+  const isLeader = useMemo(() => {
+    if (!myCell || !user) return false;
+    const userIdStr = String(user.id || '');
+    return myCell.leader_id === userIdStr || myCell.leader_id === user.email;
+  }, [myCell, user]);
+
   const handleCreateCell = async () => {
     if (!newCellName.trim() || newCellName.trim().length < 3) {
-      Alert.alert('Invalid Name', 'Cell name must be at least 3 characters.');
+      setCustomDialog({
+        visible: true,
+        title: 'Invalid Squad Name',
+        message: 'Cell name must be at least 3 characters.',
+        type: 'info',
+        confirmText: 'Got It',
+      });
       return;
     }
     triggerHaptic('medium');
@@ -81,9 +155,21 @@ export default function SpartanCellScreen() {
       await createCell(newCellName.trim(), newCellMotto.trim());
       setIsCreateModalVisible(false);
       setNewCellName('');
-      Alert.alert('Spartan Cell Established', 'Your squad has been created. Share your join code with fellow warriors!');
+      setCustomDialog({
+        visible: true,
+        title: 'Spartan Cell Established',
+        message: 'Your squad has been created. Share your join code with fellow warriors to start building your collective shield!',
+        type: 'success',
+        confirmText: 'Enter Shield Wall',
+      });
     } catch (err: any) {
-      Alert.alert('Creation Failed', err?.response?.data?.detail || 'Could not establish cell.');
+      setCustomDialog({
+        visible: true,
+        title: 'Creation Failed',
+        message: err?.response?.data?.detail || 'Could not establish cell.',
+        type: 'danger',
+        confirmText: 'Dismiss',
+      });
     } finally {
       setActionLoading(false);
     }
@@ -92,7 +178,13 @@ export default function SpartanCellScreen() {
   const handleJoinCell = async (codeToJoin?: string) => {
     const code = codeToJoin || joinCodeInput;
     if (!code || code.trim().length < 4) {
-      Alert.alert('Invalid Code', 'Please enter a valid Spartan Cell join code.');
+      setCustomDialog({
+        visible: true,
+        title: 'Invalid Code',
+        message: 'Please enter a valid Spartan Cell join code.',
+        type: 'info',
+        confirmText: 'Understood',
+      });
       return;
     }
     triggerHaptic('medium');
@@ -101,38 +193,84 @@ export default function SpartanCellScreen() {
       await joinCell(code.trim());
       setIsJoinModalVisible(false);
       setJoinCodeInput('');
-      Alert.alert('Shield Wall Joined', 'You are now an active warrior of this Spartan Cell!');
+      setCustomDialog({
+        visible: true,
+        title: 'Shield Wall Joined',
+        message: 'You are now an active warrior of this Spartan Cell! Your daily streak now reinforces your brothers.',
+        type: 'success',
+        confirmText: 'Stand with Squad',
+      });
     } catch (err: any) {
-      Alert.alert('Join Failed', err?.response?.data?.detail || 'Invalid cell code.');
+      setCustomDialog({
+        visible: true,
+        title: 'Join Failed',
+        message: err?.response?.data?.detail || 'Invalid or expired cell code.',
+        type: 'danger',
+        confirmText: 'Dismiss',
+      });
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleLeaveCell = () => {
-    Alert.alert(
-      'Depart Spartan Cell',
-      'Are you sure you want to leave your squad? Your streak will no longer contribute to the collective total.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            triggerHaptic('heavy');
-            setActionLoading(true);
-            try {
-              await leaveCell();
-              await fetchPublicCells();
-            } catch (err: any) {
-              Alert.alert('Error', 'Could not depart cell.');
-            } finally {
-              setActionLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    setCustomDialog({
+      visible: true,
+      title: 'Depart Spartan Cell',
+      message: 'Are you sure you want to leave your squad? Your streak will no longer contribute to the collective total.',
+      type: 'danger',
+      confirmText: 'Depart',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        triggerHaptic('heavy');
+        setActionLoading(true);
+        try {
+          await leaveCell();
+          await fetchPublicCells();
+        } catch (err: any) {
+          // silent fallback
+        } finally {
+          setActionLoading(false);
+          setCustomDialog(null);
+        }
+      },
+    });
+  };
+
+  const handleDeleteCell = () => {
+    setCustomDialog({
+      visible: true,
+      title: 'Disband Spartan Cell',
+      message: 'As Commander, permanently disbanding this cell will delete it from the leaderboard and release all 20 member slots. This action cannot be undone.',
+      type: 'danger',
+      confirmText: 'Disband & Delete',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        triggerHaptic('heavy');
+        setActionLoading(true);
+        try {
+          await deleteCell();
+          await fetchPublicCells();
+          setCustomDialog({
+            visible: true,
+            title: 'Cell Disbanded',
+            message: 'The Spartan Cell has been dissolved.',
+            type: 'info',
+            confirmText: 'OK',
+          });
+        } catch (err: any) {
+          setCustomDialog({
+            visible: true,
+            title: 'Error',
+            message: err?.response?.data?.detail || 'Could not disband cell.',
+            type: 'danger',
+            confirmText: 'Dismiss',
+          });
+        } finally {
+          setActionLoading(false);
+        }
+      },
+    });
   };
 
   const handleNudge = async (member: CellMemberItem) => {
@@ -208,10 +346,17 @@ export default function SpartanCellScreen() {
             <View style={styles.cellHeroCard}>
               <View style={styles.cellHeroHeader}>
                 <View style={styles.cellBadgeIcon}>
-                  <ThemedText style={styles.cellBadgeEmoji}>🛡️</ThemedText>
+                  <SpartanShieldVector size={36} color="#00E5FF" />
                 </View>
                 <View style={styles.cellNameGroup}>
-                  <ThemedText style={styles.cellNameText}>{myCell.name}</ThemedText>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <ThemedText style={styles.cellNameText}>{myCell.name}</ThemedText>
+                    {isLeader && (
+                      <View style={styles.commanderBadge}>
+                        <ThemedText style={styles.commanderBadgeText}>COMMANDER</ThemedText>
+                      </View>
+                    )}
+                  </View>
                   <ThemedText style={styles.cellMottoText}>{myCell.motto}</ThemedText>
                 </View>
               </View>
@@ -359,53 +504,88 @@ export default function SpartanCellScreen() {
               </View>
             </View>
 
-            {/* Depart Spartan Cell */}
-            <TouchableOpacity
-              style={styles.leaveBtn}
-              activeOpacity={0.7}
-              onPress={handleLeaveCell}
-              disabled={actionLoading}
-            >
-              <Ionicons name="exit-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
-              <ThemedText style={styles.leaveBtnText}>Depart Spartan Cell</ThemedText>
-            </TouchableOpacity>
+            {/* Action Buttons: Leader Disband vs Member Depart */}
+            <View style={styles.cellFooterActions}>
+              {isLeader ? (
+                <TouchableOpacity
+                  style={styles.disbandBtn}
+                  activeOpacity={0.7}
+                  onPress={handleDeleteCell}
+                  disabled={actionLoading}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
+                  <ThemedText style={styles.disbandBtnText}>Disband Spartan Cell (Commander)</ThemedText>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.leaveBtn}
+                  activeOpacity={0.7}
+                  onPress={handleLeaveCell}
+                  disabled={actionLoading}
+                >
+                  <Ionicons name="exit-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
+                  <ThemedText style={styles.leaveBtnText}>Depart Spartan Cell</ThemedText>
+                </TouchableOpacity>
+              )}
+            </View>
 
             <View style={{ height: 40 }} />
           </ScrollView>
         ) : (
-          /* ── UNAFFILIATED: CREATE OR JOIN A CELL ── */
+          /* ── UNAFFILIATED: EPIC SPARTAN CELL ESTABLISHMENT VIEW ── */
           <ScrollView
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollInner}
             showsVerticalScrollIndicator={false}
           >
-            {/* Intro Hero Card */}
+            {/* Ultra-Polished Holographic Crest Hero */}
             <View style={styles.unaffiliatedHero}>
-              <View style={styles.shieldBigIcon}>
-                <ThemedText style={{ fontSize: 44 }}>🛡️</ThemedText>
+              {/* Outer Glowing Radial Aura */}
+              <View style={styles.crestAura}>
+                <View style={styles.shieldGlowCircle}>
+                  <SpartanShieldVector size={58} color="#00E5FF" />
+                </View>
               </View>
-              <ThemedText style={styles.unaffiliatedTitle}>JOIN A 5-20 MAN SPARTAN CELL</ThemedText>
+
+              <ThemedText style={styles.unaffiliatedCategory}>SQUAD SHARED STAKES</ThemedText>
+              <ThemedText style={styles.unaffiliatedTitle}>5–20 Man Spartan Cells</ThemedText>
               <ThemedText style={styles.unaffiliatedBody}>
-                Solitary battles fail in secrecy. In a Spartan Cell, your streak is pooled with your brothers. If 100% of warriors check in daily, your squad earns the Gold Shield (+20% XP boost).
+                Solitary battles fail in secrecy. In a Spartan Cell, individual streaks are pooled into a collective squad shield. If 100% of brothers check in daily, your squad unlocks the Gold Shield (+20% XP boost).
               </ThemedText>
 
-              {/* Action Buttons */}
+              {/* Value Pillar Badges */}
+              <View style={styles.pillarRow}>
+                <View style={styles.pillarBadge}>
+                  <Ionicons name="flash" size={13} color="#F59E0B" />
+                  <ThemedText style={styles.pillarText}>Pooled Streak</ThemedText>
+                </View>
+                <View style={styles.pillarBadge}>
+                  <Ionicons name="shield-checkmark" size={13} color="#00E5FF" />
+                  <ThemedText style={styles.pillarText}>Gold Shield</ThemedText>
+                </View>
+                <View style={styles.pillarBadge}>
+                  <Ionicons name="people" size={13} color="#10B981" />
+                  <ThemedText style={styles.pillarText}>20 Warriors</ThemedText>
+                </View>
+              </View>
+
+              {/* Hero Action Buttons */}
               <View style={styles.heroActionRow}>
                 <TouchableOpacity
                   style={styles.createCellBtn}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                   onPress={() => {
                     triggerHaptic('medium');
                     setIsCreateModalVisible(true);
                   }}
                 >
-                  <Ionicons name="add-circle" size={18} color="#000000" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.createCellBtnText}>Create New Cell</ThemedText>
+                  <Ionicons name="add-circle" size={19} color="#000000" style={{ marginRight: 6 }} />
+                  <ThemedText style={styles.createCellBtnText}>Establish New Cell</ThemedText>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.joinWithCodeBtn}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                   onPress={() => {
                     triggerHaptic('light');
                     setIsJoinModalVisible(true);
@@ -419,10 +599,14 @@ export default function SpartanCellScreen() {
 
             {/* Public Open Cells List */}
             <View style={styles.publicSection}>
-              <ThemedText style={styles.publicSectionTitle}>OPEN SPARTAN CELLS RECRUITING</ThemedText>
+              <View style={styles.publicHeaderRow}>
+                <Ionicons name="globe-outline" size={14} color="#00E5FF" />
+                <ThemedText style={styles.publicSectionTitle}>OPEN SPARTAN CELLS RECRUITING</ThemedText>
+              </View>
 
               {publicCells.length === 0 ? (
                 <View style={styles.emptyPublicCard}>
+                  <Ionicons name="shield-outline" size={32} color="#334155" style={{ marginBottom: 8 }} />
                   <ThemedText style={styles.emptyPublicText}>
                     No open cells looking for warriors right now. Be the Commander to establish a new cell!
                   </ThemedText>
@@ -442,7 +626,7 @@ export default function SpartanCellScreen() {
 
                     <View style={styles.publicCellFooter}>
                       <ThemedText style={styles.publicMembersCount}>
-                        {cell.member_count}/{cell.max_members} Warriors
+                        {cell.member_count}/{cell.max_members} Warriors • Commander: {cell.leader_name}
                       </ThemedText>
 
                       <TouchableOpacity
@@ -463,7 +647,7 @@ export default function SpartanCellScreen() {
           </ScrollView>
         )}
 
-        {/* Modal: Create Cell */}
+        {/* Modal: Establish Spartan Cell */}
         <Modal
           visible={isCreateModalVisible}
           transparent
@@ -473,13 +657,16 @@ export default function SpartanCellScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
               <View style={styles.modalHeaderRow}>
-                <ThemedText style={styles.modalTitle}>Establish Spartan Cell</ThemedText>
-                <TouchableOpacity onPress={() => setIsCreateModalVisible(false)}>
-                  <Ionicons name="close" size={22} color="#94A3B8" />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <SpartanShieldVector size={26} color="#00E5FF" />
+                  <ThemedText style={styles.modalTitle}>Establish Spartan Cell</ThemedText>
+                </View>
+                <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.modalCloseBtn}>
+                  <Ionicons name="close" size={20} color="#94A3B8" />
                 </TouchableOpacity>
               </View>
 
-              <ThemedText style={styles.inputLabel}>CELL NAME</ThemedText>
+              <ThemedText style={styles.inputLabel}>SQUAD NAME</ThemedText>
               <TextInput
                 style={styles.textInput}
                 placeholder="e.g. Iron Phalanx, Ojas Vanguard"
@@ -489,7 +676,7 @@ export default function SpartanCellScreen() {
                 maxLength={40}
               />
 
-              <ThemedText style={styles.inputLabel}>BATTLE MOTTO</ThemedText>
+              <ThemedText style={styles.inputLabel}>CHOOSE BATTLE MOTTO</ThemedText>
               <TextInput
                 style={styles.textInput}
                 placeholder="e.g. We hold the line together."
@@ -498,6 +685,25 @@ export default function SpartanCellScreen() {
                 onChangeText={setNewCellMotto}
                 maxLength={80}
               />
+
+              {/* Quick Motto Presets */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mottoPresetRow}>
+                {MOTTO_PRESETS.map((motto, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.mottoPill, newCellMotto === motto && styles.mottoPillActive]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setNewCellMotto(motto);
+                    }}
+                  >
+                    <ThemedText style={[styles.mottoPillText, newCellMotto === motto && styles.mottoPillTextActive]}>
+                      {motto}
+                    </ThemedText>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
 
               <TouchableOpacity
                 style={styles.submitModalBtn}
@@ -508,7 +714,7 @@ export default function SpartanCellScreen() {
                 {actionLoading ? (
                   <ActivityIndicator color="#000000" />
                 ) : (
-                  <ThemedText style={styles.submitModalBtnText}>Establish Cell</ThemedText>
+                  <ThemedText style={styles.submitModalBtnText}>Establish & Become Commander</ThemedText>
                 )}
               </TouchableOpacity>
             </View>
@@ -525,15 +731,18 @@ export default function SpartanCellScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
               <View style={styles.modalHeaderRow}>
-                <ThemedText style={styles.modalTitle}>Join Spartan Cell</ThemedText>
-                <TouchableOpacity onPress={() => setIsJoinModalVisible(false)}>
-                  <Ionicons name="close" size={22} color="#94A3B8" />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="key" size={20} color="#00E5FF" />
+                  <ThemedText style={styles.modalTitle}>Join Spartan Cell</ThemedText>
+                </View>
+                <TouchableOpacity onPress={() => setIsJoinModalVisible(false)} style={styles.modalCloseBtn}>
+                  <Ionicons name="close" size={20} color="#94A3B8" />
                 </TouchableOpacity>
               </View>
 
               <ThemedText style={styles.inputLabel}>ENTER SQUAD JOIN CODE</ThemedText>
               <TextInput
-                style={[styles.textInput, { textTransform: 'uppercase', letterSpacing: 2, fontSize: 18, textAlign: 'center' }]}
+                style={[styles.textInput, styles.joinCodeInput]}
                 placeholder="SP-XXXX"
                 placeholderTextColor="#64748B"
                 value={joinCodeInput}
@@ -549,7 +758,7 @@ export default function SpartanCellScreen() {
                 disabled={actionLoading}
               >
                 {actionLoading ? (
-                  <ActivityIndicator color="#000000" />
+                  <ActivityIndicator color="#00E5FF" />
                 ) : (
                   <ThemedText style={styles.submitModalBtnText}>Join Shield Wall</ThemedText>
                 )}
@@ -557,6 +766,63 @@ export default function SpartanCellScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* Custom Glassmorphic Dark Dialog (Replaces white system Alert) */}
+        {customDialog && customDialog.visible && (
+          <Modal
+            visible={customDialog.visible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setCustomDialog(null)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.dialogCard, customDialog.type === 'danger' && styles.dialogCardDanger]}>
+                <View style={[styles.dialogIconCircle, customDialog.type === 'danger' ? styles.dialogIconCircleDanger : styles.dialogIconCircleCyan]}>
+                  <Ionicons
+                    name={customDialog.type === 'danger' ? 'warning' : customDialog.type === 'success' ? 'shield-checkmark' : 'information-circle'}
+                    size={28}
+                    color={customDialog.type === 'danger' ? '#EF4444' : customDialog.type === 'success' ? '#10B981' : '#00E5FF'}
+                  />
+                </View>
+                <ThemedText style={styles.dialogTitle}>{customDialog.title}</ThemedText>
+                <ThemedText style={styles.dialogMessage}>{customDialog.message}</ThemedText>
+
+                <View style={styles.dialogBtnRow}>
+                  {customDialog.cancelText && (
+                    <TouchableOpacity
+                      style={styles.dialogCancelBtn}
+                      activeOpacity={0.7}
+                      onPress={() => setCustomDialog(null)}
+                    >
+                      <ThemedText style={styles.dialogCancelText}>{customDialog.cancelText}</ThemedText>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[
+                      styles.dialogConfirmBtn,
+                      customDialog.type === 'danger' && { backgroundColor: '#EF4444' }
+                    ]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      if (customDialog.onConfirm) {
+                        customDialog.onConfirm();
+                      } else {
+                        setCustomDialog(null);
+                      }
+                    }}
+                  >
+                    <ThemedText style={[
+                      styles.dialogConfirmText,
+                      customDialog.type === 'danger' && { color: '#FFFFFF' }
+                    ]}>
+                      {customDialog.confirmText || 'OK'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -651,14 +917,11 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderColor: 'rgba(0, 229, 255, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  cellBadgeEmoji: {
-    fontSize: 22,
   },
   cellNameGroup: {
     flex: 1,
@@ -667,13 +930,27 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '900',
     color: '#FFFFFF',
-    marginBottom: 2,
     letterSpacing: -0.3,
+  },
+  commanderBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#F59E0B',
+  },
+  commanderBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#F59E0B',
+    letterSpacing: 0.5,
   },
   cellMottoText: {
     fontSize: 12,
     color: '#94A3B8',
     fontWeight: '500',
+    marginTop: 2,
   },
   joinCodeStrip: {
     flexDirection: 'row',
@@ -968,12 +1245,30 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#EF4444',
   },
+  cellFooterActions: {
+    gap: 8,
+  },
+  disbandBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  disbandBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
   leaveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
@@ -986,28 +1281,50 @@ const styles = StyleSheet.create({
   unaffiliatedHero: {
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.2)',
-    marginBottom: 18,
-  },
-  shieldBigIcon: {
-    width: 72,
-    height: 72,
     borderRadius: 22,
-    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    padding: 22,
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderColor: 'rgba(0, 229, 255, 0.22)',
+    marginBottom: 16,
+  },
+  crestAura: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(0, 229, 255, 0.06)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.15)',
+  },
+  shieldGlowCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  unaffiliatedCategory: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#00E5FF',
+    letterSpacing: 1.2,
+    marginBottom: 4,
   },
   unaffiliatedTitle: {
-    fontSize: 16,
+    fontSize: 19,
     fontWeight: '900',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: -0.3,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -1016,7 +1333,29 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.65)',
     textAlign: 'center',
     lineHeight: 18,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  pillarRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 18,
+  },
+  pillarBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 4,
+  },
+  pillarText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.85)',
   },
   heroActionRow: {
     flexDirection: 'row',
@@ -1024,29 +1363,30 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   createCellBtn: {
-    flex: 1.2,
+    flex: 1.25,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#00E5FF',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 13,
+    borderRadius: 14,
   },
   createCellBtnText: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '900',
     color: '#000000',
+    letterSpacing: 0.2,
   },
   joinWithCodeBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.3)',
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 13,
+    borderRadius: 14,
   },
   joinWithCodeBtnText: {
     fontSize: 13,
@@ -1060,26 +1400,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
   },
+  publicHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
   publicSectionTitle: {
     fontSize: 10.5,
     fontWeight: '900',
     color: 'rgba(255, 255, 255, 0.5)',
     letterSpacing: 0.8,
-    marginBottom: 12,
   },
   emptyPublicCard: {
-    paddingVertical: 20,
+    paddingVertical: 24,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyPublicText: {
     fontSize: 12,
     color: '#64748B',
     textAlign: 'center',
+    lineHeight: 17,
+    maxWidth: '85%',
   },
   publicCellCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.025)',
     borderRadius: 14,
-    padding: 12,
+    padding: 13,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
     marginBottom: 8,
@@ -1091,13 +1439,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   publicCellName: {
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 2,
   },
   publicCellMotto: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#94A3B8',
   },
   publicStreakBadge: {
@@ -1126,7 +1474,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.35)',
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 8,
   },
   joinPublicBtnText: {
@@ -1136,15 +1484,15 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.88)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
   },
   modalCard: {
     width: '100%',
-    backgroundColor: '#0F172A',
-    borderRadius: 20,
+    backgroundColor: '#0B1120',
+    borderRadius: 22,
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.3)',
@@ -1156,13 +1504,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 17,
+    fontSize: 16.5,
     fontWeight: '900',
     color: '#FFFFFF',
   },
+  modalCloseBtn: {
+    padding: 4,
+  },
   inputLabel: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
     color: '#00E5FF',
     letterSpacing: 0.8,
     marginBottom: 6,
@@ -1178,10 +1529,43 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
     marginBottom: 14,
   },
+  joinCodeInput: {
+    textTransform: 'uppercase',
+    letterSpacing: 3,
+    fontSize: 20,
+    textAlign: 'center',
+    fontWeight: '900',
+    color: '#00E5FF',
+  },
+  mottoPresetRow: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  mottoPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  mottoPillActive: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderColor: '#00E5FF',
+  },
+  mottoPillText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  mottoPillTextActive: {
+    color: '#00E5FF',
+    fontWeight: '800',
+  },
   submitModalBtn: {
     backgroundColor: '#00E5FF',
-    paddingVertical: 13,
-    borderRadius: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
     alignItems: 'center',
     marginTop: 4,
   },
@@ -1190,5 +1574,86 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.3,
+  },
+  dialogCard: {
+    width: '100%',
+    backgroundColor: '#0C1220',
+    borderRadius: 22,
+    padding: 22,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  dialogCardDanger: {
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+  },
+  dialogIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  dialogIconCircleCyan: {
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+  },
+  dialogIconCircleDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
+  dialogTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  dialogMessage: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 20,
+    paddingHorizontal: 6,
+  },
+  dialogBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  dialogCancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialogCancelText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  dialogConfirmBtn: {
+    flex: 1.3,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: '#00E5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialogConfirmText: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.2,
   },
 });

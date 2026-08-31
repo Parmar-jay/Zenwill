@@ -109,22 +109,23 @@ async def create_spartan_cell(
         updated_at=datetime.utcnow(),
     )
     await cell.insert()
+    updated_cell = await recalculate_cell_stats(cell)
 
     return SpartanCellSummary(
-        id=str(cell.id),
-        name=cell.name,
-        motto=cell.motto,
-        join_code=cell.join_code,
-        leader_id=cell.leader_id,
-        leader_name=cell.leader_name,
-        member_count=len(cell.member_ids),
-        max_members=cell.max_members,
-        total_streak=cell.total_streak,
-        collective_xp=cell.collective_xp,
-        shield_status=cell.shield_status,
-        is_public=cell.is_public,
-        created_at=cell.created_at,
-        members=cell.members,
+        id=str(updated_cell.id),
+        name=updated_cell.name,
+        motto=updated_cell.motto,
+        join_code=updated_cell.join_code,
+        leader_id=updated_cell.leader_id,
+        leader_name=updated_cell.leader_name,
+        member_count=len(updated_cell.member_ids),
+        max_members=updated_cell.max_members,
+        total_streak=updated_cell.total_streak,
+        collective_xp=updated_cell.collective_xp,
+        shield_status=updated_cell.shield_status,
+        is_public=updated_cell.is_public,
+        created_at=updated_cell.created_at,
+        members=updated_cell.members,
     )
 
 
@@ -230,6 +231,23 @@ async def leave_spartan_cell(
 
     await recalculate_cell_stats(cell)
     return {"status": "success", "message": "Successfully departed Spartan Cell."}
+
+
+@router.post("/delete")
+async def delete_spartan_cell(
+    current_user: User = Depends(get_current_user),
+):
+    """Allows the cell commander/leader to completely disband and delete the Spartan Cell."""
+    user_id_str = str(current_user.id)
+    cell = await SpartanCell.find_one({"$or": [{"leader_id": user_id_str}, {"leader_id": current_user.email}]})
+    if not cell:
+        cell = await SpartanCell.find_one({"member_ids": user_id_str})
+        if not cell or (cell.leader_id != user_id_str and cell.leader_id != current_user.email):
+            raise HTTPException(status_code=403, detail="Only the Spartan Cell Commander can delete this cell.")
+
+    cell_name = cell.name
+    await cell.delete()
+    return {"status": "success", "message": f"Spartan Cell '{cell_name}' has been disbanded."}
 
 
 @router.get("/leaderboard", response_model=List[SpartanCellSummary])

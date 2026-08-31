@@ -21,6 +21,7 @@ interface SpartanState {
   createCell: (name: string, motto?: string, isPublic?: boolean) => Promise<SpartanCellData>;
   joinCell: (code: string) => Promise<SpartanCellData>;
   leaveCell: () => Promise<void>;
+  deleteCell: () => Promise<void>;
   nudgeMember: (userId: string, userName: string) => Promise<string>;
   triggerBattleHorn: (location?: string) => Promise<BattleSessionData>;
   joinActiveBattle: (sessionId: string) => Promise<BattleSessionData>;
@@ -105,6 +106,17 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     set({ isLoadingCell: true });
     try {
       await spartanApi.leaveCell();
+      set({ myCell: null, isLoadingCell: false });
+    } catch (err) {
+      set({ isLoadingCell: false });
+      throw err;
+    }
+  },
+
+  deleteCell: async () => {
+    set({ isLoadingCell: true });
+    try {
+      await spartanApi.deleteCell();
       set({ myCell: null, isLoadingCell: false });
     } catch (err) {
       set({ isLoadingCell: false });
