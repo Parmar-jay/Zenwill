@@ -1372,10 +1372,12 @@ const styles = StyleSheet.create({
   navBackBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
     gap: 4,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
   },
   navBackText: {

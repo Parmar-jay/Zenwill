@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, Depends
 from datetime import date, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 
 from app.models.user import User
 from app.schemas.analytics import WeeklyInsightResponse
@@ -163,10 +163,16 @@ async def get_progress_intelligence(
 
 @router.get("/trigger-intelligence")
 async def get_trigger_intelligence(
+    client_hour: Optional[int] = None,
+    tz_offset: Optional[int] = None,
     current_user: User = Depends(get_current_user),
 ):
     """Generates comprehensive Trigger Intelligence report fusing Onboarding, Daily Check-ins, and Urge logs."""
-    return await compute_deep_trigger_intelligence(current_user)
+    return await compute_deep_trigger_intelligence(
+        current_user,
+        client_local_hour=client_hour,
+        tz_offset_minutes=tz_offset,
+    )
 
 
 @router.get("/recommendations")

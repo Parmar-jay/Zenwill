@@ -25,6 +25,32 @@ export interface MissionCompleteResponse {
   message: string;
 }
 
+export interface MissionHistoryDay {
+  date: string;
+  day_name: string;
+  tasks: {
+    checkin: boolean;
+    meditation: boolean;
+    journal: boolean;
+    coach: boolean;
+    rescue: boolean;
+  };
+  completed_count: number;
+  percent: number;
+  points_earned: number;
+  all_completed: boolean;
+}
+
+export interface MissionHistoryResponse {
+  days: MissionHistoryDay[];
+  summary: {
+    total_points_week: number;
+    average_percent: number;
+    active_days: number;
+    current_streak: number;
+  };
+}
+
 export const missionsApi = {
   getTodaysMissions(): Promise<Mission[]> {
     return api.get<Mission[]>('/missions/today');
@@ -33,6 +59,10 @@ export const missionsApi = {
   getAllMissions(completed?: boolean): Promise<Mission[]> {
     const query = completed !== undefined ? `?completed=${completed}` : '';
     return api.get<Mission[]>(`/missions/${query}`);
+  },
+
+  getMissionsHistory(days: number = 7): Promise<MissionHistoryResponse> {
+    return api.get<MissionHistoryResponse>(`/missions/history?days=${days}`);
   },
 
   completeMission(missionId: string, data?: { duration_actual_minutes?: number; feedback?: string }): Promise<MissionCompleteResponse> {

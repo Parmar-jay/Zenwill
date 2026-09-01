@@ -3,6 +3,8 @@ from typing import List, Optional
 from datetime import datetime, date, timedelta
 from app.models.user import User
 from app.models.mission import Mission
+from app.models.daily_checkin import DailyCheckin
+from app.models.journal import JournalEntry
 from app.schemas.mission import (
     MissionResponse,
     MissionCompleteCategoryRequest,
@@ -47,6 +49,118 @@ async def get_todays_missions(
     ).sort("-date_assigned").to_list()
 
     return [_to_response(m) for m in todays_missions]
+
+
+@router.get("/history")
+async def get_missions_history(
+    days: int = 7,
+    current_user: User = Depends(get_current_user),
+):
+    days = max(1, min(days, 30))
+    user_id_str = str(current_user.id)
+    now = datetime.utcnow()
+
+    # Calculate start of window (days - 1 days ago at 00:00:00 UTC)
+    start_date = datetime(now.year, now.month, now.day) - timedelta(days=days - 1)
+
+    # Fetch all relevant records in this window for user
+    missions_in_window = await Mission.find(
+        Mission.user_id == user_id_str,
+        Mission.date_assigned >= start_date,
+    ).to_list()
+
+    checkins_in_window = await DailyCheckin.find(
+        DailyCheckin.user_id == user_id_str,
+        DailyCheckin.date >= start_date.date(),
+    ).to_list()
+
+    journals_in_window = await JournalEntry.find(
+        JournalEntry.user_id == user_id_str,
+        JournalEntry.created_at >= start_date,
+    ).to_list()
+
+    history_days = []
+
+    for i in range(days - 1, -1, -1):
+        target_dt = datetime(now.year, now.month, now.day) - timedelta(days=i)
+        target_date_str = target_dt.strftime("%Y-%m-%d")
+        target_date_obj = target_dt.date()
+        day_name = target_dt.strftime("%a")
+
+        # Check task completion for this target date
+        day_missions = [
+            m
+            for m in missions_in_window
+            if m.date_assigned and m.date_assigned.strftime("%Y-%m-%d") == target_date_str
+        ]
+
+        has_checkin = any(
+            c.date == target_date_obj or (hasattr(c, "created_at") and c.created_at and c.created_at.strftime("%Y-%m-%d") == target_date_str)
+            for c in checkins_in_window
+        ) or any(
+            m.is_completed and m.category.lower() in ["checkin", "morning"]
+            for m in day_missions
+        )
+
+        has_meditation = any(
+            m.is_completed and m.category.lower() in ["calm", "meditation", "sleep"]
+            for m in day_missions
+        )
+
+        has_journal = any(
+            j.created_at and j.created_at.strftime("%Y-%m-%d") == target_date_str
+            for j in journals_in_window
+        ) or any(
+            m.is_completed and m.category.lower() in ["focus", "journal", "reflection"]
+            for m in day_missions
+        )
+
+        has_coach = any(
+            m.is_completed and m.category.lower() in ["purpose", "coach", "connection"]
+            for m in day_missions
+        )
+
+        has_rescue = any(
+            m.is_completed and m.category.lower() in ["exercise", "rescue", "emergency"]
+            for m in day_missions
+        )
+
+        tasks_dict = {
+            "checkin": bool(has_checkin),
+            "meditation": bool(has_meditation),
+            "journal": bool(has_journal),
+            "coach": bool(has_coach),
+            "rescue": bool(has_rescue),
+        }
+
+        completed_count = sum(1 for v in tasks_dict.values() if v)
+        percent = int(round((completed_count / 5.0) * 100))
+        points_earned = completed_count * 20
+        all_completed = completed_count == 5
+
+        history_days.append({
+            "date": target_date_str,
+            "day_name": day_name,
+            "tasks": tasks_dict,
+            "completed_count": completed_count,
+            "percent": percent,
+            "points_earned": points_earned,
+            "all_completed": all_completed,
+        })
+
+    total_pts_week = sum(d["points_earned"] for d in history_days)
+    avg_pct = int(round(sum(d["percent"] for d in history_days) / float(len(history_days)))) if history_days else 0
+    active_days = sum(1 for d in history_days if d["points_earned"] > 0)
+
+    return {
+        "days": history_days,
+        "summary": {
+            "total_points_week": total_pts_week,
+            "average_percent": avg_pct,
+            "active_days": active_days,
+            "current_streak": getattr(current_user, "current_streak", 0) or getattr(current_user, "streak", 0) or active_days,
+        },
+    }
 
 
 @router.get("/", response_model=List[MissionResponse])

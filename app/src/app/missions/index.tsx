@@ -98,6 +98,17 @@ export default function DailyMissionsScreen() {
 
   const weeklyStats = useMemo(() => getWeeklyStats(), [todayTasks]);
 
+  const weeklyStatsSummary = useMemo(() => {
+    const totalPts = weeklyStats.reduce((acc, curr) => acc + curr.points, 0);
+    const avgPct = Math.round(weeklyStats.reduce((acc, curr) => acc + curr.percent, 0) / 7);
+    const activeDays = weeklyStats.filter((s) => s.points > 0).length;
+    return {
+      totalPts,
+      avgPct,
+      activeDays,
+    };
+  }, [weeklyStats]);
+
   // Entrance Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -136,7 +147,7 @@ export default function DailyMissionsScreen() {
       icon: 'create-outline' as const,
       color: '#6366F1',
       route: '/daily-checkin',
-      actionLabel: 'Start Log',
+      actionLabel: 'Check In',
       done: todayTasks?.checkin,
     },
     {
@@ -158,7 +169,7 @@ export default function DailyMissionsScreen() {
       icon: 'book-outline' as const,
       color: '#F59E0B',
       route: '/journal',
-      actionLabel: 'Write Entry',
+      actionLabel: 'Journal',
       done: todayTasks?.journal,
     },
     {
@@ -169,7 +180,7 @@ export default function DailyMissionsScreen() {
       icon: 'chatbubble-ellipses-outline' as const,
       color: '#8B5CF6',
       route: '/(tabs)/chat',
-      actionLabel: 'Chat Coach',
+      actionLabel: 'AI Coach',
       done: todayTasks?.coach,
     },
     {
@@ -180,7 +191,7 @@ export default function DailyMissionsScreen() {
       icon: 'shield-outline' as const,
       color: '#EF4444',
       route: '/emergency',
-      actionLabel: 'Reset Urge',
+      actionLabel: 'Urge Reset',
       done: todayTasks?.rescue,
     },
   ];
@@ -337,62 +348,128 @@ export default function DailyMissionsScreen() {
             ))}
           </View>
 
-          {/* Minimalist 7-Day History & Analysis */}
+          {/* 7-Day Consistency & Mission Momentum Analysis */}
           <View style={styles.sectionHeaderRow}>
-            <ThemedText style={styles.sectionTitle}>7-DAY CONSISTENCY ANALYSIS</ThemedText>
+            <View style={styles.sectionTitleWithBadge}>
+              <Ionicons name="stats-chart" size={14} color="#00E5FF" style={{ marginRight: 6 }} />
+              <ThemedText style={styles.sectionTitle}>7-DAY CONSISTENCY ANALYSIS</ThemedText>
+            </View>
+            <View style={styles.consistencyRateBadge}>
+              <ThemedText style={styles.consistencyRateBadgeText}>
+                {weeklyStatsSummary.activeDays}/7 Days Active
+              </ThemedText>
+            </View>
           </View>
 
           <View style={styles.historyCard}>
-            <View style={styles.weeklyGraphRow}>
-              {weeklyStats.map((stat, idx) => {
-                const isToday = idx === 6;
-                const hasPoints = stat.points > 0;
-                return (
-                  <View key={stat.dateStr} style={styles.dayCol}>
-                    <ThemedText
-                      style={[
-                        styles.dayColPts,
-                        hasPoints && (isToday ? styles.dayColPtsToday : styles.dayColPtsActive),
-                      ]}
-                    >
-                      {stat.points > 0 ? `${stat.points}` : '0'}
-                    </ThemedText>
-                    <View style={[styles.barTrack, isToday && styles.barTrackToday]}>
-                      {hasPoints ? (
-                        <View
-                          style={[
-                            styles.barFill,
-                            { height: `${Math.max(15, stat.percent)}%` },
-                            stat.percent === 100 && styles.barFillComplete,
-                            isToday && styles.barFillToday,
-                          ]}
-                        />
-                      ) : null}
+            {/* Transparent Glassmorphism Gradient Background */}
+            <LinearGradient
+              colors={['rgba(255, 255, 255, 0.04)', 'rgba(255, 255, 255, 0.015)']}
+              style={styles.historyCardGradient}
+            >
+              {/* 7 Day Vertical Bar Visualizer */}
+              <View style={styles.weeklyGraphRow}>
+                {weeklyStats.map((stat, idx) => {
+                  const isToday = idx === 6;
+                  const hasPoints = stat.points > 0;
+                  const isFull = stat.percent === 100;
+
+                  return (
+                    <View key={stat.dateStr} style={styles.dayCol}>
+                      <ThemedText
+                        style={[
+                          styles.dayColPts,
+                          hasPoints && (isToday ? styles.dayColPtsToday : isFull ? styles.dayColPtsFull : styles.dayColPtsActive),
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {stat.points > 0 ? `${stat.points}` : '0'}
+                      </ThemedText>
+
+                      <View style={[styles.barTrack, isToday && styles.barTrackToday]}>
+                        {hasPoints ? (
+                          <LinearGradient
+                            colors={
+                              isToday
+                                ? ['#F59E0B', '#D97706']
+                                : isFull
+                                ? ['#10B981', '#059669']
+                                : ['#818CF8', '#6366F1']
+                            }
+                            style={[
+                              styles.barFill,
+                              { height: `${Math.max(16, stat.percent)}%` },
+                            ]}
+                          />
+                        ) : (
+                          <View style={styles.barEmptyDot} />
+                        )}
+                      </View>
+
+                      <ThemedText
+                        style={[
+                          styles.dayColName,
+                          isToday && styles.dayColNameToday,
+                          hasPoints && !isToday && styles.dayColNameActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {stat.dayName}
+                      </ThemedText>
                     </View>
-                    <ThemedText style={[styles.dayColName, isToday && styles.dayColNameToday]}>
-                      {stat.dayName}
+                  );
+                })}
+              </View>
+
+              {/* 3-Metric Summary Row */}
+              <View style={styles.historyMetaRow}>
+                <View style={styles.historyMetaItem}>
+                  <View style={styles.metaIconRow}>
+                    <Ionicons name="sparkles" size={12} color="#00E5FF" />
+                    <ThemedText style={styles.historyMetaVal}>{completedCount * 20} PTS</ThemedText>
+                  </View>
+                  <ThemedText style={styles.historyMetaLbl}>Today's Score</ThemedText>
+                </View>
+
+                <View style={styles.historyMetaDivider} />
+
+                <View style={styles.historyMetaItem}>
+                  <View style={styles.metaIconRow}>
+                    <Ionicons name="trending-up" size={12} color="#10B981" />
+                    <ThemedText style={[styles.historyMetaVal, { color: '#10B981' }]}>
+                      {weeklyStatsSummary.avgPct}%
                     </ThemedText>
                   </View>
-                );
-              })}
-            </View>
+                  <ThemedText style={styles.historyMetaLbl}>Weekly Avg</ThemedText>
+                </View>
 
-            <View style={styles.historyMetaRow}>
-              <View style={styles.historyMetaItem}>
-                <ThemedText style={styles.historyMetaVal}>{completedCount * 20} PTS</ThemedText>
-                <ThemedText style={styles.historyMetaLbl}>Points Today</ThemedText>
+                <View style={styles.historyMetaDivider} />
+
+                <View style={styles.historyMetaItem}>
+                  <View style={styles.metaIconRow}>
+                    <Ionicons name="flame" size={13} color="#F59E0B" />
+                    <ThemedText style={[styles.historyMetaVal, { color: '#F59E0B' }]}>{streak}d</ThemedText>
+                  </View>
+                  <ThemedText style={styles.historyMetaLbl}>Active Streak</ThemedText>
+                </View>
               </View>
-              <View style={styles.historyMetaDivider} />
-              <View style={styles.historyMetaItem}>
-                <ThemedText style={styles.historyMetaVal}>{progressPercent}%</ThemedText>
-                <ThemedText style={styles.historyMetaLbl}>Completion Rate</ThemedText>
+
+              {/* Momentum Status Callout */}
+              <View style={styles.momentumCallout}>
+                <Ionicons
+                  name={allCompleted ? 'shield-checkmark' : 'information-circle'}
+                  size={14}
+                  color={allCompleted ? '#10B981' : '#00E5FF'}
+                />
+                <ThemedText style={styles.momentumCalloutText} numberOfLines={2}>
+                  {allCompleted
+                    ? '100% daily discipline achieved today • Peak neural self-regulation active.'
+                    : weeklyStatsSummary.activeDays >= 5
+                    ? 'High weekly momentum detected • Keep executing daily rituals.'
+                    : 'Complete today’s 5 missions to boost your weekly consistency score.'}
+                </ThemedText>
               </View>
-              <View style={styles.historyMetaDivider} />
-              <View style={styles.historyMetaItem}>
-                <ThemedText style={styles.historyMetaVal}>{streak} Days</ThemedText>
-                <ThemedText style={styles.historyMetaLbl}>Active Streak</ThemedText>
-              </View>
-            </View>
+            </LinearGradient>
           </View>
 
         </Animated.View>
@@ -689,77 +766,110 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   actionBtn: {
-    paddingHorizontal: 10,
+    width: 88,
+    minHeight: 32,
+    paddingHorizontal: 8,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    minHeight: 30,
   },
   actionBtnText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   donePill: {
+    width: 88,
+    minHeight: 32,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#10B981',
     borderColor: '#10B981',
     borderWidth: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: 8,
-    minHeight: 30,
+    borderRadius: 10,
+    flexShrink: 0,
   },
   donePillText: {
     color: '#FFFFFF',
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
     marginLeft: 3,
+    letterSpacing: 0.2,
+  },
+  sectionTitleWithBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  consistencyRateBadge: {
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  consistencyRateBadgeText: {
+    color: '#00E5FF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   historyCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
     borderRadius: 18,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.09)',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    marginBottom: 8,
+  },
+  historyCardGradient: {
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    gap: 12,
   },
   weeklyGraphRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    height: 120,
-    paddingBottom: 4,
-    paddingHorizontal: 4,
+    height: 125,
+    paddingHorizontal: 2,
   },
   dayCol: {
     alignItems: 'center',
     flex: 1,
     height: '100%',
     justifyContent: 'flex-end',
+    gap: 4,
   },
   dayColPts: {
     color: 'rgba(255, 255, 255, 0.35)',
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   dayColPtsActive: {
-    color: '#00E5FF',
+    color: '#818CF8',
+  },
+  dayColPtsFull: {
+    color: '#10B981',
+    fontWeight: '800',
   },
   dayColPtsToday: {
     color: '#F59E0B',
-    fontWeight: '800',
+    fontWeight: '900',
   },
   barTrack: {
     width: 14,
-    height: 70,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    height: 75,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 7,
     justifyContent: 'flex-end',
     alignItems: 'center',
@@ -768,55 +878,84 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   barTrackToday: {
-    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
     backgroundColor: 'rgba(245, 158, 11, 0.08)',
   },
   barFill: {
     width: '100%',
-    backgroundColor: '#6366F1',
     borderRadius: 6,
   },
-  barFillComplete: {
-    backgroundColor: '#10B981',
-  },
-  barFillToday: {
-    backgroundColor: '#F59E0B',
+  barEmptyDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    marginBottom: 6,
   },
   dayColName: {
     color: '#64748B',
     fontSize: 11,
     fontWeight: '600',
-    marginTop: 8,
+    marginTop: 4,
+  },
+  dayColNameActive: {
+    color: '#CBD5E1',
+    fontWeight: '700',
   },
   dayColNameToday: {
     color: '#F59E0B',
-    fontWeight: '800',
+    fontWeight: '900',
   },
   historyMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 14,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   historyMetaItem: {
     alignItems: 'center',
+    gap: 2,
+    flex: 1,
+  },
+  metaIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   historyMetaVal: {
     color: '#F8FAFC',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   historyMetaLbl: {
     color: '#64748B',
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   historyMetaDivider: {
     width: 1,
-    height: 24,
+    height: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  momentumCallout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  momentumCalloutText: {
+    fontSize: 10.5,
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: 15,
+    flex: 1,
   },
 });

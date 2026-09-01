@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Dict, Any, List, Optional
 from collections import Counter
 
@@ -94,6 +94,60 @@ def _format_hour_window(start_hour: int, span_hours: int = 2) -> str:
     return f"{_fmt(start_hour)} - {_fmt(end_hour)}"
 
 
+def get_realtime_diurnal_phase(hour: int) -> Dict[str, Any]:
+    """
+    Returns exact diurnal circadian phase with rich biological and behavioral telemetry.
+    Morning: 05:00 - 11:59
+    Afternoon: 12:00 - 17:59
+    Evening: 18:00 - 21:59
+    Night / Late Night: 22:00 - 04:59
+    """
+    if 5 <= hour < 12:
+        return {
+            "phase_id": "morning",
+            "phase_name": "Morning Awakening & Focus",
+            "time_window": "06:00 AM - 12:00 PM",
+            "status_label": "ACTIVE RIGHT NOW: MORNING PROTOCOL",
+            "biological_state": "Cortisol Awakening Surge & Prefrontal Booting",
+            "primary_hazard": "Bedside screen grazing in bed before getting on two feet",
+            "tactical_directive": "Execute the 3-Minute Grounding Launch: Get on your feet, drink 500ml cold water, get outdoor sunlight, and complete morning check-in before opening any digital app.",
+            "color": "#6366F1",
+        }
+    elif 12 <= hour < 18:
+        return {
+            "phase_id": "afternoon",
+            "phase_name": "Midday Focus & Energy Reset",
+            "time_window": "12:00 PM - 06:00 PM",
+            "status_label": "ACTIVE RIGHT NOW: AFTERNOON RESET",
+            "biological_state": "Circadian Dopamine Dip & Cognitive Work Fatigue",
+            "primary_hazard": "Post-lunch mental slump and work-stress grazing on feeds",
+            "tactical_directive": "Execute the 3 PM Somatic Reset: Step away from all monitors, perform 20 deep bodyweight squats or 5 minutes of Bhramari Pranayama (humming resonance) to clear mental fog.",
+            "color": "#10B981",
+        }
+    elif 18 <= hour < 22:
+        return {
+            "phase_id": "evening",
+            "phase_name": "Evening Decompression & Digital Quarantine",
+            "time_window": "06:00 PM - 10:00 PM",
+            "status_label": "ACTIVE RIGHT NOW: EVENING QUARANTINE",
+            "biological_state": "Willpower Depletion & Post-Work Dopamine Seeking",
+            "primary_hazard": "Unstructured horizontal screen scrolling in solitary living space",
+            "tactical_directive": "Activate Evening Quarantine: Keep ambient room lights bright, engage dedicated physical workout or social dinner, and leave phone charging across the room.",
+            "color": "#8B5CF6",
+        }
+    else:
+        return {
+            "phase_id": "night",
+            "phase_name": "Peak Circadian & Bedside Solitude",
+            "time_window": "10:00 PM - 02:00 AM",
+            "status_label": "ACTIVE RIGHT NOW: HIGH-RISK BEDSIDE WINDOW",
+            "biological_state": "Melatonin Rise & Sensitized Impulse Gate (Prefrontal Offline)",
+            "primary_hazard": "Late-night private bedroom solitude with screen in the dark",
+            "tactical_directive": "Bedside Non-Negotiable Lockdown: Phone must be plugged in minimum 10 feet away from mattress. Practice 5 minutes of 4-7-8 Pranayama in darkness to induce deep restorative sleep.",
+            "color": "#EF4444",
+        }
+
+
 def infer_realistic_temporal_spatial_context(
     start_hour: int,
     occupation: str,
@@ -104,13 +158,11 @@ def infer_realistic_temporal_spatial_context(
 ) -> Dict[str, str]:
     """
     Intelligently determines realistic spatial and contextual vulnerability.
-    Prevents unrealistic assumptions (e.g. 'Living room at 1 PM on a weekday for an office worker').
     """
     occ_lower = (occupation or "").lower()
     sched_lower = (daily_schedule or "standard").lower()
     is_work_student = any(k in occ_lower for k in ["engineer", "developer", "student", "office", "manager", "accountant", "analyst", "designer", "doctor", "consultant"]) or sched_lower == "standard"
 
-    # Prioritize actual logged environment from recent emergency urge sessions if present
     if logged_environments:
         clean_logged = logged_environments[0].strip()
         if clean_logged and len(clean_logged) > 2:
@@ -134,7 +186,7 @@ def infer_realistic_temporal_spatial_context(
         if is_work_student:
             return {
                 "environment_label": "Workplace Desk / Study Space",
-                "context_description": f"Midday mental fatigue or lunch break downtime with {primary_device}",
+                "context_description": f"Midday mental fatigue or post-lunch downtime with {primary_device}",
                 "environmental_rule": "Workplace Boundary: Keep phone in bag or desk drawer during deep work sprints. Take walking breaks away from screens.",
             }
         else:
@@ -163,9 +215,13 @@ def infer_realistic_temporal_spatial_context(
         }
 
 
-async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
+async def compute_deep_trigger_intelligence(
+    user: User,
+    client_local_hour: Optional[int] = None,
+    tz_offset_minutes: Optional[int] = None,
+) -> Dict[str, Any]:
     """
-    100% Algorithmic, Zero-AI Trigger Intelligence Engine.
+    100% Algorithmic Real-Time Trigger Intelligence Engine.
     Deeply analyzes all real user data:
     1. Onboarding Profile (occupation, schedule, warning cues, device, stated urge times & locations)
     2. Daily Check-ins (30-day history of stress causes, sleep quality/duration, mood, urge intensities)
@@ -196,7 +252,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
     ).sort("-created_at").limit(50).to_list()
 
-    # 5. Fetch Latest Relapse Autopsy Record (using created_at sorting)
+    # 5. Fetch Latest Relapse Autopsy Record
     latest_autopsy = await RelapseAutopsy.find(
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
     ).sort("-created_at").first_or_none()
@@ -220,7 +276,29 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     if latest_autopsy and latest_autopsy.device_involved:
         primary_dev = latest_autopsy.device_involved.replace("_", " ").title()
 
-    # ── B. Timestamp & Temporal Distribution Analysis ─────────────────────────
+    # ── B. Precision Real-Time Hour & Timezone Resolution ─────────────────────
+    if client_local_hour is not None and 0 <= client_local_hour <= 23:
+        current_hour = client_local_hour
+        now_local = datetime.utcnow()
+        if tz_offset_minutes is not None:
+            tz = timezone(timedelta(minutes=tz_offset_minutes))
+            now_local = datetime.now(tz)
+        today_weekday_name = now_local.strftime("%A")
+    elif tz_offset_minutes is not None:
+        tz = timezone(timedelta(minutes=tz_offset_minutes))
+        now_local = datetime.now(tz)
+        current_hour = now_local.hour
+        today_weekday_name = now_local.strftime("%A")
+    else:
+        # Default to IST (UTC+5:30) as primary user base or server local time
+        tz_ist = timezone(timedelta(hours=5, minutes=30))
+        now_local = datetime.now(tz_ist)
+        current_hour = now_local.hour
+        today_weekday_name = now_local.strftime("%A")
+
+    current_phase_info = get_realtime_diurnal_phase(current_hour)
+
+    # ── C. Timestamp & Temporal Distribution Analysis ─────────────────────────
     total_urges_count = len(emergency_sessions)
     today_str = date.today().isoformat()
 
@@ -268,7 +346,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             urge_hours.append(e.created_at.hour)
             urge_days.append(e.created_at.strftime("%A"))
 
-    # ── C. Circadian Peak Window Computation ─────────────────────────────────
+    # ── D. Circadian Peak Window Computation ─────────────────────────────────
     if is_post_relapse and latest_autopsy and latest_autopsy.approximate_time_window:
         peak_risk_window = latest_autopsy.approximate_time_window
         window_start_hour = 23 if ("night" in peak_risk_window.lower() or "bed" in peak_risk_window.lower()) else 14
@@ -288,11 +366,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     else:
         peak_risk_window, window_start_hour = ("10:30 PM - 12:30 AM", 23)
 
-    # ── D. Peak Risk Day & Real-Time Day-of-Week Computation ──────────────────
-    now_utc = datetime.utcnow()
-    current_hour = now_utc.hour
-    today_weekday_name = now_utc.strftime("%A")
-
+    # ── E. Peak Risk Day Computation ──────────────────────────────────────────
     if urge_days and len(urge_days) >= 2:
         day_counts = Counter(urge_days)
         top_day = day_counts.most_common(1)[0][0]
@@ -307,7 +381,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     else:
         peak_day = "Weekends & Late Evenings"
 
-    # ── E. Realistic Spatial & Contextual Intelligence ───────────────────────
+    # ── F. Realistic Spatial & Contextual Intelligence ───────────────────────
     spatial_intel = infer_realistic_temporal_spatial_context(
         start_hour=window_start_hour,
         occupation=occupation,
@@ -324,28 +398,28 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     if latest_autopsy and latest_autopsy.generated_golden_rule:
         environmental_rule = latest_autopsy.generated_golden_rule
 
-    # Calculate Next Predicted High-Risk Window relative to current time
-    if window_start_hour < 12:
-        time_prefix = "Today" if current_hour < window_start_hour else "Tomorrow"
-        next_predicted_window = f"{time_prefix} Morning, {peak_risk_window}"
-        next_predicted_context = f"Morning Awakening in {environment_label}"
-    elif 12 <= window_start_hour < 18:
-        time_prefix = "Today" if current_hour < window_start_hour else "Tomorrow"
-        next_predicted_window = f"{time_prefix} Afternoon, {peak_risk_window}"
-        next_predicted_context = f"Midday Screen Slump in {environment_label}"
-    elif 18 <= window_start_hour < 23:
-        time_prefix = "Tonight" if current_hour < window_start_hour else "Tomorrow Night"
-        next_predicted_window = f"{time_prefix}, {peak_risk_window}"
+    # Calculate Next Predicted High-Risk Window relative to current real-time hour
+    if current_hour >= 22 or current_hour < 5:
+        next_predicted_window = "Active Right Now (Late-Night Screen Solitude)"
+        next_predicted_context = f"Active Bedside Solitude with {primary_dev}"
+    elif 5 <= current_hour < 12:
+        if window_start_hour < 12 and window_start_hour >= current_hour:
+            next_predicted_window = f"This Morning, {peak_risk_window}"
+        else:
+            next_predicted_window = f"Tonight, {peak_risk_window}"
         next_predicted_context = f"Evening Decompression in {environment_label}"
-    else:
-        if current_hour >= 23 or current_hour < 5:
-            next_predicted_window = "Active Right Now (Late-Night Screen Solitude)"
-            next_predicted_context = f"Active Bedside Solitude with {primary_dev}"
+    elif 12 <= current_hour < 18:
+        if 12 <= window_start_hour < 18 and window_start_hour >= current_hour:
+            next_predicted_window = f"This Afternoon, {peak_risk_window}"
+            next_predicted_context = f"Midday Screen Slump in {environment_label}"
         else:
             next_predicted_window = f"Tonight, {peak_risk_window}"
             next_predicted_context = f"Late-Night Bedside in {environment_label}"
+    else:
+        next_predicted_window = f"Tonight, {peak_risk_window}"
+        next_predicted_context = f"Late-Night Bedside in {environment_label}"
 
-    # ── F. Check-in Multi-Day Telemetry Analysis ─────────────────────────────
+    # ── G. Check-in Multi-Day Telemetry Analysis ─────────────────────────────
     latest_checkin = recent_checkins[0] if recent_checkins else None
 
     avg_stress = sum(getattr(c, "stress_score", 4) for c in recent_checkins) / max(len(recent_checkins), 1)
@@ -366,7 +440,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         if getattr(c, "stress_causes", None):
             checkin_stress_causes.extend(c.stress_causes)
 
-    # ── G. Dynamic Multi-Variable Risk Score (0–100) ─────────────────────────
+    # ── H. Dynamic Multi-Variable Risk Score (0–100) ─────────────────────────
     if is_post_relapse:
         base_risk = 72
     elif streak_val >= 90:
@@ -388,11 +462,14 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     checkin_urge_pts = 16 if checkin_urge_intensity >= 7 else (8 if checkin_urge_intensity >= 4 else 0)
     mood_pts = 10 if current_mood in ["Sad", "Anxious", "Lonely", "Overwhelmed", "Frustrated", "Angry"] else 0
 
-    total_risk = base_risk + stress_pts + sleep_pts + urge_velocity_pts + checkin_urge_pts + mood_pts
-    risk_score = max(15, min(95, total_risk))
+    # Real-Time Hour Risk Modifier (Night & Late Evening have biologically higher risk)
+    hour_risk_modifier = 12 if (current_hour >= 22 or current_hour < 4) else (8 if 18 <= current_hour < 22 else 0)
+
+    total_risk = base_risk + stress_pts + sleep_pts + urge_velocity_pts + checkin_urge_pts + mood_pts + hour_risk_modifier
+    risk_score = max(15, min(96, total_risk))
 
     if risk_score >= 75 or is_post_relapse:
-        risk_level = "CRITICAL (POST-RELAPSE VULNERABILITY)" if is_post_relapse else "CRITICAL VULNERABILITY"
+        risk_level = "CRITICAL (POST-RELAPSE REBOUND)" if is_post_relapse else "CRITICAL VULNERABILITY"
     elif risk_score >= 50:
         risk_level = "ELEVATED VULNERABILITY"
     elif risk_score >= 30:
@@ -400,12 +477,12 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     else:
         risk_level = "OPTIMAL RESILIENCE"
 
-    # ── H. Environmental & Behavioral Active Domino Triggers ──────────────────
+    # ── I. Environmental & Behavioral Active Domino Triggers ──────────────────
     active_catalysts = []
+    active_catalysts.append(f"{current_phase_info['phase_name']}")
     if is_post_relapse and latest_autopsy:
         active_catalysts.append(f"Recent Domino: {latest_autopsy.first_compromise_title}")
         active_catalysts.append(f"Vulnerable Space: {latest_autopsy.physical_environment}")
-        active_catalysts.append(f"Precursor: {latest_autopsy.emotional_precursor.title()}")
     else:
         if current_sleep_hours < 6.5 or current_sleep_quality <= 4:
             active_catalysts.append(f"Sleep Deficit ({current_sleep_hours:.1f}h)")
@@ -420,50 +497,52 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     if today_urges_count > 0:
         active_catalysts.append("Urge SOS Reset")
 
-    # ── I. Concise Dynamic Primary Vulnerability Statement ───────────────────
+    # ── J. Dynamic Real-Time Primary Vulnerability Statement ──────────────────
     if is_post_relapse:
         if latest_autopsy:
-            primary_vulnerability = f"Post-Relapse Rebound Window: Guard against the chaser effect and repeat compromise ({latest_autopsy.first_compromise_title} in {latest_autopsy.physical_environment}). Enforce your Golden Firewall Rule immediately."
+            primary_vulnerability = f"Post-Relapse Chaser Window: Guard against repeat compromise ({latest_autopsy.first_compromise_title} in {latest_autopsy.physical_environment}). Enforce your Golden Rule immediately."
         else:
             primary_vulnerability = "Post-Relapse Rebuilding Phase: Prefrontal control is sensitized. Lock down solitary screen access and follow immediate physical grounding."
+    elif 12 <= current_hour < 18 and current_stress >= 6:
+        primary_vulnerability = f"Midday Work Slump ({current_phase_info['time_window']}): Cognitive fatigue ({current_stress}/10 stress) is triggering digital dopamine snacking on {primary_dev}."
+    elif 18 <= current_hour < 22:
+        primary_vulnerability = f"Evening Decompression Window: Willpower depleted after work/study. Solitary screen lounging in {environment_label} is the primary vulnerability."
+    elif current_hour >= 22 or current_hour < 5:
+        primary_vulnerability = f"Peak Bedside Vulnerability (Active Right Now): Late-night solitude with {primary_dev} in the dark. Prefrontal impulse control is offline."
+    elif 5 <= current_hour < 12:
+        primary_vulnerability = f"Morning Awakening Horizon: Checking {primary_dev} before sunlight or hydration creates an immediate dopamine craving loop for the day."
     elif today_urges_count > 0 or checkin_urge_intensity >= 6:
         primary_vulnerability = f"Active craving wave recorded today. High dopamine seeking predicted during {peak_risk_window} in {environment_label}."
-    elif current_stress >= 7:
-        primary_vulnerability = f"High mental fatigue & stress ({current_stress}/10) weakens impulse control around {peak_risk_window}."
-    elif current_sleep_hours < 6.0:
-        primary_vulnerability = f"Sleep deprivation ({current_sleep_hours:.1f}h) impairs prefrontal willpower during {peak_risk_window}."
-    elif streak_val >= 14:
-        primary_vulnerability = f"Clean streak momentum is high ({streak_val}d). Guard against overconfidence and idle screen time in {environment_label}."
     else:
         primary_vulnerability = f"Unstructured idle screen time on {primary_dev} during {peak_risk_window} in {environment_label}."
 
-    # ── J. 3-Tier Tactical Defense Protocol ──────────────────────────────────
+    # ── K. 3-Tier Tactical Defense Protocol (Real-Time Synchronized) ───────────
     step1_action = first_sign_info["action"]
-    step2_device_rule = environmental_rule
+    step2_device_rule = current_phase_info["tactical_directive"]
     clean_techs = [t for t in (helpful_techniques or []) if t and t.lower() not in ["unknown", "none", "null"]]
-    top_tech = clean_techs[0] if clean_techs else "Pranayama Breath Reset"
-    step3_transmute = f"Engage {top_tech}: Transmute vital physical energy through deep breathing, a cold splash, or pushups."
+    top_tech = clean_techs[0] if clean_techs else ("Bhramari Pranayama" if 12 <= current_hour < 18 else "4-7-8 Pranayama Reset")
+    step3_transmute = f"Engage {top_tech}: Transmute vital physical energy through deep diaphragmatic breath or 20 pushups."
 
     tactical_defense = f"1) {step1_action} 2) {step2_device_rule} 3) {step3_transmute}"
 
-    # ── K. Future Trigger Forecast & Preemptive Shield ────────────────────────
+    # ── L. Future Trigger Forecast & Preemptive Shield ────────────────────────
     predicted_probability = min(95, max(35, risk_score + (15 if is_post_relapse else 0) + (10 if current_stress >= 6 else 0)))
 
     if is_post_relapse and latest_autopsy:
         forecast_root = f"Chaser effect and dopamine rebound in {latest_autopsy.physical_environment}"
         predicted_trigger = f"Chaser Wave: {latest_autopsy.first_compromise_title}"
-    elif current_stress >= 7:
-        forecast_root = f"High stress level ({current_stress}/10) depleting prefrontal willpower"
-        predicted_trigger = f"Stress Decompression on {primary_dev}"
-    elif current_sleep_hours < 6.0:
-        forecast_root = f"Sleep deficit ({current_sleep_hours:.1f}h) impairing impulse control"
-        predicted_trigger = f"Late-Night Fatigue Browsing"
-    elif today_urges_count >= 1 or checkin_urge_intensity >= 6:
-        forecast_root = "Active craving velocity recorded today"
-        predicted_trigger = "Urge Resurgence Wave"
+    elif current_hour >= 22 or current_hour < 5:
+        forecast_root = f"Active late-night bedroom solitude with {primary_dev}"
+        predicted_trigger = f"Late-Night Bedside {primary_dev} Solitude"
+    elif 12 <= current_hour < 18:
+        forecast_root = f"Midday post-lunch mental fatigue ({current_stress}/10 stress) and screen slump"
+        predicted_trigger = f"Midday Screen Grazing on {primary_dev}"
+    elif 18 <= current_hour < 22:
+        forecast_root = f"Post-work willpower depletion and unstructured lounge in {environment_label}"
+        predicted_trigger = f"Evening Decompression on {primary_dev}"
     else:
         forecast_root = f"Unstructured solitary screen time on {primary_dev} in {environment_label}"
-        predicted_trigger = f"Late Evening / Bedside {primary_dev} Solitude" if current_hour >= 16 else f"Midday Screen Slump with {primary_dev}"
+        predicted_trigger = f"Tonight's Bedside {primary_dev} Window"
 
     future_trigger_forecast = {
         "predicted_window": next_predicted_window,
@@ -471,10 +550,10 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         "probability_pct": predicted_probability,
         "predicted_trigger_name": predicted_trigger,
         "root_catalyst": forecast_root,
-        "preemptive_action": f"Pre-commit before {peak_risk_window}: {environmental_rule}",
+        "preemptive_action": f"Pre-commit now: {current_phase_info['tactical_directive']}",
     }
 
-    # ── L. 24-Hour Predictive Risk Horizon Timeline ───────────────────────────
+    # ── M. 24-Hour Predictive Risk Horizon Timeline (Accurately Synced) ───────
     forecast_timeline_24h = [
         {
             "id": "slot-morning",
@@ -482,43 +561,43 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "period_name": "Morning Awakening",
             "risk_score": max(20, min(55, int(risk_score * 0.45) + (15 if is_post_relapse else 0))),
             "risk_level": "MODERATE" if is_post_relapse else "LOW",
-            "key_hazard": f"Checking {primary_dev} in bed before getting up",
-            "shield_protocol": "Hydrate with water and complete morning check-in before touching feeds.",
-            "is_current": current_hour < 12,
+            "key_hazard": f"Checking {primary_dev} in bed before getting on two feet",
+            "shield_protocol": "Hydrate with 500ml water and get 5 min outdoor sunlight before opening digital feeds.",
+            "is_current": 5 <= current_hour < 12,
         },
         {
             "id": "slot-midday",
             "time_label": "12:00 PM - 06:00 PM",
             "period_name": "Midday Focus & Energy",
-            "risk_score": max(30, min(75, int(risk_score * 0.7) + (10 if is_post_relapse else 0))),
-            "risk_level": "ELEVATED" if is_post_relapse else "MODERATE",
-            "key_hazard": f"Post-lunch mental slump and work stress grazing on {primary_dev}",
-            "shield_protocol": "Take a 5-minute walking break away from screens and practice 3 PM breathwork.",
+            "risk_score": max(35, min(75, int(risk_score * 0.7) + (10 if is_post_relapse else 0) + (10 if current_stress >= 6 else 0))),
+            "risk_level": "ELEVATED" if (is_post_relapse or current_stress >= 6) else "MODERATE",
+            "key_hazard": f"Post-lunch cognitive fatigue and work-stress grazing on {primary_dev}",
+            "shield_protocol": "Step away from screen at 3 PM: execute 20 bodyweight squats or 5 min Bhramari breathwork.",
             "is_current": 12 <= current_hour < 18,
         },
         {
             "id": "slot-evening",
             "time_label": "06:00 PM - 10:00 PM",
             "period_name": "Evening Decompression",
-            "risk_score": max(50, min(88, int(risk_score * 0.85) + (10 if is_post_relapse else 0))),
+            "risk_score": max(55, min(88, int(risk_score * 0.85) + (10 if is_post_relapse else 0))),
             "risk_level": "CRITICAL" if is_post_relapse else "ELEVATED",
-            "key_hazard": f"Unstructured solitary lounging in {environment_label}",
-            "shield_protocol": "Keep ambient room lighting bright and engage dedicated physical/social tasks.",
+            "key_hazard": f"Unstructured solitary lounging on couch/bed in {environment_label}",
+            "shield_protocol": "Keep ambient room lighting bright; engage workout or social dinner; keep device in living area.",
             "is_current": 18 <= current_hour < 22,
         },
         {
             "id": "slot-night",
             "time_label": "10:00 PM - 02:00 AM",
-            "period_name": "Peak Circadian Window",
-            "risk_score": min(95, max(75 if is_post_relapse else 60, risk_score + 10)),
+            "period_name": "Peak Bedside Solitude",
+            "risk_score": min(96, max(80 if is_post_relapse else 68, risk_score + 12)),
             "risk_level": "CRITICAL",
-            "key_hazard": f"Late-night private screen time in {environment_label}",
-            "shield_protocol": environmental_rule,
-            "is_current": current_hour >= 22 or current_hour < 6,
+            "key_hazard": f"Late-night private bedroom screen time in {environment_label}",
+            "shield_protocol": "Bedside Boundary: Charge phone 10 feet away from bed 30 minutes before sleep.",
+            "is_current": current_hour >= 22 or current_hour < 5,
         },
     ]
 
-    # ── M. Granular Triggers Breakdown Array (5 Categories) ───────────────────
+    # ── N. Granular Triggers Breakdown Array (5 Real-Time Categories) ─────────
     triggers_breakdown: List[Dict[str, Any]] = []
 
     if is_post_relapse and latest_autopsy:
@@ -536,13 +615,13 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
     triggers_breakdown.extend([
         {
             "id": "trig-circadian",
-            "name": f"Circadian Window ({peak_risk_window})",
+            "name": f"{current_phase_info['phase_name']} ({current_phase_info['time_window']})",
             "category": "Circadian",
             "frequency": max(total_urges_count, 1),
-            "riskScore": min(95, risk_score + 6),
-            "color": "#00E5FF",
-            "peakTime": peak_risk_window,
-            "recommendation": f"Pre-commit to screen cutoff: keep {primary_dev} away from bed 30 minutes before this window.",
+            "riskScore": min(95, risk_score + 4),
+            "color": current_phase_info["color"],
+            "peakTime": current_phase_info["time_window"],
+            "recommendation": current_phase_info["tactical_directive"],
         },
         {
             "id": "trig-environmental",
@@ -561,7 +640,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "frequency": max(total_urges_count, 1),
             "riskScore": min(88, max(50, risk_score - 8)),
             "color": "#F59E0B",
-            "peakTime": peak_risk_window,
+            "peakTime": "Immediate",
             "recommendation": step1_action,
         },
         {
@@ -582,7 +661,7 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
             "riskScore": min(85, max(40, risk_score - 12)),
             "color": "#EC4899",
             "peakTime": peak_risk_window,
-            "recommendation": f"Establish a physical quarantine boundary for your {primary_dev} before bedtime.",
+            "recommendation": f"Establish a physical quarantine boundary for your {primary_dev} during {current_phase_info['time_window']}.",
         },
     ])
 
@@ -591,11 +670,12 @@ async def compute_deep_trigger_intelligence(user: User) -> Dict[str, Any]:
         "next_predicted_window": next_predicted_window,
         "next_predicted_context": next_predicted_context,
         "today_weekday": today_weekday_name,
-        "today_status_label": f"TODAY ({today_weekday_name.upper()})",
+        "today_status_label": current_phase_info["status_label"],
         "primary_vulnerability": primary_vulnerability,
         "tactical_defense": tactical_defense,
         "future_trigger_forecast": future_trigger_forecast,
         "forecast_timeline_24h": forecast_timeline_24h,
+        "current_phase": current_phase_info,
         "vitality_boost_quote": (
             "Energy is never destroyed; it is only transmuted. When you hold your ground, "
             "raw sexual energy transforms into pure intellectual sovereignty (Ojas)."

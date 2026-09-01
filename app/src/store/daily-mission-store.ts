@@ -257,6 +257,42 @@ export const useDailyMissionStore = create<DailyMissionState>()(
           if (hasAnyCompleted) {
             missionsApi.syncMissions(updated).catch(() => {});
           }
+
+          // Fetch verified user history from database and merge into local history state
+          const historyResponse = await missionsApi.getMissionsHistory(14).catch(() => null);
+          if (historyResponse && Array.isArray(historyResponse.days)) {
+            const mergedHistory = { ...get().history };
+            historyResponse.days.forEach((d) => {
+              if (d.date) {
+                // If local has today's live tasks, keep today's live tasks; otherwise use DB history
+                const isToday = d.date === today;
+                const tasksObj = isToday
+                  ? get().todayTasks
+                  : {
+                      checkin: Boolean(d.tasks?.checkin),
+                      meditation: Boolean(d.tasks?.meditation),
+                      journal: Boolean(d.tasks?.journal),
+                      coach: Boolean(d.tasks?.coach),
+                      rescue: Boolean(d.tasks?.rescue),
+                    };
+
+                const completedCount =
+                  (tasksObj.checkin ? 1 : 0) +
+                  (tasksObj.meditation ? 1 : 0) +
+                  (tasksObj.journal ? 1 : 0) +
+                  (tasksObj.coach ? 1 : 0) +
+                  (tasksObj.rescue ? 1 : 0);
+
+                mergedHistory[d.date] = {
+                  date: d.date,
+                  tasks: tasksObj,
+                  allCompleted: completedCount === 5,
+                  pointsEarned: completedCount * 20,
+                };
+              }
+            });
+            set({ history: mergedHistory });
+          }
         } catch (e) {
           // Silent fallback to local storage state if offline
         }

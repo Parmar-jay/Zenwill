@@ -110,55 +110,55 @@ export default function EmergencyIndexScreen() {
                 colors={['rgba(239, 68, 68, 0.28)', 'rgba(239, 68, 68, 0.08)']}
                 style={styles.heroGradient}
               >
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroIconBox}>
-                  <Ionicons name="shield-half" size={24} color="#EF4444" />
-                </View>
-                <View style={styles.heroBadge}>
-                  <ThemedText style={styles.heroBadgeText}>Best Urge De-escalation</ThemedText>
-                </View>
-              </View>
-
-              <View style={styles.heroTextSection}>
-                <ThemedText style={styles.heroTitleText}>Interrupt Urge Loop</ThemedText>
-                <ThemedText style={styles.heroSubtitle}>
-                  5-Minute Sequence: Diaphragmatic + Bhramari + Nadi Shodhana + Sensory Grounding.
-                </ThemedText>
-              </View>
-
-              <View style={styles.heroStartBtn}>
-                <ThemedText style={styles.heroStartText}>Start 5-Minute Emergency Protocol</ThemedText>
-                <Ionicons name="arrow-forward" size={15} color="#000000" />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* Emergency Protocols Grid */}
-          <View style={styles.toolsSection}>
-            <View style={styles.sectionHeaderRow}>
-              <ThemedText style={styles.sectionTitle}>De-escalation Protocols</ThemedText>
-              <ThemedText style={styles.sectionCount}>3 Instant Tools</ThemedText>
-            </View>
-
-            <View style={styles.toolsGrid}>
-              {emergencyTools.map((tool) => (
-                <TouchableOpacity
-                  key={tool.id}
-                  style={[styles.toolCard, { width: tileWidth }]}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    triggerHaptic();
-                    router.push(tool.route as any);
-                  }}
-                >
-                  <View style={styles.toolTopRow}>
-                    <View style={[styles.toolIconBox, { backgroundColor: `${tool.color}18`, borderColor: tool.color }]}>
-                      <Ionicons name={tool.icon} size={20} color={tool.color} />
-                    </View>
-                    <View style={[styles.toolBadge, { backgroundColor: `${tool.color}15`, borderColor: `${tool.color}30` }]}>
-                      <ThemedText style={[styles.toolBadgeText, { color: tool.color }]}>{tool.badge}</ThemedText>
-                    </View>
+                <View style={styles.heroTopRow}>
+                  <View style={styles.heroIconBox}>
+                    <Ionicons name="shield-half" size={24} color="#EF4444" />
                   </View>
+                  <View style={styles.heroBadge}>
+                    <ThemedText style={styles.heroBadgeText} numberOfLines={1}>Best Urge De-escalation</ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.heroTextSection}>
+                  <ThemedText style={styles.heroTitleText}>Interrupt Urge Loop</ThemedText>
+                  <ThemedText style={styles.heroSubtitle}>
+                    5-Minute Sequence: Diaphragmatic + Bhramari + Nadi Shodhana + Sensory Grounding.
+                  </ThemedText>
+                </View>
+
+                <View style={styles.heroStartBtn}>
+                  <ThemedText style={styles.heroStartText}>Start 5-Minute Emergency Protocol</ThemedText>
+                  <Ionicons name="arrow-forward" size={15} color="#000000" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Emergency Protocols Grid */}
+            <View style={styles.toolsSection}>
+              <View style={styles.sectionHeaderRow}>
+                <ThemedText style={styles.sectionTitle}>De-escalation Protocols</ThemedText>
+                <ThemedText style={styles.sectionCount}>3 Instant Tools</ThemedText>
+              </View>
+
+              <View style={styles.toolsGrid}>
+                {emergencyTools.map((tool) => (
+                  <TouchableOpacity
+                    key={tool.id}
+                    style={[styles.toolCard, { width: tileWidth }]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      triggerHaptic();
+                      router.push(tool.route as any);
+                    }}
+                  >
+                    <View style={styles.toolTopRow}>
+                      <View style={[styles.toolIconBox, { backgroundColor: `${tool.color}18`, borderColor: tool.color }]}>
+                        <Ionicons name={tool.icon} size={20} color={tool.color} />
+                      </View>
+                      <View style={[styles.toolBadge, { backgroundColor: `${tool.color}15`, borderColor: `${tool.color}30` }]}>
+                        <ThemedText style={[styles.toolBadgeText, { color: tool.color }]} numberOfLines={1}>{tool.badge}</ThemedText>
+                      </View>
+                    </View>
 
                   <View style={{ gap: 3 }}>
                     <ThemedText style={styles.toolTitle}>{tool.title}</ThemedText>
@@ -265,12 +265,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
     paddingHorizontal: 10,
     paddingVertical: 4,
+    minHeight: 26,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   heroBadgeText: {
     fontSize: 10.5,
     fontWeight: '800',
     color: '#EF4444',
+    letterSpacing: 0.3,
   },
   heroTextSection: {
     gap: 4,
@@ -337,6 +344,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   toolIconBox: {
     width: 36,
@@ -348,13 +356,19 @@ const styles = StyleSheet.create({
   },
   toolBadge: {
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    minHeight: 25,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   toolBadgeText: {
     fontSize: 9.5,
     fontWeight: '800',
+    letterSpacing: 0.4,
+    textAlign: 'center',
   },
   toolTitle: {
     fontSize: 14,

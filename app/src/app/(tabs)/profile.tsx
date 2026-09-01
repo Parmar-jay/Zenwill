@@ -894,11 +894,12 @@ const styles = StyleSheet.create({
   detailGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 10,
+    gap: 10,
   },
   detailCard: {
-    width: '48.5%',
+    flexBasis: '47%',
+    flexGrow: 1,
+    minWidth: 135,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 10,
     padding: 10,
@@ -938,7 +939,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 229, 255, 0.06)',
     borderWidth: 1,
     borderColor: 'rgba(0, 229, 255, 0.25)',
-    paddingVertical: 9,
+    paddingVertical: 10,
+    minHeight: 40,
     borderRadius: 10,
     marginTop: 6,
   },
@@ -954,6 +956,7 @@ const styles = StyleSheet.create({
   },
   logoutBtn: {
     flex: 1,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -971,6 +974,7 @@ const styles = StyleSheet.create({
   },
   deleteAccountBtn: {
     flex: 1,
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

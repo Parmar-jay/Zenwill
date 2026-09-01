@@ -173,6 +173,41 @@ export default function TriggerIntelligenceScreen() {
         >
           <View style={styles.contentContainer}>
 
+            {/* 0. Real-Time Active Diurnal Status Card */}
+            {triggerData?.current_phase && (
+              <View style={[styles.diurnalPhaseCard, { borderColor: `${triggerData.current_phase.color}45` }]}>
+                <View style={styles.diurnalHeaderRow}>
+                  <View style={[styles.phasePulseDot, { backgroundColor: triggerData.current_phase.color }]} />
+                  <ThemedText style={[styles.diurnalStatusText, { color: triggerData.current_phase.color }]}>
+                    {triggerData.current_phase.status_label}
+                  </ThemedText>
+                  <View style={[styles.diurnalTimeBadge, { backgroundColor: `${triggerData.current_phase.color}18`, borderColor: `${triggerData.current_phase.color}35` }]}>
+                    <ThemedText style={[styles.diurnalTimeBadgeText, { color: triggerData.current_phase.color }]}>
+                      {triggerData.current_phase.time_window}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.diurnalBodyBox}>
+                  <View style={styles.diurnalInfoRow}>
+                    <Ionicons name="body-outline" size={13} color="#94A3B8" style={{ marginTop: 2 }} />
+                    <ThemedText style={styles.diurnalBioText}>
+                      <ThemedText style={{ color: '#F1F5F9', fontWeight: '700' }}>Biological State: </ThemedText>
+                      {triggerData.current_phase.biological_state}
+                    </ThemedText>
+                  </View>
+
+                  <View style={styles.diurnalInfoRow}>
+                    <Ionicons name="flash-outline" size={13} color={triggerData.current_phase.color} style={{ marginTop: 2 }} />
+                    <ThemedText style={styles.diurnalDirectiveText}>
+                      <ThemedText style={{ color: triggerData.current_phase.color, fontWeight: '800' }}>Live Action: </ThemedText>
+                      {triggerData.current_phase.tactical_directive}
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+            )}
+
             {/* 1. Radar Overview Hero Card */}
             <View style={styles.darkCard}>
               <View style={styles.cardHeaderRow}>
@@ -565,6 +600,69 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingHorizontal: 16,
     gap: 16,
+  },
+
+  /* Real-Time Active Diurnal Card */
+  diurnalPhaseCard: {
+    backgroundColor: '#0E0F14',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  diurnalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  phasePulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  diurnalStatusText: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    flex: 1,
+    textTransform: 'uppercase',
+  },
+  diurnalTimeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  diurnalTimeBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  diurnalBodyBox: {
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  diurnalInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  diurnalBioText: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+    lineHeight: 16,
+    flex: 1,
+  },
+  diurnalDirectiveText: {
+    fontSize: 11.5,
+    color: '#E2E8F0',
+    lineHeight: 16,
+    flex: 1,
   },
 
   /* Dark Grey Card (Unified UI Standard) */

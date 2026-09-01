@@ -192,6 +192,16 @@ export interface TriggerIntelligence {
     shield_protocol: string;
     is_current: boolean;
   }>;
+  current_phase?: {
+    phase_id: string;
+    phase_name: string;
+    time_window: string;
+    status_label: string;
+    biological_state: string;
+    primary_hazard: string;
+    tactical_directive: string;
+    color: string;
+  };
   vitality_boost_quote: string;
   purpose_alignment_quote?: string;
   risk_level?: string;
@@ -258,7 +268,9 @@ export const analyticsApi = {
   },
 
   getTriggerIntelligence(): Promise<TriggerIntelligence> {
-    return api.get<TriggerIntelligence>('/analytics/trigger-intelligence');
+    const clientHour = new Date().getHours();
+    const tzOffset = -new Date().getTimezoneOffset(); // in minutes (e.g. +330 for IST)
+    return api.get<TriggerIntelligence>(`/analytics/trigger-intelligence?client_hour=${clientHour}&tz_offset=${tzOffset}`);
   },
 
   getProgressIntelligence(): Promise<ProgressIntelligence> {

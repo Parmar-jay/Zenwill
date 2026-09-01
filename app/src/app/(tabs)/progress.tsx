@@ -240,31 +240,35 @@ export default function ProgressTabScreen() {
                       : triggerIntel.risk_level.includes('ELEVATED') ? { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }
                       : { backgroundColor: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.3)' }
                     ]}>
-                      <ThemedText style={[
-                        styles.statusPillText,
-                        triggerIntel.risk_level.includes('CRITICAL') ? { color: '#EF4444' }
-                        : triggerIntel.risk_level.includes('ELEVATED') ? { color: '#F59E0B' }
-                        : { color: '#10B981' }
-                      ]}>
-                        {triggerIntel.risk_level}
+                      <ThemedText
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                        style={[
+                          styles.statusPillText,
+                          triggerIntel.risk_level.includes('CRITICAL') ? { color: '#EF4444' }
+                          : triggerIntel.risk_level.includes('ELEVATED') ? { color: '#F59E0B' }
+                          : { color: '#10B981' }
+                        ]}
+                      >
+                        {triggerIntel.risk_level.split('(')[0].trim()}
                       </ThemedText>
                     </View>
                   )}
                 </View>
 
-                {/* Peak Window & Danger Timing */}
+                {/* Peak Window & Danger Timing (Guaranteed Responsive 2-Column) */}
                 <View style={styles.intelTimingRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
+                  <View style={styles.intelTimingColLeft}>
                     <ThemedText style={styles.intelTimingSub}>NEXT PREDICTED TRIGGER</ThemedText>
-                    <ThemedText style={styles.intelTimingTime}>
+                    <ThemedText style={styles.intelTimingTime} numberOfLines={2}>
                       {triggerIntel.next_predicted_window || triggerIntel.peak_risk_window || 'Tonight, 10:30 PM - 12:30 AM'}
                     </ThemedText>
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                  <View style={styles.intelTimingColRight}>
                     <ThemedText style={styles.intelTimingSub}>
                       {triggerIntel.today_status_label ? 'TODAY\'S PHASE' : 'CRITICAL PHASE'}
                     </ThemedText>
-                    <ThemedText style={styles.intelTimingDay}>
+                    <ThemedText style={styles.intelTimingDay} numberOfLines={2}>
                       {triggerIntel.today_weekday ? `${triggerIntel.today_weekday} (${triggerIntel.highest_risk_day})` : (triggerIntel.highest_risk_day || 'Weekends')}
                     </ThemedText>
                   </View>
@@ -888,10 +892,20 @@ const styles = StyleSheet.create({
   intelTimingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 8,
+    alignItems: 'flex-start',
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+    gap: 12,
+  },
+  intelTimingColLeft: {
+    flex: 1.3,
+    gap: 3,
+  },
+  intelTimingColRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+    gap: 3,
   },
   intelTimingSub: {
     fontSize: 9,
@@ -900,14 +914,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   intelTimingTime: {
-    fontSize: 13.5,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#00E5FF',
+    lineHeight: 17,
   },
   intelTimingDay: {
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+    textAlign: 'right',
+    lineHeight: 16,
   },
   vulnerabilityBox: {
     flexDirection: 'row',
@@ -1005,7 +1022,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   metricCard: {
-    width: '48%',
+    flexBasis: '47%',
+    flexGrow: 1,
+    minWidth: 140,
     backgroundColor: '#0E0F12',
     borderRadius: 16,
     borderWidth: 1,
