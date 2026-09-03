@@ -233,67 +233,66 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
 
     status_title, status_color = _get_status_tier(final_score)
 
-    # ── D. Intelligent Contextual Summary Synthesis ───────────────────────────
+    # ── D. Intelligent Contextual Summary Synthesis (Human Scannable) ────────
+    headline = ""
     summary_parts: List[str] = []
 
     if streak_val > 0:
-        summary_parts.append(f"Operating on an active {streak_val}-day clean trajectory.")
+        headline = f"{streak_val}-Day Clean Trajectory • Prefrontal Control Active"
+        summary_parts.append(f"Operating on a steady {streak_val}-day neural rewiring path.")
     elif latest_autopsy and getattr(latest_autopsy, "retained_percentage", None):
+        headline = f"Recovery Active • {latest_autopsy.retained_percentage}% Neural Rewiring Preserved"
         summary_parts.append(
-            f"Recovery baseline active: {latest_autopsy.retained_percentage}% retained neural rewiring preserved from {latest_autopsy.clean_days_count} clean days."
+            f"Preserved {latest_autopsy.retained_percentage}% neural pathways from your {latest_autopsy.clean_days_count}-day run."
         )
     else:
-        summary_parts.append("Currently establishing day 1 neuroplastic baseline.")
+        headline = "Day 1 Baseline • Establishing Mental Fortress"
+        summary_parts.append("Establishing day 1 foundation; evening solitude is the critical window.")
 
     if today_checkin:
-        stress_detail = f" ({stress_causes[0]})" if stress_causes else ""
-        focus_detail = f" with primary driver in {focus_factors[0]}" if focus_factors else ""
+        stress_detail = f" (driver: {stress_causes[0]})" if stress_causes else ""
         summary_parts.append(
-            f"Daily check-in confirms {mood.lower()} mood, {energy_score}/10 energy, and {stress_score}/10 stress load{stress_detail}{focus_detail}."
+            f"Today: {mood.capitalize()} mood, {energy_score}/10 energy, {stress_score}/10 stress{stress_detail}."
         )
     else:
-        summary_parts.append("Daily checklist pending execution.")
+        summary_parts.append("Morning checklist ready for execution.")
 
     if today_urges_count > 0:
         summary_parts.append(
             f"{today_urges_count} urge {'wave' if today_urges_count == 1 else 'waves'} neutralized and transmuted today."
         )
-    elif streak_val >= 7:
-        summary_parts.append("Prefrontal inhibition is stabilized with zero unmanaged dopamine spikes.")
 
     intelligence_summary = " ".join(summary_parts)
 
-    # ── E. Dynamic Transmutation Protocol Generation ──────────────────────────
+    # ── E. Dynamic Transmutation Protocol Generation (Punchy & Direct) ────────
     if streak_val == 0 and latest_autopsy and getattr(latest_autopsy, "generated_golden_rule", None):
         transmutation_protocol = (
-            f"Firewall Stabilization Protocol: Enforce active rule: \"{latest_autopsy.generated_golden_rule}\". "
-            "Engage 5 minutes of restorative Nadi Shodhana breathing to rapidly anchor prefrontal recovery."
+            f"Firewall Rule: \"{latest_autopsy.generated_golden_rule}\". "
+            "Execute 5 minutes of Nadi Shodhana breathing to restore prefrontal focus."
         )
     elif stress_score >= 7:
-        cause_txt = f" stemming from {stress_causes[0]}" if stress_causes else ""
+        cause_txt = f" from {stress_causes[0]}" if stress_causes else ""
         transmutation_protocol = (
-            f"Acute Cortisol Directive: Stress is elevated ({stress_score}/10){cause_txt}. Divert sympathetic nervous arousal immediately "
-            "into 3 cycles of Box Breathing (4-4-4-4) followed by 20 deep squats or 15 minutes of vigorous physical movement."
+            f"Cortisol Reset: Stress is elevated ({stress_score}/10){cause_txt}. "
+            "Divert sympathetic arousal into 3 cycles of Box Breathing and 20 deep squats immediately."
         )
     elif sleep_hours < 6.0 or sleep_quality <= 4:
         transmutation_protocol = (
-            f"Prefrontal Recovery Protocol: Sleep deficit detected ({sleep_hours:.1f}h). Fatigue weakens impulse inhibition. "
-            "Enforce a strict 9:30 PM digital shutdown and engage in 10 minutes of restorative Nadi Shodhana breathing."
+            f"Sleep Restoration: Sleep deficit ({sleep_hours:.1f}h) weakens impulse control. "
+            "Enforce a strict 9:30 PM device curfew and 10 minutes of nasal breathing."
         )
     elif today_urges_count > 0:
         transmutation_protocol = (
-            "Direct Transmutation Protocol: Urge momentum is active. Channel raw sexual energy (Virya) upwards into "
-            "30 minutes of deep intellectual focus, creative output, or cold water immersion to convert it into Ojas."
+            "Energy Transmutation: Channel sexual energy (Virya) upward into "
+            "30 minutes of deep creative focus or physical training to convert into Ojas."
         )
     elif energy_score >= 7 and focus_score >= 7:
         transmutation_protocol = (
-            "Apex Vitality Protocol: High mental clarity and physical energy recorded. Sublimate this vital force directly into "
-            f"your primary life outcome: {core_purpose[:60]}."
+            f"Peak Focus Directive: High mental clarity recorded. Sublimate vital energy into: {core_purpose[:45]}."
         )
     else:
         transmutation_protocol = (
-            "Sovereignty Protocol: Maintain steady sensory discipline. Complete your daily checklist and afternoon meditation "
-            "to reinforce neural pathways against evening vulnerability."
+            "Sensory Discipline: Maintain steady vigilance. Complete afternoon meditation to guard against evening vulnerability."
         )
 
     # ── F. 7-Day Trend & Prediction Intelligence ──────────────────────────────
@@ -312,29 +311,116 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
         sum(getattr(c, "mood_intensity", 5) for c in recent_checkins[:7]) / max(len(recent_checkins[:7]), 1)
     )
 
-    predictions: List[str] = []
+    clean_rate_7d = int(((7 - relapse_count_7d) / 7) * 100) if recent_checkins else (100 if streak_val > 0 else 0)
+
+    predictions: List[Dict[str, Any]] = []
     if streak_val >= 14:
-        predictions.append("Dopamine receptor sensitivity is normalizing; expect higher intrinsic motivation and mental endurance.")
+        predictions.append({
+            "level": "FAVORABLE",
+            "title": "Dopamine Resensitization",
+            "text": "Receptor density increasing; expect higher intrinsic motivation and baseline clarity.",
+            "color": "#10B981",
+            "icon": "sparkles",
+        })
     elif streak_val >= 7:
-        predictions.append("Entering week 2 neuro-stabilization window; vigilance against rationalizations is recommended.")
+        predictions.append({
+            "level": "MODERATE",
+            "title": "Week 2 Neuro-Stabilization",
+            "text": "Vigilance against subtle rationalizations is critical between days 7 and 10.",
+            "color": "#00E5FF",
+            "icon": "shield-outline",
+        })
     else:
-        predictions.append("Early habit formation stage; highest risk occurs during idle evening downtime.")
+        predictions.append({
+            "level": "ELEVATED",
+            "title": "Early Habit Vulnerability",
+            "text": "Highest risk occurs during unmanaged evening screen solitude.",
+            "color": "#F59E0B",
+            "icon": "alert-circle-outline",
+        })
 
     if avg_stress_7d >= 6.5:
-        predictions.append("Elevated weekly stress trend poses a secondary trigger risk during weekend evenings.")
+        predictions.append({
+            "level": "WARNING",
+            "title": "Accumulated Cortisol Load",
+            "text": f"Weekly stress averaging {avg_stress_7d:.1f}/10 increases craving sensitivity.",
+            "color": "#EF4444",
+            "icon": "flame-outline",
+        })
     if avg_sleep_7d < 6.5:
-        predictions.append("Accumulated sleep debt will lower impulse inhibition if sleep recovery is delayed.")
+        predictions.append({
+            "level": "CAUTION",
+            "title": "Sleep Debt Detected",
+            "text": f"Averaging {avg_sleep_7d:.1f}h sleep diminishes willpower and impulse control.",
+            "color": "#F59E0B",
+            "icon": "moon-outline",
+        })
 
-    recommendations: List[str] = [
-        "Complete your daily check-in every morning before 10 AM to establish daily psychological intent.",
-        "Maintain the 2-meter physical boundary between your sleeping area and mobile devices.",
-        "Execute 3-minute Pranayama or Cold Splash immediately upon detecting any first warning cue.",
+    recommendations: List[Dict[str, Any]] = [
+        {
+            "title": "Morning Intent Lock",
+            "action": "Complete daily check-in before 10 AM to prime prefrontal resistance.",
+            "tag": "Daily Priming",
+            "color": "#00E5FF",
+            "icon": "sunny-outline",
+        },
+        {
+            "title": "Spatial Device Curfew",
+            "action": "Keep devices outside sleeping area 45 minutes before sleep.",
+            "tag": "Environment",
+            "color": "#A855F7",
+            "icon": "bed-outline",
+        },
+        {
+            "title": "3-Second Somatic Snap",
+            "action": "Splash cold water or do 20 squats on first sign of mental fantasy.",
+            "tag": "Emergency",
+            "color": "#10B981",
+            "icon": "flash-outline",
+        },
+    ]
+
+    # 4 Quick Metric Cards for instant human scanning
+    core_metrics = [
+        {
+            "id": "clean_consistency",
+            "label": "7-Day Consistency",
+            "value": f"{clean_rate_7d}%",
+            "sub": f"{7 - relapse_count_7d}/7 Days Clean",
+            "color": "#10B981",
+            "icon": "shield-checkmark",
+        },
+        {
+            "id": "urges_neutralized",
+            "label": "Urges Neutralized",
+            "value": str(len(effective_sessions) if emergency_sessions else max(today_urges_count, streak_val)),
+            "sub": "Zero Relapse Yield",
+            "color": "#00E5FF",
+            "icon": "flame",
+        },
+        {
+            "id": "mind_strength",
+            "label": "Mind Strength",
+            "value": str(user.mind_strength or 500),
+            "sub": f"{status_title[:18]}",
+            "color": "#A855F7",
+            "icon": "flash",
+        },
+        {
+            "id": "recovery_balance",
+            "label": "Sleep & Stress",
+            "value": f"{avg_sleep_7d:.1f}h / {avg_stress_7d:.0f}st",
+            "sub": "Cortisol Index",
+            "color": "#38BDF8",
+            "icon": "moon",
+        },
     ]
 
     return {
         "score": final_score,
         "status_title": status_title,
         "status_color": status_color,
+        "headline": headline,
         "summary": intelligence_summary,
         "transmutation_tip": transmutation_protocol,
         "checkin_score": checkin_pts,
@@ -346,10 +432,12 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
             "meditation_points": meditation_pts,
             "urge_control_points": urge_pts,
         },
+        "core_metrics": core_metrics,
         "weekly_stats": {
             "total_checkins": len(recent_checkins[:7]),
             "relapse_count": relapse_count_7d,
             "urge_free_days": urge_free_days_7d,
+            "clean_rate_percentage": clean_rate_7d,
             "avg_sleep_hours": round(avg_sleep_7d, 1),
             "avg_stress": round(avg_stress_7d, 1),
             "avg_mood": round(avg_mood_7d, 1),

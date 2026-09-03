@@ -1,17 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  View,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  TextInput,
+  View,
   Platform,
-  ActivityIndicator,
-  Dimensions,
+  TextInput,
   KeyboardAvoidingView,
   Keyboard,
-  Animated,
-  InteractionManager,
+  Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,52 +27,44 @@ import { BattleMessageItem, BattleParticipant, spartanApi } from '../../services
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
+  try {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(style);
+    }
+  } catch {
+    // Silent catch
+  }
+};
+
 const MemoizedBackgroundParticles = React.memo(() => (
   <View style={styles.particlesLayer} pointerEvents="none">
     <BreathingParticles
       isRunning={true}
-      color="#00E5FF"
+      color="#A855F7"
       size={Math.min(SCREEN_WIDTH * 1.15, 420)}
       showText={false}
     />
     <LinearGradient
-      colors={['rgba(5, 7, 14, 0.75)', 'rgba(5, 7, 14, 0.4)', 'rgba(5, 7, 14, 0.88)']}
+      colors={['rgba(0, 0, 0, 0.72)', 'rgba(0, 0, 0, 0.4)', 'rgba(0, 0, 0, 0.88)']}
       style={StyleSheet.absoluteFill}
     />
   </View>
 ));
 
-const BATTLEFIELD_CHAT_CACHE_KEY = '@zenwill_battlefield_chat_cache_v3';
-let memoryBattlefieldMessages: BattleMessageItem[] = [];
 
-export const getCachedBattlefieldMessages = (): BattleMessageItem[] => memoryBattlefieldMessages;
-export const setCachedBattlefieldMessages = (msgs: BattleMessageItem[]) => {
-  memoryBattlefieldMessages = msgs;
-  AsyncStorage.setItem(BATTLEFIELD_CHAT_CACHE_KEY, JSON.stringify(msgs.slice(-100))).catch(() => {});
-};
-
-// Immediate disk hydration
-AsyncStorage.getItem(BATTLEFIELD_CHAT_CACHE_KEY).then((raw) => {
-  if (raw && memoryBattlefieldMessages.length === 0) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        memoryBattlefieldMessages = parsed;
-      }
-    } catch {}
-  }
-});
-
-const QUICK_TRANSMISSION_CHIPS = [
-  'Hold the line ⚔️',
-  'Breathe with me 🌊',
-  'Stay strong brother 🔥',
-  'You are sovereign 👑',
-  'Stillness over impulse 🛡️',
-  'Channel the surge ⚡',
-  'Pure Ojas 💎',
-  'Iron will 🦾',
+// Immediately purge any legacy chat caches from disk so no stale or "hello" messages ever persist
+const STALE_CACHE_KEYS = [
+  '@zenwill_battlefield_chat_cache',
+  '@zenwill_battlefield_chat_cache_v1',
+  '@zenwill_battlefield_chat_cache_v2',
+  '@zenwill_battlefield_chat_cache_v3',
+  '@zenwill_battlefield_chat_cache_v4',
+  '@zenwill_battlefield_chat_cache_v5',
 ];
+STALE_CACHE_KEYS.forEach((k) => {
+  AsyncStorage.removeItem(k).catch(() => {});
+});
 
 export default function SpartanBattlefieldScreen() {
   const router = useRouter();
@@ -82,102 +72,106 @@ export default function SpartanBattlefieldScreen() {
   const { user } = useAuthStore();
   const {
     activeBattle,
-    myCell,
     fetchMyCell,
     triggerBattleHorn,
     sendBattleMessage,
     battleHeartbeat,
-    startNewBattleSession,
-    completeBattle,
   } = useSpartanStore();
 
   const currentUserId = user?.id ? String(user.id).trim().toLowerCase() : (user?.email || '').trim().toLowerCase();
   const currentUserName = user?.name || 'Brother Warrior';
   const currentUserStreak = user?.streak || 0;
 
-  // Local Chat and Presence State
+  // Local Chat and Presence State: Strictly starts empty, populated only by real live user messages
   const [inputText, setInputText] = useState<string>('');
-  const [localMessages, setLocalMessages] = useState<BattleMessageItem[]>(() => getCachedBattlefieldMessages());
+  const [messages, setMessages] = useState<BattleMessageItem[]>(() => {
+    const active = useSpartanStore.getState().activeBattle?.messages;
+    if (active && Array.isArray(active)) {
+      return active.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+    }
+    return [];
+  });
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [isResettingSession, setIsResettingSession] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900);
   const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
-  const [isInputFocused, setIsInputFocused] = useState<boolean>(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
-  const pollTimerRef = useRef<any>(null);
-  const countdownTimerRef = useRef<any>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
 
-
-
-  const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
-    try {
-      if (Platform.OS !== 'web') {
-        if (style === 'heavy') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-        else if (style === 'medium') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  // ── 1. Smooth Fluid Keyboard Listeners ──
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
       }
-    } catch { }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
-  // ── 1. Deferred Background Audio & Network Sync (Ensures 60fps Silk Navigation) ──
+  // ── 2. Background Audio & Real-Time Sync ──
   useEffect(() => {
     let isMounted = true;
     const soundMgr = OmSoundManager.getInstance();
     soundManagerRef.current = soundMgr;
 
-    // Defer heavy audio loading and network calls until AFTER the screen slide transition completes
-    const interactionTask = InteractionManager.runAfterInteractions(() => {
-      if (!isMounted) return;
-
-      // 1. Play emergency audio smoothly
-      soundMgr
-        .setTune(soundMgr.getTuneForTechnique('emergency-sos'))
-        .then(() => {
-          if (isMounted) {
-            soundMgr.play().catch(() => {});
-            setIsMuted(soundMgr.getIsMuted());
-          }
-        })
-        .catch(() => {});
-
-      // 2. Initialize battlefield session in background
-      const initBattlefield = async () => {
-        try {
-          fetchMyCell().catch(() => {});
-          let battle = await spartanApi.getActiveBattleSession();
-          if (!battle || battle.status !== 'active') {
-            battle = await triggerBattleHorn('Global Sanctum');
-          }
-          if (isMounted && battle) {
-            useSpartanStore.setState({ activeBattle: battle });
-            setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 200);
-          }
-        } catch (err) {
-          try {
-            const fallbackBattle = await triggerBattleHorn('Global Sanctum');
-            if (isMounted && fallbackBattle) {
-              useSpartanStore.setState({ activeBattle: fallbackBattle });
-            }
-          } catch (_) {}
+    // 1. Play emergency ambient audio
+    soundMgr
+      .setTune(soundMgr.getTuneForTechnique('emergency-sos'))
+      .then(() => {
+        if (isMounted) {
+          soundMgr.play().catch(() => {});
+          setIsMuted(soundMgr.getIsMuted());
         }
-      };
+      })
+      .catch(() => {});
 
-      initBattlefield();
-
-      // 3. Heartbeat every 3s to sync warriors presence and real messages
-      pollTimerRef.current = setInterval(async () => {
-        if (!isMounted) return;
+    // 2. Initialize battlefield session in background
+    const initBattlefield = async () => {
+      try {
+        fetchMyCell().catch(() => {});
+        let battle = await spartanApi.getActiveBattleSession();
+        if (!battle || battle.status !== 'active') {
+          battle = await triggerBattleHorn('Global Sanctum');
+        }
+        if (isMounted && battle) {
+          useSpartanStore.setState({ activeBattle: battle });
+          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 150);
+        }
+      } catch (err) {
         try {
-          await battleHeartbeat();
-        } catch (e) {}
-      }, 3000);
-    });
+          const fallbackBattle = await triggerBattleHorn('Global Sanctum');
+          if (isMounted && fallbackBattle) {
+            useSpartanStore.setState({ activeBattle: fallbackBattle });
+          }
+        } catch (_) {}
+      }
+    };
 
-    // Loop keeper
-    const loopInterval = setInterval(() => {
+    initBattlefield();
+
+    // 3. Heartbeat every 3s to sync active warriors and live incoming messages
+    const pollInterval = setInterval(async () => {
+      if (!isMounted) return;
+      try {
+        await battleHeartbeat();
+      } catch (e) {}
+    }, 3000);
+
+    // 4. Sound loop keeper
+    const soundInterval = setInterval(() => {
       if (
         soundManagerRef.current &&
         !soundManagerRef.current.getIsMuted() &&
@@ -189,12 +183,8 @@ export default function SpartanBattlefieldScreen() {
 
     return () => {
       isMounted = false;
-      interactionTask.cancel();
-      clearInterval(loopInterval);
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
+      clearInterval(pollInterval);
+      clearInterval(soundInterval);
       if (soundManagerRef.current) {
         soundManagerRef.current.stopAndUnload().catch(() => {});
       }
@@ -202,49 +192,24 @@ export default function SpartanBattlefieldScreen() {
   }, [triggerBattleHorn, battleHeartbeat, fetchMyCell]);
 
   const handleToggleMute = useCallback(() => {
-    triggerHaptic('light');
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     if (soundManagerRef.current) {
       const nextMute = soundManagerRef.current.toggleMute();
       setIsMuted(nextMute);
     }
-  }, [triggerHaptic]);
-
-  // ── 2. Keyboard Listeners ────────────────────────────────────────────────
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => {
-        setKeyboardHeight(e.endCoordinates.height);
-        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
-      }
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardHeight(0)
-    );
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
   }, []);
 
-  // ── 3. Clean Exit Handler (Back Button, Done Button, Screen Exit) ─────────
+  // ── 3. Clean Exit Handler (Back Button, Done Button) ──
   const handleExitBattlefield = useCallback(async () => {
-    triggerHaptic('medium');
-    // Immediately stop polling so no heartbeat re-registers the user
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    // Stop audio
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    Keyboard.dismiss();
+
     if (soundManagerRef.current) {
       soundManagerRef.current.stopAndUnload().catch(() => {});
     }
-    // Clear active presence from local store
     useSpartanStore.setState({ activeBattle: null });
+    setMessages([]);
 
-    // Tell server to drop presence
     try {
       await spartanApi.leaveBattleSession();
     } catch (_) {}
@@ -254,77 +219,122 @@ export default function SpartanBattlefieldScreen() {
     } else {
       router.replace('/(tabs)/home' as any);
     }
-  }, [router, triggerHaptic]);
+  }, [router]);
 
   useEffect(() => {
     return () => {
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
       spartanApi.leaveBattleSession().catch(() => {});
       useSpartanStore.setState({ activeBattle: null });
+      setMessages([]);
     };
   }, []);
 
-  // ── 4. Global 15-Minute Background Countdown Synchronization ─────────────
+  // ── 4. Global 15-Minute Background Countdown Synchronization ──
   const calculateGlobalRemaining = useCallback(() => {
     const nowTs = Math.floor(Date.now() / 1000);
     const secondsIntoEpoch = nowTs % 900;
     return 900 - secondsIntoEpoch;
   }, []);
 
-  // Global 15-Minute Wall-Clock Countdown Timer
   useEffect(() => {
     setSecondsRemaining(calculateGlobalRemaining());
 
-    countdownTimerRef.current = setInterval(() => {
+    const countdownInterval = setInterval(() => {
       const rem = calculateGlobalRemaining();
       setSecondsRemaining(rem);
 
       if (rem >= 899) {
-        setLocalMessages([]);
+        setMessages([]);
         battleHeartbeat().catch(() => {});
       }
     }, 1000);
 
     return () => {
-      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      clearInterval(countdownInterval);
     };
   }, [calculateGlobalRemaining, battleHeartbeat]);
 
-  // Format MM:SS
   const formattedCountdown = useMemo(() => {
     const mins = Math.floor(Math.max(0, secondsRemaining) / 60);
     const secs = Math.max(0, secondsRemaining) % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, [secondsRemaining]);
 
-  const timerProgress = useMemo(() => {
-    const total = (activeBattle?.duration_seconds && activeBattle.duration_seconds > 100) ? activeBattle.duration_seconds : 900;
-    return Math.max(0, Math.min(1, secondsRemaining / total));
-  }, [secondsRemaining, activeBattle?.duration_seconds]);
-
   const timerColor = useMemo(() => {
     if (secondsRemaining <= 120) return '#EF4444'; // Red under 2m
     if (secondsRemaining <= 300) return '#F59E0B'; // Amber under 5m
-    return '#00E5FF'; // Cyan default
+    return '#A855F7'; // Royal Purple default
   }, [secondsRemaining]);
 
-  // ── 5. Send Message (Instant Optimistic + Resilient Unique Tracking) ──────
+  const handleInputChange = (text: string) => {
+    setInputText(text);
+  };
+
+  // ── 5. Merge Server Messages in Strict Chronological Order ──
+  const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
+    if (!serverMsgs || !Array.isArray(serverMsgs)) return;
+    const cleanServer = serverMsgs.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+
+    setMessages((prev) => {
+      const now = Date.now();
+      // Only keep in-flight messages that were sent in the active screen session within the last 15 seconds
+      const inFlight = prev.filter((p) => {
+        if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
+        const parts = p.id.split('-');
+        const createdTimestamp = Number(parts[1]) || 0;
+        const isRecent = now - createdTimestamp < 15000;
+        const isAlreadyInServer = cleanServer.some(
+          (sm) =>
+            sm.text === p.text &&
+            ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
+             (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
+        );
+        return isRecent && !isAlreadyInServer;
+      });
+
+      const seen = new Set<string>();
+      const combined: BattleMessageItem[] = [];
+
+      for (const sm of cleanServer) {
+        const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(sm);
+        }
+      }
+
+      for (const ifm of inFlight) {
+        const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(ifm);
+        }
+      }
+
+      return combined;
+    });
+  }, []);
+
+  // Sync with activeBattle in store
+  useEffect(() => {
+    if (activeBattle?.messages && Array.isArray(activeBattle.messages)) {
+      mergeServerMessages(activeBattle.messages);
+    }
+  }, [activeBattle?.messages, mergeServerMessages]);
+
+  // ── 6. Send Message (Instant Optimistic + Smooth Multi-User Integration) ──
   const handleSendMessage = useCallback(async (customText?: string) => {
     const textToSend = (customText || inputText).trim();
-    if (!textToSend) return;
+    if (!textToSend || isSending) return;
 
-    triggerHaptic('medium');
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     if (!customText) {
       setInputText('');
     }
 
-    // 1. Optimistic instant local append: 0ms delay with unique ID so messages NEVER disappear
-    const uniqueId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const optimisticMsg: BattleMessageItem = {
-      id: uniqueId,
+      id: tempId,
       user_id: currentUserId,
       user_name: currentUserName,
       user_streak: currentUserStreak,
@@ -333,23 +343,29 @@ export default function SpartanBattlefieldScreen() {
       created_at: new Date().toISOString(),
     };
 
-    setLocalMessages((prev) => {
-      const next = [...prev, optimisticMsg];
-      setCachedBattlefieldMessages(next);
-      return next;
-    });
-    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 40);
+    setMessages((prev) => [...prev, optimisticMsg]);
 
-    // 2. Dispatch to backend API
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    });
+
     try {
-      await sendBattleMessage(textToSend);
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 80);
+      setIsSending(true);
+      const res = await sendBattleMessage(textToSend);
+      if (res && res.messages && Array.isArray(res.messages)) {
+        mergeServerMessages(res.messages);
+      }
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      });
     } catch (err) {
       console.log('Error dispatching battle message:', err);
+    } finally {
+      setIsSending(false);
     }
-  }, [inputText, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, triggerHaptic]);
+  }, [inputText, isSending, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, mergeServerMessages]);
 
-  // ── 6. Real Active Warriors Roster ───────────────────────────────────────
+  // ── 7. Real Active Warriors Presence ──
   const activeParticipants: BattleParticipant[] = useMemo(() => {
     const map = new Map<string, BattleParticipant>();
 
@@ -362,7 +378,7 @@ export default function SpartanBattlefieldScreen() {
       joined_at: new Date().toISOString(),
     });
 
-    // Real server participants currently in the room
+    // Real server participants
     const serverList = activeBattle?.participants || [];
     serverList.forEach((p) => {
       const key = (p.user_id || p.name || '').trim().toLowerCase();
@@ -374,76 +390,55 @@ export default function SpartanBattlefieldScreen() {
     return Array.from(map.values());
   }, [activeBattle?.participants, currentUserId, currentUserName, currentUserStreak]);
 
-  // ── 7. Merged Clean Messages Stream (No Disappearing, Instant Cache) ─────
-  const allMessages: BattleMessageItem[] = useMemo(() => {
-    const map = new Map<string, BattleMessageItem>();
+  const myUserIdentifiers = useMemo(() => {
+    const ids = new Set<string>();
+    if (user?.id) ids.add(String(user.id).trim().toLowerCase());
+    if (user?.email) ids.add(user.email.trim().toLowerCase());
+    if (user?.name) ids.add(user.name.trim().toLowerCase());
+    return ids;
+  }, [user?.id, user?.email, user?.name]);
 
-    // 1. Local / cached messages
-    localMessages.forEach((lm) => {
-      if (lm && lm.id) {
-        map.set(lm.id, lm);
+  const checkIsUser = useCallback(
+    (msg: BattleMessageItem): boolean => {
+      if (!msg) return false;
+      if (typeof msg.id === 'string' && (msg.id.startsWith('temp-') || msg.id.startsWith('local-'))) {
+        return true;
       }
-    });
+      const uid = (msg.user_id || '').trim().toLowerCase();
+      const uname = (msg.user_name || '').trim().toLowerCase();
+      if (uid && myUserIdentifiers.has(uid)) return true;
+      if (uname && myUserIdentifiers.has(uname)) return true;
+      return false;
+    },
+    [myUserIdentifiers]
+  );
 
-    // 2. Server messages from active session
-    if (activeBattle?.messages && Array.isArray(activeBattle.messages)) {
-      activeBattle.messages.forEach((m) => {
-        if (!m || !m.text) return;
-        if (m.text.includes('🚨 SESSION #')) return;
-        const key = m.id || `${m.user_id}-${m.created_at}`;
-        map.set(key, m);
-      });
-    }
-
-    const list = Array.from(map.values());
-    list.sort((a, b) => {
-      const tA = new Date(a.created_at || 0).getTime();
-      const tB = new Date(b.created_at || 0).getTime();
-      return tA - tB;
-    });
-
-    if (list.length > 0) {
-      setCachedBattlefieldMessages(list);
-    }
-
-    return list;
-  }, [activeBattle?.messages, localMessages]);
-
-  const sessionNumber = activeBattle?.session_number || 1;
-
-  // Auto-scroll when messages update
   useEffect(() => {
-    if (allMessages.length > 0) {
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
+    if (messages.length > 0) {
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [allMessages.length]);
+  }, [messages.length]);
 
   return (
-    <View style={styles.container}>
-      {/* ── BACKGROUND: Breathing Particles Hypnotic Visual ── */}
+    <View style={styles.fixedBgContainer}>
+      {/* Purple Breathing Particles Background */}
       <MemoizedBackgroundParticles />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-        {/* ── 1. TACTICAL HUD HEADER ── */}
-        <View style={styles.header}>
+        {/* Header Bar */}
+        <View style={styles.headerBar}>
           <TouchableOpacity
             style={styles.backBtn}
-            activeOpacity={0.75}
+            activeOpacity={0.7}
             onPress={handleExitBattlefield}
           >
-            <Ionicons name="chevron-back" size={22} color="#00E5FF" />
+            <Ionicons name="chevron-back" size={24} color="#C084FC" />
           </TouchableOpacity>
 
-          <View style={styles.headerCenter}>
+          <View style={styles.headerTitleBox}>
             <View style={styles.headerLiveRow}>
               <View style={styles.livePulseBeacon} />
               <ThemedText style={styles.headerTitle}>SPARTAN BATTLEFIELD</ThemedText>
-            </View>
-            <View style={styles.sessionPill}>
-              <Ionicons name="shield-half" size={10} color="#00E5FF" style={{ marginRight: 4 }} />
-              <ThemedText style={styles.sessionPillText}>
-                SESSION #{sessionNumber} • LIVE TAC-COMM
-              </ThemedText>
             </View>
           </View>
 
@@ -456,8 +451,8 @@ export default function SpartanBattlefieldScreen() {
             >
               <Ionicons
                 name={isMuted ? 'volume-mute' : 'volume-high'}
-                size={16}
-                color={isMuted ? '#94A3B8' : '#00E5FF'}
+                size={14}
+                color={isMuted ? '#94A3B8' : '#C084FC'}
               />
               <ThemedText style={[styles.muteLabelText, isMuted && styles.muteLabelTextMuted]}>
                 {isMuted ? 'MUTED' : '396Hz'}
@@ -474,53 +469,26 @@ export default function SpartanBattlefieldScreen() {
           </View>
         </View>
 
-        {/* ── 2. 15-MINUTE TELEMETRY COUNTDOWN BAR ── */}
-        <View style={styles.timerHudStrip}>
-          <View style={styles.timerHudContent}>
-            <View style={styles.timerHudLeft}>
-              <View style={[styles.timerIconCircle, { borderColor: timerColor + '50' }]}>
-                <Ionicons name="timer-outline" size={13} color={timerColor} />
-              </View>
-              <View>
-                <ThemedText style={styles.timerHudLabel}>15-MIN SESSION PURGE IN:</ThemedText>
-                <ThemedText style={styles.timerHudSub}>Auto-wipes chat & renews tactical session</ThemedText>
-              </View>
-            </View>
-
-            <View style={[styles.timerBadge, { borderColor: timerColor + '55', backgroundColor: timerColor + '15' }]}>
-              <ThemedText style={[styles.timerText, { color: timerColor }]}>
-                {formattedCountdown}
-              </ThemedText>
-            </View>
-          </View>
-
-          {/* Glowing Animated Progress Line */}
-          <View style={styles.timerProgressBar}>
-            <View
-              style={[
-                styles.timerProgressFill,
-                { width: `${timerProgress * 100}%`, backgroundColor: timerColor },
-              ]}
-            />
-          </View>
-        </View>
-
-        {/* ── 3. ACTIVE MEMBERS PRESENCE STRIP (TAP ANY BROTHER TO DM) ── */}
+        {/* Active Members Presence Strip */}
         <View style={styles.activeMembersSection}>
           <View style={styles.activeMembersHeader}>
             <View style={styles.activeMemberDot} />
             <ThemedText style={styles.activeMembersTitle}>
               ACTIVE SHIELD WALL ({activeParticipants.length} WARRIORS)
             </ThemedText>
-            <ThemedText style={{ fontSize: 9.5, color: '#64748B', marginLeft: 'auto' }}>
-              Tap user to DM
-            </ThemedText>
+            <View style={[styles.shieldWallTimerBadge, { borderColor: timerColor + '55', backgroundColor: timerColor + '18' }]}>
+              <Ionicons name="timer-outline" size={10} color={timerColor} style={{ marginRight: 3 }} />
+              <ThemedText style={[styles.shieldWallTimerText, { color: timerColor }]}>
+                {formattedCountdown}
+              </ThemedText>
+            </View>
           </View>
 
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.activeMembersScroll}
+            keyboardShouldPersistTaps="handled"
           >
             {activeParticipants.map((member, idx) => {
               const isMe = (member.user_id || '').trim().toLowerCase() === currentUserId || member.name === currentUserName;
@@ -534,7 +502,7 @@ export default function SpartanBattlefieldScreen() {
                   activeOpacity={isMe ? 1 : 0.75}
                   onPress={() => {
                     if (isMe) return;
-                    triggerHaptic('light');
+                    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
                     router.push({
                       pathname: '/community/dm',
                       params: {
@@ -556,7 +524,7 @@ export default function SpartanBattlefieldScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                       <ThemedText style={styles.memberStreakText}>🔥 {member.streak ?? 0}d</ThemedText>
                       {!isMe && (
-                        <Ionicons name="chatbubble-ellipses" size={10} color="#00E5FF" />
+                        <Ionicons name="chatbubble-ellipses" size={10} color="#C084FC" />
                       )}
                     </View>
                   </View>
@@ -566,41 +534,45 @@ export default function SpartanBattlefieldScreen() {
           </ScrollView>
         </View>
 
-        {/* ── 4. CHAT STREAM & MESSAGES ── */}
+        {/* Purpose Banner below Shield Wall */}
+        <View style={styles.urgencyNoticeBanner}>
+          <Ionicons name="shield-checkmark" size={13} color="#C084FC" style={{ marginRight: 6 }} />
+          <ThemedText style={styles.urgencyNoticeText}>
+            This chat is used when the urge hits so high and you have to talk with someone.
+          </ThemedText>
+        </View>
+
+        {/* Live Chat Stream */}
         <KeyboardAvoidingView
-          style={styles.keyboardAvoid}
+          style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={0}
         >
-          <View style={[styles.chatContainer, { paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
+          <View style={[styles.chatStreamContainer, { paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
             <ScrollView
               ref={scrollViewRef}
               contentContainerStyle={styles.chatScrollContent}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
+              removeClippedSubviews={false}
             >
-
-              {allMessages.length === 0 ? (
-                <View style={styles.emptyStateContainer}>
-                  <View style={styles.emptyIconCircle}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={32} color="#00E5FF" />
-                  </View>
-                  <ThemedText style={styles.emptyStateTitle}>Shield Wall Assembled</ThemedText>
-                  <ThemedText style={styles.emptyStateSub}>
-                    Brothers stand united. Send the first brotherhood transmission or tap a tactical rune below!
+              {messages.length === 0 ? (
+                <View style={styles.emptyChatState}>
+                  <Ionicons name="chatbubbles-outline" size={36} color="#A855F7" />
+                  <ThemedText style={styles.emptyChatTitle}>Shield Wall Assembled</ThemedText>
+                  <ThemedText style={styles.emptyChatSub}>
+                    Brothers stand united. Type a message below to talk with your brothers and conquer the urge.
                   </ThemedText>
                 </View>
               ) : (
-                allMessages.map((msg, idx) => {
-                  const isUser =
-                    (msg.user_id || '').trim().toLowerCase() === currentUserId ||
-                    (msg.user_name || '').trim().toLowerCase() === currentUserName.trim().toLowerCase();
+                messages.map((msg, index) => {
+                  const isUserMsg = checkIsUser(msg);
 
                   if (msg.is_system) {
                     return (
-                      <View key={msg.id || idx} style={styles.systemMsgPill}>
-                        <Ionicons name="sparkles" size={11} color="#00E5FF" style={{ marginRight: 6 }} />
+                      <View key={msg.id || index} style={styles.systemMsgPill}>
+                        <Ionicons name="sparkles" size={11} color="#C084FC" style={{ marginRight: 6 }} />
                         <ThemedText style={styles.systemMsgText}>{msg.text}</ThemedText>
                       </View>
                     );
@@ -608,21 +580,21 @@ export default function SpartanBattlefieldScreen() {
 
                   return (
                     <View
-                      key={msg.id || idx}
-                      style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowOther]}
+                      key={msg.id || index}
+                      style={[styles.chatBubbleRow, isUserMsg ? styles.chatBubbleRowUser : styles.chatBubbleRowOther]}
                     >
                       <View
                         style={[
-                          styles.messageBubble,
-                          isUser ? styles.messageBubbleUser : styles.messageBubbleOther,
+                          styles.chatBubbleCard,
+                          isUserMsg ? styles.userBubbleCard : styles.otherBubbleCard,
                         ]}
                       >
-                        {!isUser && (
+                        {!isUserMsg && (
                           <TouchableOpacity
-                            style={styles.msgHeaderRow}
+                            style={styles.chatAuthorHeader}
                             activeOpacity={0.7}
                             onPress={() => {
-                              triggerHaptic('light');
+                              triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
                               router.push({
                                 pathname: '/community/dm',
                                 params: {
@@ -633,22 +605,18 @@ export default function SpartanBattlefieldScreen() {
                               });
                             }}
                           >
-                            <ThemedText style={styles.otherSenderName}>
+                            <ThemedText style={styles.chatAuthorName}>
                               {msg.user_name || 'Brother'}
                             </ThemedText>
-                            <View style={styles.otherStreakPill}>
-                              <ThemedText style={styles.otherStreakText}>
+                            <View style={styles.streakMedalPill}>
+                              <ThemedText style={styles.streakFlameText}>
                                 🔥 {msg.user_streak ?? 0}d
                               </ThemedText>
                             </View>
-                            <Ionicons name="chatbubble-ellipses" size={11} color="#00E5FF" style={{ marginLeft: 4 }} />
                           </TouchableOpacity>
                         )}
-                        <ThemedText style={[styles.messageBodyText, isUser && styles.messageBodyTextUser]}>
+                        <ThemedText style={[styles.chatMessageText, isUserMsg && styles.userMessageText]}>
                           {msg.text}
-                        </ThemedText>
-                        <ThemedText style={[styles.msgTimeText, isUser && styles.msgTimeTextUser]}>
-                          {formatMsgTime(msg.created_at)}
                         </ThemedText>
                       </View>
                     </View>
@@ -657,30 +625,10 @@ export default function SpartanBattlefieldScreen() {
               )}
             </ScrollView>
 
-            {/* ── 5. QUICK TACTICAL TRANSMISSION CHIPS ── */}
-            <View style={styles.quickChipsContainer}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.quickChipsScroll}
-              >
-                {QUICK_TRANSMISSION_CHIPS.map((chip, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.quickChipBtn}
-                    activeOpacity={0.75}
-                    onPress={() => handleSendMessage(chip)}
-                  >
-                    <ThemedText style={styles.quickChipText}>{chip}</ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            {/* ── 6. COMMUNITY-STYLE FLOATING MESSAGE INPUT BAR ── */}
+            {/* Floating Message Input Bar */}
             <View
               style={[
-                styles.inputBarWrapper,
+                styles.inputContainer,
                 {
                   paddingBottom: keyboardHeight > 0
                     ? 8
@@ -688,22 +636,21 @@ export default function SpartanBattlefieldScreen() {
                 },
               ]}
             >
-              <View style={[styles.inputInnerPill, isInputFocused && styles.inputInnerPillFocused]}>
+              <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.textInput}
                   placeholder="Transmit to your brothers..."
                   placeholderTextColor="rgba(255, 255, 255, 0.45)"
                   value={inputText}
-                  onChangeText={setInputText}
+                  onChangeText={handleInputChange}
                   onFocus={() => {
-                    setIsInputFocused(true);
                     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
                   }}
-                  onBlur={() => setIsInputFocused(false)}
                   multiline={true}
+                  blurOnSubmit={false}
                   maxLength={1000}
-                  cursorColor="#00E5FF"
-                  selectionColor="rgba(0, 229, 255, 0.35)"
+                  cursorColor="#A855F7"
+                  selectionColor="rgba(168, 85, 247, 0.35)"
                   underlineColorAndroid="transparent"
                 />
 
@@ -721,6 +668,7 @@ export default function SpartanBattlefieldScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -728,21 +676,10 @@ export default function SpartanBattlefieldScreen() {
   );
 }
 
-function formatMsgTime(isoStr?: string): string {
-  if (!isoStr) return '';
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
-}
-
 const styles = StyleSheet.create({
-  container: {
+  fixedBgContainer: {
     flex: 1,
-    backgroundColor: '#04060B',
+    backgroundColor: '#000000',
   },
   particlesLayer: {
     ...StyleSheet.absoluteFill,
@@ -750,14 +687,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 0,
   },
-
   safeArea: {
     flex: 1,
     zIndex: 1,
   },
 
-  /* ── 1. Header ── */
-  header: {
+  /* Header Bar */
+  headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -765,19 +701,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    backgroundColor: 'rgba(4, 6, 11, 0.85)',
+    backgroundColor: '#000000',
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 229, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.28)',
+    backgroundColor: 'transparent',
+    padding: 4,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerCenter: {
+  headerTitleBox: {
     alignItems: 'center',
   },
   headerLiveRow: {
@@ -798,25 +730,8 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 13.5,
     fontWeight: '900',
-    color: '#00E5FF',
+    color: '#C084FC',
     letterSpacing: 1.1,
-  },
-  sessionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 229, 255, 0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    marginTop: 3,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0, 229, 255, 0.2)',
-  },
-  sessionPillText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#94A3B8',
-    letterSpacing: 0.7,
   },
   headerRightActions: {
     flexDirection: 'row',
@@ -827,12 +742,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    height: 34,
-    paddingHorizontal: 9,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    height: 32,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(168, 85, 247, 0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.28)',
+    borderColor: 'rgba(168, 85, 247, 0.32)',
     justifyContent: 'center',
   },
   muteBtnActive: {
@@ -840,17 +755,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.14)',
   },
   muteLabelText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#00E5FF',
+    color: '#C084FC',
   },
   muteLabelTextMuted: {
     color: '#94A3B8',
   },
   concludeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(16, 185, 129, 0.12)',
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.3)',
@@ -858,73 +773,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  /* ── 2. Telemetry Timer HUD Strip ── */
-  timerHudStrip: {
-    backgroundColor: 'rgba(10, 15, 29, 0.75)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
-    paddingTop: 8,
-  },
-  timerHudContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingBottom: 7,
-  },
-  timerHudLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  timerIconCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-  },
-  timerHudLabel: {
-    fontSize: 10.5,
-    fontWeight: '900',
-    color: '#E2E8F0',
-    letterSpacing: 0.6,
-  },
-  timerHudSub: {
-    fontSize: 9,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  timerBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  timerText: {
-    fontSize: 13,
-    fontWeight: '900',
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 1,
-  },
-  timerProgressBar: {
-    height: 2.5,
-    width: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  timerProgressFill: {
-    height: 2.5,
-    borderRadius: 1.5,
-  },
-
-  /* ── 3. Active Members Presence Strip ── */
   activeMembersSection: {
     paddingVertical: 7,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
-    backgroundColor: 'rgba(6, 10, 20, 0.65)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#000000',
   },
   activeMembersHeader: {
     flexDirection: 'row',
@@ -937,16 +790,28 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#00E5FF',
-    shadowColor: '#00E5FF',
-    shadowOpacity: 0.8,
-    shadowRadius: 3,
+    backgroundColor: '#A855F7',
   },
   activeMembersTitle: {
     fontSize: 9,
     fontWeight: '900',
-    color: '#94A3B8',
+    color: '#C084FC',
     letterSpacing: 0.9,
+  },
+  shieldWallTimerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 'auto',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 0.8,
+  },
+  shieldWallTimerText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    fontVariant: ['tabular-nums'],
   },
   activeMembersScroll: {
     paddingHorizontal: 12,
@@ -955,29 +820,29 @@ const styles = StyleSheet.create({
   memberChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(24, 12, 44, 0.85)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(168, 85, 247, 0.2)',
     borderRadius: 16,
     paddingHorizontal: 8,
     paddingVertical: 4,
     gap: 7,
   },
   memberChipMe: {
-    borderColor: 'rgba(0, 229, 255, 0.45)',
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderColor: 'rgba(168, 85, 247, 0.6)',
+    backgroundColor: 'rgba(168, 85, 247, 0.18)',
   },
   memberAvatarCircle: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#2A1448',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
   },
   memberAvatarCircleMe: {
-    backgroundColor: '#00E5FF',
+    backgroundColor: '#A855F7',
   },
   memberAvatarText: {
     fontSize: 9.5,
@@ -1005,7 +870,7 @@ const styles = StyleSheet.create({
     maxWidth: 90,
   },
   memberNameTextMe: {
-    color: '#00E5FF',
+    color: '#D8B4FE',
     fontWeight: '900',
   },
   memberStreakText: {
@@ -1014,149 +879,117 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
   },
 
-  /* ── 4. Chat Container ── */
-  keyboardAvoid: {
+  /* World Chat Stream Container */
+  chatStreamContainer: {
     flex: 1,
-  },
-  chatContainer: {
-    flex: 1,
-    justifyContent: 'space-between',
   },
   chatScrollContent: {
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 16,
-    gap: 8,
-  },
-  sessionBannerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0, 229, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.25)',
     paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-    marginBottom: 6,
-  },
-  sessionBannerText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#00E5FF',
-    letterSpacing: 0.8,
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 45,
+    paddingTop: 12,
+    paddingBottom: 20,
     gap: 8,
   },
-  emptyIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(0, 229, 255, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    justifyContent: 'center',
+  emptyChatState: {
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center',
+    paddingVertical: 50,
+    gap: 10,
   },
-  emptyStateTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#F1F5F9',
-  },
-  emptyStateSub: {
-    fontSize: 12,
-    color: '#94A3B8',
+  emptyChatTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
     textAlign: 'center',
-    paddingHorizontal: 28,
-    lineHeight: 18,
+  },
+  emptyChatSub: {
+    fontSize: 12,
+    color: '#A1A1AA',
+    textAlign: 'center',
+    paddingHorizontal: 30,
   },
 
-  /* ── Message Bubbles ── */
-  messageRow: {
-    marginVertical: 2,
+  /* Message Bubbles */
+  chatBubbleRow: {
     flexDirection: 'row',
+    marginVertical: 2,
   },
-  messageRowUser: {
+  chatBubbleRowUser: {
     justifyContent: 'flex-end',
   },
-  messageRowOther: {
+  chatBubbleRowOther: {
     justifyContent: 'flex-start',
   },
-  messageBubble: {
-    maxWidth: '82%',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 15,
-  },
-  messageBubbleUser: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+  chatBubbleCard: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    maxWidth: '85%',
+    minWidth: 120,
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.4)',
+    gap: 4,
+  },
+  userBubbleCard: {
+    backgroundColor: 'rgba(38, 14, 68, 0.88)',
+    borderColor: 'rgba(168, 85, 247, 0.45)',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
     borderBottomRightRadius: 3,
+    alignSelf: 'flex-end',
   },
-  messageBubbleOther: {
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderWidth: 1,
+  otherBubbleCard: {
+    backgroundColor: 'rgba(15, 8, 28, 0.8)',
     borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
     borderBottomLeftRadius: 3,
+    alignSelf: 'flex-start',
   },
-  msgHeaderRow: {
+  chatAuthorHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    marginBottom: 3,
+    marginBottom: 2,
   },
-  otherSenderName: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#93C5FD',
+  chatAuthorName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#C084FC',
+    flexShrink: 1,
   },
-  otherStreakPill: {
+  streakMedalPill: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
   },
-  otherStreakText: {
+  streakFlameText: {
     fontSize: 9,
     fontWeight: '800',
     color: '#F59E0B',
   },
-  messageBodyText: {
+  chatMessageText: {
     fontSize: 13.5,
     color: '#F1F5F9',
     lineHeight: 19,
-    fontWeight: '400',
+    textAlign: 'left',
   },
-  messageBodyTextUser: {
+  userMessageText: {
     color: '#FFFFFF',
-    fontWeight: '500',
-  },
-  msgTimeText: {
-    fontSize: 9.5,
-    color: '#64748B',
-    marginTop: 3,
-    alignSelf: 'flex-end',
-  },
-  msgTimeTextUser: {
-    color: 'rgba(255, 255, 255, 0.6)',
   },
 
-  /* ── System Messages ── */
+  /* System Messages */
   systemMsgPill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(168, 85, 247, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(168, 85, 247, 0.2)',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 4,
@@ -1164,61 +997,47 @@ const styles = StyleSheet.create({
   },
   systemMsgText: {
     fontSize: 10,
-    color: '#94A3B8',
+    color: '#D8B4FE',
     fontWeight: '600',
   },
 
-  /* ── 5. Quick Transmission Chips ── */
-  quickChipsContainer: {
-    paddingVertical: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-    backgroundColor: 'rgba(4, 6, 11, 0.85)',
+  /* Urgency Notice Banner below Shield Wall */
+  urgencyNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(168, 85, 247, 0.1)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(168, 85, 247, 0.22)',
   },
-  quickChipsScroll: {
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  quickChipBtn: {
-    backgroundColor: 'rgba(0, 229, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 14,
-  },
-  quickChipText: {
+  urgencyNoticeText: {
     fontSize: 11,
+    color: '#D8B4FE',
     fontWeight: '700',
-    color: '#00E5FF',
+    flex: 1,
+    lineHeight: 15,
   },
 
-  /* ── 6. Community-Style Floating Message Input Bar ── */
-  inputBarWrapper: {
+  /* Floating Message Input Bar */
+  inputContainer: {
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: Platform.OS === 'ios' ? 10 : 8,
-    backgroundColor: '#04070F',
+    backgroundColor: '#000000',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
-  inputInnerPill: {
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0C1322',
+    backgroundColor: '#0A0A0A',
     borderRadius: 24,
     borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.45)',
+    borderColor: 'rgba(168, 85, 247, 0.5)',
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === 'ios' ? 4 : 2,
     minHeight: 46,
-  },
-  inputInnerPillFocused: {
-    borderColor: '#00E5FF',
-    shadowColor: '#00E5FF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
   },
   textInput: {
     flex: 1,
@@ -1236,7 +1055,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#00E5FF',
+    backgroundColor: '#A855F7',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,

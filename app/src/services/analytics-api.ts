@@ -59,15 +59,42 @@ export interface MindsetEvaluation {
   meditation_urge_score: number;
 }
 
+export interface CoreMetricCard {
+  id: string;
+  label: string;
+  value: string;
+  sub: string;
+  color: string;
+  icon: string;
+}
+
+export interface PredictionItem {
+  level: string;
+  title: string;
+  text: string;
+  color: string;
+  icon: string;
+}
+
+export interface RecommendationItem {
+  title: string;
+  action: string;
+  tag: string;
+  color: string;
+  icon: string;
+}
+
 export interface ProgressIntelligence {
   score: number;
   status_title: string;
   status_color?: string;
+  headline?: string;
   summary: string;
   transmutation_tip: string;
   checkin_score: number;
   journal_score: number;
   meditation_urge_score: number;
+  core_metrics?: CoreMetricCard[];
   metrics_breakdown?: {
     checkin_points: number;
     journal_points: number;
@@ -78,6 +105,7 @@ export interface ProgressIntelligence {
     total_checkins: number;
     relapse_count: number;
     urge_free_days: number;
+    clean_rate_percentage?: number;
     avg_sleep_hours: number;
     avg_stress: number;
     avg_mood: number;
@@ -85,8 +113,8 @@ export interface ProgressIntelligence {
     missions_completed: number;
     total_journals: number;
   };
-  predictions?: string[];
-  recommendations?: string[];
+  predictions?: Array<PredictionItem | string>;
+  recommendations?: Array<RecommendationItem | string>;
 }
 
 export interface RecommendationActionTask {

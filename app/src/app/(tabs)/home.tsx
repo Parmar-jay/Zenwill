@@ -68,7 +68,7 @@ export const ALL_QUICK_ACTIONS: QuickActionDef[] = [
   { id: 'community', title: 'Community', subtitle: 'Global Chat & DMs', icon: 'people-outline', route: '/community', category: 'Community', color: '#00E5FF' },
   { id: 'spartan-cell', title: 'Spartan Cell', subtitle: '5-20 Man Squad Stakes', icon: 'shield-half-outline', route: '/community/cell', category: 'Community', color: '#00E5FF' },
   { id: 'progress', title: 'Progress', subtitle: 'Milestones & analytics', icon: 'stats-chart-outline', route: '/progress', category: 'Analytics', color: '#00E5FF' },
-  { id: 'battlefield', title: 'Battlefield', subtitle: 'Live 90s Urge Rescue', icon: 'flame-outline', route: '/emergency/battlefield', category: 'Core', color: '#EF4444' },
+  { id: 'battlefield', title: 'Battlefield', subtitle: 'Live 90s Urge Rescue', icon: 'flame-outline', route: '/emergency/battlefield', category: 'Core', color: '#A855F7' },
   { id: 'billing', title: 'Pro Upgrade', subtitle: 'Subscription & features', icon: 'card-outline', route: '/billing', category: 'Account', color: '#EAB308' },
 ];
 
@@ -1251,46 +1251,56 @@ export default function HomeScreen() {
               ]}
             >
               {/* Left Widget: Spartan Cell */}
-              <TouchableOpacity
-                style={[
-                  styles.spartanCellWidget,
-                  myCell?.shield_status === 'gold' && styles.spartanWidgetGold,
-                ]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  triggerHaptic();
-                  router.push('/community/cell' as any);
-                }}
-              >
-                <View style={styles.spartanWidgetHeader}>
-                  <ThemedText style={styles.spartanWidgetEmoji}>
-                    {myCell ? getGamifiedRank(myCell.total_streak ?? 0).badge : '🛡️'}
-                  </ThemedText>
-                  <View style={[
-                    styles.spartanShieldPill,
-                    myCell && {
-                      backgroundColor: `${getGamifiedRank(myCell.total_streak ?? 0).color}22`,
-                      borderColor: `${getGamifiedRank(myCell.total_streak ?? 0).color}60`,
-                    }
-                  ]}>
-                    <ThemedText style={[
-                      styles.spartanShieldPillText,
-                      myCell && { color: getGamifiedRank(myCell.total_streak ?? 0).color }
-                    ]}>
-                      {myCell ? getGamifiedRank(myCell.total_streak ?? 0).name.toUpperCase() : 'JOIN CELL'}
+              {(() => {
+                const cellRank = myCell ? getGamifiedRank(myCell.total_streak ?? 0) : null;
+                const cellRankColor = cellRank ? cellRank.color : null;
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.spartanCellWidget,
+                      cellRankColor ? {
+                        borderColor: `${cellRankColor}66`,
+                        backgroundColor: `${cellRankColor}0A`,
+                      } : null,
+                      myCell?.shield_status === 'gold' && styles.spartanWidgetGold,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      triggerHaptic();
+                      router.push('/community/cell' as any);
+                    }}
+                  >
+                    <View style={styles.spartanWidgetHeader}>
+                      <ThemedText style={styles.spartanWidgetEmoji}>
+                        {cellRank ? cellRank.badge : '🛡️'}
+                      </ThemedText>
+                      <View style={[
+                        styles.spartanShieldPill,
+                        cellRank && {
+                          backgroundColor: `${cellRank.color}22`,
+                          borderColor: `${cellRank.color}60`,
+                        }
+                      ]}>
+                        <ThemedText style={[
+                          styles.spartanShieldPillText,
+                          cellRank && { color: cellRank.color }
+                        ]}>
+                          {cellRank ? cellRank.name.toUpperCase() : 'JOIN CELL'}
+                        </ThemedText>
+                      </View>
+                      {unreadCount > 0 && (
+                        <View style={styles.spartanWidgetUnreadDot} />
+                      )}
+                    </View>
+                    <ThemedText style={styles.spartanWidgetTitle} numberOfLines={1}>
+                      {myCell ? myCell.name : 'Spartan Squad'}
                     </ThemedText>
-                  </View>
-                  {unreadCount > 0 && (
-                    <View style={styles.spartanWidgetUnreadDot} />
-                  )}
-                </View>
-                <ThemedText style={styles.spartanWidgetTitle} numberOfLines={1}>
-                  {myCell ? myCell.name : 'Spartan Squad'}
-                </ThemedText>
-                <ThemedText style={styles.spartanWidgetSub} numberOfLines={1}>
-                  {myCell ? `🔥 ${myCell.total_streak}d Collective Streak` : 'Shared Stakes • 20 Warriors'}
-                </ThemedText>
-              </TouchableOpacity>
+                    <ThemedText style={styles.spartanWidgetSub} numberOfLines={1}>
+                      {myCell ? `🔥 ${myCell.total_streak}d Collective Streak` : 'Shared Stakes • 20 Warriors'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })()}
 
               {/* Right Widget: Spartan Battlefield Live Horn */}
               <TouchableOpacity
@@ -1308,10 +1318,13 @@ export default function HomeScreen() {
                   <ThemedText style={styles.spartanWidgetEmoji}>⚔️</ThemedText>
                   <View style={[
                     styles.spartanShieldPill,
-                    { backgroundColor: (activeBattle && (activeBattle.participant_count || 0) > 0) ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)' }
+                    {
+                      backgroundColor: (activeBattle && (activeBattle.participant_count || 0) > 0) ? 'rgba(168, 85, 247, 0.2)' : 'rgba(168, 85, 247, 0.08)',
+                      borderColor: 'rgba(168, 85, 247, 0.4)',
+                    }
                   ]}>
-                    {(activeBattle && (activeBattle.participant_count || 0) > 0) && <View style={styles.liveRedDot} />}
-                    <ThemedText style={[styles.spartanShieldPillText, { color: (activeBattle && (activeBattle.participant_count || 0) > 0) ? '#EF4444' : '#94A3B8' }]}>
+                    {(activeBattle && (activeBattle.participant_count || 0) > 0) && <View style={styles.livePurpleDot} />}
+                    <ThemedText style={[styles.spartanShieldPillText, { color: (activeBattle && (activeBattle.participant_count || 0) > 0) ? '#C084FC' : '#A855F7' }]}>
                       {(activeBattle && (activeBattle.participant_count || 0) > 0) ? 'LIVE SOS' : 'BATTLE FIELD'}
                     </ThemedText>
                   </View>
@@ -4403,11 +4416,11 @@ const styles = StyleSheet.create({
     minHeight: 100,
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
+    borderColor: 'rgba(168, 85, 247, 0.3)',
   },
   spartanBattleActive: {
-    borderColor: '#EF4444',
-    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+    borderColor: '#A855F7',
+    backgroundColor: 'rgba(168, 85, 247, 0.08)',
   },
   spartanWidgetHeader: {
     flexDirection: 'row',
@@ -4435,11 +4448,11 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
     letterSpacing: 0.6,
   },
-  liveRedDot: {
+  livePurpleDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#A855F7',
   },
   spartanWidgetTitle: {
     fontSize: 13.5,

@@ -234,6 +234,7 @@ async def send_battle_message(
 ):
     """
     Send a real-time message to all active brothers in the current 15-minute battlefield session.
+    Uses atomic MongoDB operations so concurrent messages from multiple users are never lost.
     """
     now = datetime.utcnow()
     user_id_str = str(current_user.id)
@@ -241,6 +242,7 @@ async def send_battle_message(
     user_streak = current_user.streak or 0
 
     session = await get_or_create_battle_session(current_user)
+    session_id = str(session.id)
 
     msg = {
         "id": str(uuid.uuid4()),
@@ -249,38 +251,56 @@ async def send_battle_message(
         "user_streak": user_streak,
         "text": payload.text.strip(),
         "is_system": False,
-        "created_at": now.isoformat(),
+        "created_at": now.isoformat() + "Z",
     }
 
-    if not hasattr(session, 'messages') or session.messages is None:
-        session.messages = []
+    participant_entry = {
+        "user_id": user_id_str,
+        "name": user_name,
+        "streak": user_streak,
+        "badge": "🛡️",
+        "joined_at": now.isoformat() + "Z",
+        "last_active_at": now.isoformat() + "Z",
+    }
 
-    session.messages.append(msg)
-    # Keep last 150 messages in current session
-    session.messages = session.messages[-150:]
+    # 1. Atomically push message and update participant in MongoDB
+    await BattleSession.get_pymongo_collection().update_one(
+        {"_id": session_id},
+        {
+            "$push": {
+                "messages": {"$each": [msg], "$slice": -200},
+            },
+            "$addToSet": {
+                "participant_ids": user_id_str,
+            },
+        },
+    )
 
-    # Update or add sender to participants
-    sender_found = False
-    for p in (session.participants or []):
-        if p.get("user_id") == user_id_str:
-            sender_found = True
-            p["last_active_at"] = now.isoformat()
-            p["streak"] = user_streak
+    # 2. Update participant active time
+    await BattleSession.get_pymongo_collection().update_one(
+        {"_id": session_id, "participants.user_id": user_id_str},
+        {
+            "$set": {
+                "participants.$.last_active_at": now.isoformat(),
+                "participants.$.streak": user_streak,
+                "participants.$.name": user_name,
+            }
+        },
+    )
 
-    if not sender_found:
-        session.participants = (session.participants or []) + [{
-            "user_id": user_id_str,
-            "name": user_name,
-            "streak": user_streak,
-            "badge": "🛡️",
-            "joined_at": now.isoformat(),
-            "last_active_at": now.isoformat(),
-        }]
-        if user_id_str not in (session.participant_ids or []):
-            session.participant_ids = (session.participant_ids or []) + [user_id_str]
+    # 3. If participant wasn't in array yet, add them
+    await BattleSession.get_pymongo_collection().update_one(
+        {"_id": session_id, "participants.user_id": {"$ne": user_id_str}},
+        {
+            "$push": {
+                "participants": participant_entry,
+            }
+        },
+    )
 
-    await session.save()
-    return format_battle_response(session, user_id_str)
+    # 4. Fetch fresh session to return full accurate state
+    updated_session = await BattleSession.find_one({"_id": session_id}) or session
+    return format_battle_response(updated_session, user_id_str)
 
 
 @router.post("/heartbeat", response_model=BattleSessionResponse)

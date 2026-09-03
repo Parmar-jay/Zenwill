@@ -15,14 +15,20 @@ import * as Haptics from 'expo-haptics';
 
 import { useHabitStore } from '@/store/habit-store';
 import { PageEntrance } from '@/components/ui/smooth-loader';
-import { analyticsApi, MindsetEvaluation, TriggerIntelligence } from '@/services/analytics-api';
+import {
+  analyticsApi,
+  ProgressIntelligence,
+  TriggerIntelligence,
+  PredictionItem,
+  RecommendationItem,
+} from '@/services/analytics-api';
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(style);
     }
-  } catch (error) {
+  } catch {
     // Silent catch
   }
 };
@@ -46,17 +52,30 @@ export default function ProgressTabScreen() {
   } = useHabitStore();
 
   const [isCalcModalVisible, setIsCalcModalVisible] = useState<boolean>(false);
-  const [mindsetEval, setMindsetEval] = useState<MindsetEvaluation | null>(null);
+  const [progressIntel, setProgressIntel] = useState<ProgressIntelligence | null>(null);
   const [triggerIntel, setTriggerIntel] = useState<TriggerIntelligence | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  const loadAnalyticsData = useCallback(() => {
+  const loadAnalyticsData = useCallback(async () => {
     useHabitStore.getState().syncFromDatabase();
-    analyticsApi.getTodayMindsetEval()
-      .then((data) => setMindsetEval(data))
-      .catch(() => {});
-    analyticsApi.getTriggerIntelligence()
-      .then((data) => setTriggerIntel(data))
-      .catch(() => {});
+    try {
+      setIsLoading(true);
+      const [pData, tData] = await Promise.allSettled([
+        analyticsApi.getProgressIntelligence(),
+        analyticsApi.getTriggerIntelligence(),
+      ]);
+
+      if (pData.status === 'fulfilled' && pData.value) {
+        setProgressIntel(pData.value);
+      }
+      if (tData.status === 'fulfilled' && tData.value) {
+        setTriggerIntel(tData.value);
+      }
+    } catch (e) {
+      console.log('Error loading progress intelligence:', e);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -116,7 +135,50 @@ export default function ProgressTabScreen() {
     return days;
   }, [dailyUrgeCounts, todayUrgesCount]);
 
-  const scoreValue = mindsetEval?.score ?? Math.min(100, Math.max(10, Math.round((mindStrength || 500) / 10)));
+  const scoreValue = progressIntel?.score ?? Math.min(100, Math.max(10, Math.round((mindStrength || 500) / 10)));
+  const statusTitle = progressIntel?.status_title ?? (streak > 7 ? 'Ojas Transmutation Sovereign' : 'Neural Rewiring Active');
+  const statusColor = progressIntel?.status_color ?? '#00E5FF';
+
+  // 4 Core Quick Metric Cards fallback
+  const coreMetrics = useMemo(() => {
+    if (progressIntel?.core_metrics && progressIntel.core_metrics.length >= 4) {
+      return progressIntel.core_metrics;
+    }
+    return [
+      {
+        id: 'clean_consistency',
+        label: '7-Day Consistency',
+        value: `${successRate}%`,
+        sub: `${Math.min(7, streak)}/7 Clean Days`,
+        color: '#10B981',
+        icon: 'shield-checkmark',
+      },
+      {
+        id: 'urges_neutralized',
+        label: 'Urges Neutralized',
+        value: `${totalUrgesCount || 0}`,
+        sub: `${todayUrgesCount || 0} Defended Today`,
+        color: '#00E5FF',
+        icon: 'flame',
+      },
+      {
+        id: 'mind_strength',
+        label: 'Mind Strength',
+        value: `${mindStrength || 500}`,
+        sub: statusTitle.split(' ')[0] || 'Warrior',
+        color: '#A855F7',
+        icon: 'flash',
+      },
+      {
+        id: 'recovery_balance',
+        label: 'Total Logged',
+        value: `${totalLogs}`,
+        sub: 'Check-in Records',
+        color: '#38BDF8',
+        icon: 'calendar',
+      },
+    ];
+  }, [progressIntel?.core_metrics, successRate, streak, totalUrgesCount, todayUrgesCount, mindStrength, statusTitle, totalLogs]);
 
   return (
     <View style={styles.container}>
@@ -141,7 +203,7 @@ export default function ProgressTabScreen() {
           </TouchableOpacity>
 
           <View style={styles.headerTitleWrapper}>
-            <ThemedText style={styles.headerCategory}>ANALYTICS & PROGRESS</ThemedText>
+            <ThemedText style={styles.headerCategory}>NEURAL TELEMETRY</ThemedText>
             <ThemedText style={styles.headerTitleText}>Progress Dashboard</ThemedText>
           </View>
 
@@ -156,7 +218,7 @@ export default function ProgressTabScreen() {
         >
           <View style={styles.contentContainer}>
 
-            {/* 1. Mindset Score & Transmutation Overview Card */}
+            {/* 1. Mindset Score & Sovereign Status Hero Card */}
             <View style={styles.darkCard}>
               <View style={styles.cardHeaderRow}>
                 <View style={styles.headerBadgeRow}>
@@ -165,47 +227,95 @@ export default function ProgressTabScreen() {
                 </View>
                 <View style={[styles.statusPill, { backgroundColor: lastLoggedStatus === 'retained' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)' }]}>
                   <ThemedText style={[styles.statusPillText, { color: lastLoggedStatus === 'retained' ? '#10B981' : '#94A3B8' }]}>
-                    {lastLoggedStatus === 'retained' ? '✓ Clean Today' : streak > 0 ? `${streak}d Streak` : 'Ready to Start'}
+                    {lastLoggedStatus === 'retained' ? '✓ Clean Today' : streak > 0 ? `${streak}d Streak` : 'Active Baseline'}
                   </ThemedText>
                 </View>
               </View>
 
               {/* Score Display & Summary */}
               <View style={styles.scoreRow}>
-                <View style={styles.scoreGaugeBox}>
-                  <ThemedText style={styles.scoreNumber}>{scoreValue}</ThemedText>
+                <View style={[styles.scoreGaugeBox, { borderColor: `${statusColor}50` }]}>
+                  <ThemedText style={[styles.scoreNumber, { color: statusColor }]}>{scoreValue}</ThemedText>
                   <ThemedText style={styles.scoreLabel}>SCORE / 100</ThemedText>
                 </View>
 
-                <View style={{ flex: 1, gap: 4 }}>
-                  <ThemedText style={styles.scoreStatusTitle}>
-                    {mindsetEval?.status_title ?? (streak > 7 ? 'Ojas Transmutation Active' : 'Building Neural Resilience')}
+                <View style={styles.scoreInfoCol}>
+                  <ThemedText style={styles.scoreStatusTitle} numberOfLines={2}>
+                    {statusTitle}
                   </ThemedText>
                   <ThemedText style={styles.scoreDescriptionText}>
-                    {mindsetEval?.summary || 'Evaluated live from daily check-ins, journals, yogic meditation, and urge control discipline.'}
+                    {progressIntel?.headline || progressIntel?.summary || 'Evaluated live from daily check-ins, journals, yogic meditation, and urge control discipline.'}
                   </ThemedText>
                 </View>
               </View>
 
-              {/* Progress Breakdown Bars */}
+              {/* 4-Pillar Progress Breakdown */}
               <View style={styles.breakdownContainer}>
                 <View style={styles.breakdownRow}>
-                  <ThemedText style={styles.breakdownLabel}>Daily Checklist Points</ThemedText>
-                  <ThemedText style={styles.breakdownValue}>{mindsetEval?.checkin_score ?? (latestCheckinSummary ? 30 : 0)}/30 PTS</ThemedText>
+                  <ThemedText style={styles.breakdownLabel}>Check-in Checklist</ThemedText>
+                  <ThemedText style={styles.breakdownValue}>
+                    {progressIntel?.metrics_breakdown?.checkin_points ?? (latestCheckinSummary ? 25 : 10)}/25 PTS
+                  </ThemedText>
                 </View>
                 <View style={styles.breakdownTrack}>
-                  <View style={[styles.breakdownFill, { width: `${((mindsetEval?.checkin_score ?? (latestCheckinSummary ? 30 : 0)) / 30) * 100}%`, backgroundColor: '#00E5FF' }]} />
+                  <View
+                    style={[
+                      styles.breakdownFill,
+                      {
+                        width: `${Math.min(100, (((progressIntel?.metrics_breakdown?.checkin_points ?? (latestCheckinSummary ? 25 : 10)) / 25) * 100))}%`,
+                        backgroundColor: '#00E5FF',
+                      },
+                    ]}
+                  />
+                </View>
+
+                <View style={[styles.breakdownRow, { marginTop: 6 }]}>
+                  <ThemedText style={styles.breakdownLabel}>Self-Reflection Journals</ThemedText>
+                  <ThemedText style={styles.breakdownValue}>
+                    {progressIntel?.metrics_breakdown?.journal_points ?? (recentJournals?.length ? 20 : 5)}/20 PTS
+                  </ThemedText>
+                </View>
+                <View style={styles.breakdownTrack}>
+                  <View
+                    style={[
+                      styles.breakdownFill,
+                      {
+                        width: `${Math.min(100, (((progressIntel?.metrics_breakdown?.journal_points ?? (recentJournals?.length ? 20 : 5)) / 20) * 100))}%`,
+                        backgroundColor: '#A855F7',
+                      },
+                    ]}
+                  />
+                </View>
+
+                <View style={[styles.breakdownRow, { marginTop: 6 }]}>
+                  <ThemedText style={styles.breakdownLabel}>Impulse & Urge Control</ThemedText>
+                  <ThemedText style={styles.breakdownValue}>
+                    {progressIntel?.metrics_breakdown?.urge_control_points ?? 22}/25 PTS
+                  </ThemedText>
+                </View>
+                <View style={styles.breakdownTrack}>
+                  <View
+                    style={[
+                      styles.breakdownFill,
+                      {
+                        width: `${Math.min(100, (((progressIntel?.metrics_breakdown?.urge_control_points ?? 22) / 25) * 100))}%`,
+                        backgroundColor: '#10B981',
+                      },
+                    ]}
+                  />
                 </View>
               </View>
 
-              {/* Actionable Transmutation Tip */}
-              {mindsetEval?.transmutation_tip && (
+              {/* Actionable Transmutation Protocol */}
+              {progressIntel?.transmutation_tip && (
                 <View style={styles.transmutationBox}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={styles.transmutationHeaderRow}>
                     <Ionicons name="flash" size={13} color="#00E5FF" />
-                    <ThemedText style={styles.transmutationTitle}>DAILY TRANSMUTATION PROTOCOL</ThemedText>
+                    <ThemedText style={styles.transmutationTitle}>ACTIVE TRANSMUTATION PROTOCOL</ThemedText>
                   </View>
-                  <ThemedText style={styles.transmutationBody}>{mindsetEval.transmutation_tip}</ThemedText>
+                  <ThemedText style={styles.transmutationBody}>
+                    {progressIntel.transmutation_tip}
+                  </ThemedText>
                 </View>
               )}
 
@@ -217,7 +327,7 @@ export default function ProgressTabScreen() {
                   setIsCalcModalVisible(true);
                 }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={styles.explainerLeft}>
                   <Ionicons name="information-circle-outline" size={15} color="#94A3B8" />
                   <ThemedText style={styles.explainerLinkText}>How Progress Intelligence Calculates Score</ThemedText>
                 </View>
@@ -225,7 +335,103 @@ export default function ProgressTabScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* 2. Trigger Intelligence & Vulnerability Radar Card */}
+            {/* 2. Four Core Metric Quick-Cards (2x2 Grid) */}
+            <View style={styles.metricsGrid}>
+              {coreMetrics.map((item) => (
+                <View key={item.id} style={styles.metricCard}>
+                  <View style={styles.metricHeader}>
+                    <ThemedText style={styles.metricLabel} numberOfLines={1}>
+                      {item.label}
+                    </ThemedText>
+                    <Ionicons name={item.icon as any} size={15} color={item.color} />
+                  </View>
+                  <ThemedText style={[styles.metricNumber, { color: item.color }]} numberOfLines={1}>
+                    {item.value}
+                  </ThemedText>
+                  <ThemedText style={styles.metricSub} numberOfLines={1}>
+                    {item.sub}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+
+            {/* 3. Predictive Threat Radar & Warnings */}
+            {progressIntel?.predictions && progressIntel.predictions.length > 0 && (
+              <View style={styles.darkCard}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.headerBadgeRow}>
+                    <Ionicons name="pulse-outline" size={14} color="#F59E0B" />
+                    <ThemedText style={[styles.cardCategoryTitle, { color: '#F59E0B' }]}>
+                      PREDICTIVE THREAT RADAR
+                    </ThemedText>
+                  </View>
+                  <ThemedText style={styles.scannableBadge}>AI TELEMETRY</ThemedText>
+                </View>
+
+                <View style={styles.predictionList}>
+                  {progressIntel.predictions.map((p, idx) => {
+                    const isObj = typeof p === 'object' && p !== null;
+                    const level = isObj ? (p as PredictionItem).level : 'ALERT';
+                    const title = isObj ? (p as PredictionItem).title : 'Behavioral Insight';
+                    const text = isObj ? (p as PredictionItem).text : String(p);
+                    const color = isObj ? (p as PredictionItem).color : '#00E5FF';
+                    const iconName = isObj ? (p as PredictionItem).icon : 'alert-circle-outline';
+
+                    return (
+                      <View key={idx} style={styles.predictionItemCard}>
+                        <View style={styles.predictionTopRow}>
+                          <View style={[styles.predictionLevelPill, { backgroundColor: `${color}18`, borderColor: `${color}35` }]}>
+                            <Ionicons name={iconName as any} size={11} color={color} style={{ marginRight: 4 }} />
+                            <ThemedText style={[styles.predictionLevelText, { color }]}>{level}</ThemedText>
+                          </View>
+                          <ThemedText style={styles.predictionTitle} numberOfLines={1}>{title}</ThemedText>
+                        </View>
+                        <ThemedText style={styles.predictionText}>{text}</ThemedText>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* 4. Action Protocol Directives */}
+            {progressIntel?.recommendations && progressIntel.recommendations.length > 0 && (
+              <View style={styles.darkCard}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.headerBadgeRow}>
+                    <Ionicons name="shield-checkmark" size={14} color="#10B981" />
+                    <ThemedText style={[styles.cardCategoryTitle, { color: '#10B981' }]}>
+                      RECOMMENDED ACTION PROTOCOLS
+                    </ThemedText>
+                  </View>
+                  <ThemedText style={styles.scannableBadge}>DAILY SHIELD</ThemedText>
+                </View>
+
+                <View style={styles.recommendationList}>
+                  {progressIntel.recommendations.map((r, idx) => {
+                    const isObj = typeof r === 'object' && r !== null;
+                    const title = isObj ? (r as RecommendationItem).title : `Protocol #${idx + 1}`;
+                    const action = isObj ? (r as RecommendationItem).action : String(r);
+                    const tag = isObj ? (r as RecommendationItem).tag : 'Action';
+                    const color = isObj ? (r as RecommendationItem).color : '#10B981';
+
+                    return (
+                      <View key={idx} style={styles.recommendationCard}>
+                        <View style={styles.recommendationTopRow}>
+                          <ThemedText style={styles.recommendationTitle} numberOfLines={1}>{title}</ThemedText>
+                          <View style={[styles.recommendationTagPill, { backgroundColor: `${color}15`, borderColor: `${color}30` }]}>
+                            <ThemedText style={[styles.recommendationTagText, { color }]}>{tag}</ThemedText>
+                          </View>
+                        </View>
+                        <ThemedText style={styles.recommendationAction}>{action}</ThemedText>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* 5. Trigger Intelligence Quick Radar Card */}
             {triggerIntel && (
               <View style={styles.darkCard}>
                 <View style={styles.cardHeaderRow}>
@@ -242,7 +448,6 @@ export default function ProgressTabScreen() {
                     ]}>
                       <ThemedText
                         numberOfLines={1}
-                        ellipsizeMode="tail"
                         style={[
                           styles.statusPillText,
                           triggerIntel.risk_level.includes('CRITICAL') ? { color: '#EF4444' }
@@ -256,7 +461,7 @@ export default function ProgressTabScreen() {
                   )}
                 </View>
 
-                {/* Peak Window & Danger Timing (Guaranteed Responsive 2-Column) */}
+                {/* Next Predicted Trigger & Critical Window */}
                 <View style={styles.intelTimingRow}>
                   <View style={styles.intelTimingColLeft}>
                     <ThemedText style={styles.intelTimingSub}>NEXT PREDICTED TRIGGER</ThemedText>
@@ -266,10 +471,10 @@ export default function ProgressTabScreen() {
                   </View>
                   <View style={styles.intelTimingColRight}>
                     <ThemedText style={styles.intelTimingSub}>
-                      {triggerIntel.today_status_label ? 'TODAY\'S PHASE' : 'CRITICAL PHASE'}
+                      {triggerIntel.today_status_label ? "TODAY'S PHASE" : 'CRITICAL PHASE'}
                     </ThemedText>
                     <ThemedText style={styles.intelTimingDay} numberOfLines={2}>
-                      {triggerIntel.today_weekday ? `${triggerIntel.today_weekday} (${triggerIntel.highest_risk_day})` : (triggerIntel.highest_risk_day || 'Weekends')}
+                      {triggerIntel.today_weekday ? `${triggerIntel.today_weekday}` : (triggerIntel.highest_risk_day || 'Weekends')}
                     </ThemedText>
                   </View>
                 </View>
@@ -277,27 +482,10 @@ export default function ProgressTabScreen() {
                 {/* Primary Vulnerability Statement */}
                 {triggerIntel.primary_vulnerability && (
                   <View style={styles.vulnerabilityBox}>
-                    <ThemedText style={styles.vulnerabilityLabel}>Primary Vulnerability:</ThemedText>
+                    <ThemedText style={styles.vulnerabilityLabel}>PRIMARY VULNERABILITY</ThemedText>
                     <ThemedText style={styles.vulnerabilityValue}>{triggerIntel.primary_vulnerability}</ThemedText>
                   </View>
                 )}
-
-                {/* Active Catalyst Trigger Chips */}
-                {triggerIntel.active_triggers && triggerIntel.active_triggers.length > 0 && (
-                  <View style={styles.triggerChipsRow}>
-                    {triggerIntel.active_triggers.map((t, idx) => (
-                      <View key={idx} style={styles.triggerChip}>
-                        <ThemedText style={styles.triggerChipText}>{t}</ThemedText>
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                {/* Tactical Protocol Box */}
-                <View style={styles.protocolBox}>
-                  <ThemedText style={styles.protocolHeader}>TACTICAL DEFENSE PROTOCOL</ThemedText>
-                  <ThemedText style={styles.protocolText}>{triggerIntel.tactical_defense}</ThemedText>
-                </View>
 
                 {/* Direct Link to Full Trigger Intelligence Suite */}
                 <TouchableOpacity
@@ -308,7 +496,7 @@ export default function ProgressTabScreen() {
                     router.push('/trigger-intelligence' as any);
                   }}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={styles.explainerLeft}>
                     <Ionicons name="analytics-outline" size={15} color="#00E5FF" />
                     <ThemedText style={[styles.explainerLinkText, { color: '#00E5FF' }]}>View Full Neural Trigger Breakdown</ThemedText>
                   </View>
@@ -317,22 +505,8 @@ export default function ProgressTabScreen() {
               </View>
             )}
 
-            {/* 3. Core Purpose Alignment Banner */}
-            {triggerIntel?.purpose_alignment_quote && (
-              <View style={[styles.darkCard, { borderColor: 'rgba(0, 229, 255, 0.2)' }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Ionicons name="compass-outline" size={15} color="#00E5FF" />
-                  <ThemedText style={[styles.cardCategoryTitle, { color: '#00E5FF' }]}>PURPOSE & VISION ALIGNMENT</ThemedText>
-                </View>
-                <ThemedText style={styles.purposeText}>
-                  "{triggerIntel.purpose_alignment_quote}"
-                </ThemedText>
-              </View>
-            )}
-
-            {/* 4. 3 PM Meditation & Daily Checklist Activity Row */}
+            {/* 6. Activities Quick Row: 3 PM Meditation & Daily Checklist */}
             <View style={styles.activitiesRow}>
-              {/* 3 PM Meditation */}
               <TouchableOpacity
                 style={[styles.darkCard, { flex: 1, padding: 14 }]}
                 activeOpacity={0.8}
@@ -353,7 +527,6 @@ export default function ProgressTabScreen() {
                 </ThemedText>
               </TouchableOpacity>
 
-              {/* Daily Checklist */}
               <TouchableOpacity
                 style={[styles.darkCard, { flex: 1, padding: 14 }]}
                 activeOpacity={0.8}
@@ -377,54 +550,7 @@ export default function ProgressTabScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* 5. Key Recovery Metrics 2x2 Bento Grid */}
-            <View style={styles.sectionContainer}>
-              <ThemedText style={styles.sectionTitle}>Key Recovery Metrics</ThemedText>
-
-              <View style={styles.metricsGrid}>
-                {/* 1. Current Streak */}
-                <View style={styles.metricCard}>
-                  <View style={styles.metricHeader}>
-                    <ThemedText style={styles.metricLabel}>Current Streak</ThemedText>
-                    <Ionicons name="flame" size={16} color="#00E5FF" />
-                  </View>
-                  <ThemedText style={[styles.metricNumber, { color: '#00E5FF' }]}>{streak}d</ThemedText>
-                  <ThemedText style={styles.metricSub}>Active clean days</ThemedText>
-                </View>
-
-                {/* 2. Highest Streak */}
-                <View style={styles.metricCard}>
-                  <View style={styles.metricHeader}>
-                    <ThemedText style={styles.metricLabel}>Best Record</ThemedText>
-                    <Ionicons name="trophy" size={16} color="#F59E0B" />
-                  </View>
-                  <ThemedText style={[styles.metricNumber, { color: '#F59E0B' }]}>{highestStreak}d</ThemedText>
-                  <ThemedText style={styles.metricSub}>Longest clean streak</ThemedText>
-                </View>
-
-                {/* 3. Urge Counter */}
-                <View style={styles.metricCard}>
-                  <View style={styles.metricHeader}>
-                    <ThemedText style={styles.metricLabel}>Urges Defeated</ThemedText>
-                    <Ionicons name="shield-checkmark" size={16} color="#10B981" />
-                  </View>
-                  <ThemedText style={[styles.metricNumber, { color: '#10B981' }]}>{totalUrgesCount || 0}</ThemedText>
-                  <ThemedText style={styles.metricSub}>{todayUrgesCount || 0} urges today • +1 on beat</ThemedText>
-                </View>
-
-                {/* 4. Total Logged Check-ins */}
-                <View style={styles.metricCard}>
-                  <View style={styles.metricHeader}>
-                    <ThemedText style={styles.metricLabel}>Total Logged</ThemedText>
-                    <Ionicons name="calendar" size={16} color="#8B5CF6" />
-                  </View>
-                  <ThemedText style={[styles.metricNumber, { color: '#8B5CF6' }]}>{totalLogs}</ThemedText>
-                  <ThemedText style={styles.metricSub}>{successRate}% retention rate</ThemedText>
-                </View>
-              </View>
-            </View>
-
-            {/* 6. 7-Day Day-Wise Urge Activity Graph */}
+            {/* 7. 7-Day Urge Activity Horizon Graph */}
             <View style={styles.darkCard}>
               <View style={styles.cardHeaderRow}>
                 <View style={styles.headerBadgeRow}>
@@ -486,10 +612,10 @@ export default function ProgressTabScreen() {
               </View>
             </View>
 
-            {/* 7. Top 3 Journals (AI Analyzed) */}
+            {/* 8. Top Journals (AI Analyzed) */}
             <View style={styles.sectionContainer}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <ThemedText style={styles.sectionTitle}>Top 3 Journals (AI Analyzed)</ThemedText>
+              <View style={styles.sectionHeaderRow}>
+                <ThemedText style={styles.sectionTitle}>Recent Self-Reflection Journals</ThemedText>
                 <TouchableOpacity
                   activeOpacity={0.7}
                   onPress={() => {
@@ -497,7 +623,7 @@ export default function ProgressTabScreen() {
                     router.push('/journal' as any);
                   }}
                 >
-                  <ThemedText style={{ fontSize: 11, fontWeight: '700', color: '#00E5FF' }}>
+                  <ThemedText style={styles.sectionLinkText}>
                     {recentJournals && recentJournals.length > 0 ? `${recentJournals.length} entries →` : '+ Write Journal'}
                   </ThemedText>
                 </TouchableOpacity>
@@ -508,9 +634,9 @@ export default function ProgressTabScreen() {
                   {recentJournals.map((j) => (
                     <View key={j.id} style={styles.journalCard}>
                       <View style={styles.journalHeaderRow}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={styles.journalTitleGroup}>
                           <Ionicons name="journal" size={14} color="#00E5FF" />
-                          <ThemedText style={styles.journalTitle}>{j.title}</ThemedText>
+                          <ThemedText style={styles.journalTitle} numberOfLines={1}>{j.title}</ThemedText>
                         </View>
                         {j.mood_tag && (
                           <View style={styles.moodPill}>
@@ -541,9 +667,9 @@ export default function ProgressTabScreen() {
               )}
             </View>
 
-            {/* 8. Recent Activity History */}
+            {/* 9. Recent Activity Timeline */}
             <View style={styles.sectionContainer}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={styles.sectionHeaderRow}>
                 <ThemedText style={styles.sectionTitle}>Recent Activity History</ThemedText>
                 <ThemedText style={{ fontSize: 11, color: '#64748B' }}>
                   {totalLogs > 0 ? `${totalLogs} logs` : 'No logs'}
@@ -566,7 +692,7 @@ export default function ProgressTabScreen() {
                           color="#000000"
                         />
                       </View>
-                      <View style={{ flex: 1, gap: 2 }}>
+                      <View style={styles.historyInfoCol}>
                         <ThemedText style={styles.historyDateText}>
                           {new Date(item.date).toLocaleDateString('en-US', {
                             weekday: 'short',
@@ -608,7 +734,7 @@ export default function ProgressTabScreen() {
         </ScrollView>
       </PageEntrance>
 
-      {/* Explainer Modal */}
+      {/* Score Calculation Explainer Modal */}
       <Modal
         visible={isCalcModalVisible}
         transparent
@@ -639,7 +765,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>1. Daily Check-in Checklist</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {mindsetEval?.checkin_score ?? 30}/30 PTS
+                  {progressIntel?.metrics_breakdown?.checkin_points ?? 25}/25 PTS
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Evaluates mood, energy, sleep quality, stress management, and daily accountability.</ThemedText>
@@ -649,7 +775,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>2. Self-Reflection Journals</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {mindsetEval?.journal_score ?? 20}/20 PTS
+                  {progressIntel?.metrics_breakdown?.journal_points ?? 20}/20 PTS
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Evaluates depth of introspection, emotional honesty, and psychological awareness.</ThemedText>
@@ -657,12 +783,22 @@ export default function ProgressTabScreen() {
 
             <View style={styles.calcStep}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <ThemedText style={styles.stepName}>3. Meditation & Urge Transmutation</ThemedText>
+                <ThemedText style={styles.stepName}>3. Impulse & Urge Transmutation</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {mindsetEval?.meditation_urge_score ?? 50}/50 PTS
+                  {progressIntel?.metrics_breakdown?.urge_control_points ?? 25}/25 PTS
                 </ThemedText>
               </View>
-              <ThemedText style={styles.stepDetail}>Tracks yogic mindfulness sessions, urges defeated, and vital energy transmutation.</ThemedText>
+              <ThemedText style={styles.stepDetail}>Tracks urges neutralized, clean streak consistency, and vital energy transmutation.</ThemedText>
+            </View>
+
+            <View style={styles.calcStep}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <ThemedText style={styles.stepName}>4. Yogic Meditation Discipline</ThemedText>
+                <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
+                  {progressIntel?.metrics_breakdown?.meditation_points ?? 25}/25 PTS
+                </ThemedText>
+              </View>
+              <ThemedText style={styles.stepDetail}>Quantifies breathwork consistency, afternoon meditation discipline, and focus stamina.</ThemedText>
             </View>
 
             <TouchableOpacity
@@ -736,7 +872,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
 
-  /* Unified Clean Dark Grey Card (Matching Home Screen) */
+  /* Clean Dark Grey Card */
   darkCard: {
     backgroundColor: '#0E0F12',
     borderRadius: 16,
@@ -749,11 +885,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   headerBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 1,
   },
   cardCategoryTitle: {
     fontSize: 10.5,
@@ -761,6 +900,7 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
+    flexShrink: 1,
   },
   statusPill: {
     paddingHorizontal: 8,
@@ -773,6 +913,12 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  scannableBadge: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.8,
   },
 
   /* Score Overview Section */
@@ -787,14 +933,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#111215',
     borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   scoreNumber: {
     fontSize: 26,
     fontWeight: '900',
-    color: '#00E5FF',
     letterSpacing: -0.5,
   },
   scoreLabel: {
@@ -803,10 +947,16 @@ const styles = StyleSheet.create({
     color: '#64748B',
     letterSpacing: 0.5,
   },
+  scoreInfoCol: {
+    flex: 1,
+    gap: 4,
+    justifyContent: 'center',
+  },
   scoreStatusTitle: {
     fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
+    lineHeight: 18,
   },
   scoreDescriptionText: {
     fontSize: 11,
@@ -827,7 +977,7 @@ const styles = StyleSheet.create({
   breakdownLabel: {
     fontSize: 10.5,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#94A3B8',
   },
   breakdownValue: {
     fontSize: 10.5,
@@ -855,181 +1005,57 @@ const styles = StyleSheet.create({
     padding: 10,
     gap: 4,
   },
+  transmutationHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   transmutationTitle: {
     fontSize: 9.5,
     fontWeight: '800',
     color: '#00E5FF',
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
   },
   transmutationBody: {
-    fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 11,
+    color: '#E2E8F0',
     lineHeight: 16,
   },
 
+  /* Explainer Link */
   explainerLink: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    paddingTop: 4,
   },
-  explainerLinkText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#94A3B8',
-  },
-
-  purposeText: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.85)',
-    lineHeight: 17,
-    fontStyle: 'italic',
-  },
-
-  /* Trigger Intelligence Elements */
-  intelTimingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
-    gap: 12,
-  },
-  intelTimingColLeft: {
-    flex: 1.3,
-    gap: 3,
-  },
-  intelTimingColRight: {
-    flex: 1,
-    alignItems: 'flex-end',
-    gap: 3,
-  },
-  intelTimingSub: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.6,
-  },
-  intelTimingTime: {
-    fontSize: 12.5,
-    fontWeight: '800',
-    color: '#00E5FF',
-    lineHeight: 17,
-  },
-  intelTimingDay: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'right',
-    lineHeight: 16,
-  },
-  vulnerabilityBox: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  vulnerabilityLabel: {
-    fontSize: 11.5,
-    fontWeight: '800',
-    color: '#64748B',
-  },
-  vulnerabilityValue: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    flexShrink: 1,
-  },
-  triggerChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  triggerChip: {
-    backgroundColor: '#16181D',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  triggerChipText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94A3B8',
-  },
-  protocolBox: {
-    backgroundColor: '#111215',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(192, 132, 252, 0.2)',
-    padding: 10,
-    gap: 4,
-  },
-  protocolHeader: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#C084FC',
-    letterSpacing: 0.8,
-  },
-  protocolText: {
-    fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.8)',
-    lineHeight: 16,
-  },
-
-  /* 3 PM & Checklist Activities Row */
-  activitiesRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  activityHeader: {
+  explainerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
+    flexShrink: 1,
   },
-  activityTitle: {
+  explainerLinkText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  activityStatus: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginTop: 2,
-  },
-  activitySub: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.45)',
+    fontWeight: '600',
+    color: '#94A3B8',
+    flexShrink: 1,
   },
 
-  /* Bento Metric Grid */
-  sectionContainer: {
-    gap: 10,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
-  },
+  /* Four Core Metrics 2x2 Bento Grid */
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
   metricCard: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    minWidth: 140,
+    flex: 1,
+    minWidth: '47%',
     backgroundColor: '#0E0F12',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 14,
+    padding: 12,
     gap: 2,
   },
   metricHeader: {
@@ -1038,64 +1064,234 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   metricLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#94A3B8',
+    flexShrink: 1,
   },
   metricNumber: {
     fontSize: 20,
     fontWeight: '900',
     marginTop: 2,
+    letterSpacing: -0.3,
   },
   metricSub: {
     fontSize: 9.5,
     color: 'rgba(255, 255, 255, 0.45)',
+    lineHeight: 13,
   },
 
-  /* Bar Chart */
-  chartCountText: {
+  /* Predictive Threat Radar */
+  predictionList: {
+    gap: 8,
+  },
+  predictionItemCard: {
+    backgroundColor: '#111215',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 10,
+    gap: 4,
+  },
+  predictionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  predictionLevelPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  predictionLevelText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  predictionTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    flexShrink: 1,
+  },
+  predictionText: {
     fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.65)',
+    lineHeight: 15,
+  },
+
+  /* Action Protocol Recommendations */
+  recommendationList: {
+    gap: 8,
+  },
+  recommendationCard: {
+    backgroundColor: '#111215',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 10,
+    gap: 4,
+  },
+  recommendationTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  recommendationTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    flexShrink: 1,
+  },
+  recommendationTagPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  recommendationTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  recommendationAction: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    lineHeight: 15,
+  },
+
+  /* Trigger Intel Preview */
+  intelTimingRow: {
+    flexDirection: 'row',
+    backgroundColor: '#111215',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 10,
+    gap: 10,
+  },
+  intelTimingColLeft: {
+    flex: 1,
+    gap: 2,
+  },
+  intelTimingColRight: {
+    flex: 1,
+    gap: 2,
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255, 255, 255, 0.08)',
+    paddingLeft: 10,
+  },
+  intelTimingSub: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
+  },
+  intelTimingTime: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#00E5FF',
+    lineHeight: 16,
+  },
+  intelTimingDay: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#C084FC',
+    lineHeight: 16,
+  },
+  vulnerabilityBox: {
+    backgroundColor: 'rgba(192, 132, 252, 0.06)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(192, 132, 252, 0.15)',
+    padding: 9,
+    gap: 2,
+  },
+  vulnerabilityLabel: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#C084FC',
+    letterSpacing: 0.6,
+  },
+  vulnerabilityValue: {
+    fontSize: 11,
+    color: '#E2E8F0',
+    lineHeight: 15,
+  },
+
+  /* Activities Quick Row */
+  activitiesRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  activityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  activityTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  activityStatus: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#00E5FF',
+    marginTop: 4,
+  },
+  activitySub: {
+    fontSize: 9.5,
+    color: '#64748B',
+    lineHeight: 13,
+  },
+
+  /* 7-Day Urge Activity Graph */
+  chartCountText: {
+    fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
   },
   barChartContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    height: 100,
+    alignItems: 'flex-end',
+    height: 80,
     paddingHorizontal: 8,
-    paddingTop: 10,
+    paddingTop: 8,
   },
   barColumn: {
     alignItems: 'center',
-    flex: 1,
     gap: 6,
+    flex: 1,
   },
   barTrack: {
-    width: 14,
-    height: 72,
+    width: 8,
+    height: 55,
     backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 7,
+    borderRadius: 4,
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
   barFill: {
     width: '100%',
-    borderRadius: 7,
+    borderRadius: 4,
   },
   barDayLabel: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
     color: '#64748B',
   },
   chartLegendRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
     gap: 16,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    paddingTop: 4,
   },
   legendItem: {
     flexDirection: 'row',
@@ -1103,40 +1299,68 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   legendDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   legendText: {
-    fontSize: 10,
-    color: '#64748B',
+    fontSize: 9.5,
+    color: '#94A3B8',
     fontWeight: '600',
   },
 
-  /* Top 3 Journals */
+  /* Journals & History Sections */
+  sectionContainer: {
+    gap: 8,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  sectionLinkText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00E5FF',
+  },
   journalCard: {
     backgroundColor: '#0E0F12',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
     padding: 12,
-    gap: 4,
+    gap: 6,
   },
   journalHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  journalTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
   },
   journalTitle: {
     fontSize: 12.5,
     fontWeight: '800',
     color: '#FFFFFF',
+    flexShrink: 1,
   },
   moodPill: {
     backgroundColor: 'rgba(0, 229, 255, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   moodPillText: {
     fontSize: 9.5,
@@ -1144,64 +1368,20 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
   },
   journalContent: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: 'rgba(255, 255, 255, 0.65)',
-    lineHeight: 15,
+    lineHeight: 16,
   },
   journalDate: {
     fontSize: 9.5,
     color: '#64748B',
-    textAlign: 'right',
   },
-
-  /* Activity History */
-  historyList: {
-    gap: 8,
-  },
-  historyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  emptyCard: {
     backgroundColor: '#0E0F12',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 12,
-    gap: 12,
-  },
-  historyStatusDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  historyDateText: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  historySubText: {
-    fontSize: 10.5,
-    color: '#64748B',
-  },
-  historyBadge: {
-    backgroundColor: 'rgba(0, 229, 255, 0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  historyBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#00E5FF',
-  },
-
-  /* Empty State */
-  emptyCard: {
-    backgroundColor: '#0E0F12',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderStyle: 'dashed',
     padding: 20,
     alignItems: 'center',
     gap: 6,
@@ -1213,25 +1393,73 @@ const styles = StyleSheet.create({
   },
   emptySub: {
     fontSize: 11,
-    color: '#64748B',
+    color: 'rgba(255, 255, 255, 0.5)',
     textAlign: 'center',
     lineHeight: 15,
   },
 
-  /* Modal */
+  /* History Timeline List */
+  historyList: {
+    gap: 6,
+  },
+  historyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0E0F12',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 10,
+    gap: 10,
+  },
+  historyStatusDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  historyInfoCol: {
+    flex: 1,
+    gap: 2,
+  },
+  historyDateText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  historySubText: {
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  historyBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  historyBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#E2E8F0',
+  },
+
+  /* Modal Styles */
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#0E0F12',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: '#111216',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
     padding: 20,
-    gap: 12,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    gap: 14,
+    maxHeight: '85%',
   },
   drawerHandle: {
     width: 36,
@@ -1239,7 +1467,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignSelf: 'center',
-    marginBottom: 4,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1250,45 +1477,53 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
+    flexShrink: 1,
   },
   formulaBox: {
-    backgroundColor: '#111215',
-    borderRadius: 10,
+    backgroundColor: 'rgba(0, 229, 255, 0.06)',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.2)',
+    borderColor: 'rgba(0, 229, 255, 0.15)',
     padding: 12,
     gap: 4,
   },
   formulaHeader: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#00E5FF',
     letterSpacing: 0.8,
   },
   formulaText: {
     fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.65)',
+    color: '#CBD5E1',
     lineHeight: 16,
   },
   calcStep: {
-    gap: 2,
+    backgroundColor: '#0E0F12',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    padding: 12,
+    gap: 3,
   },
   stepName: {
-    fontSize: 12.5,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
     color: '#FFFFFF',
+    flexShrink: 1,
   },
   stepDetail: {
-    fontSize: 11,
-    color: '#64748B',
+    fontSize: 10.5,
+    color: '#94A3B8',
     lineHeight: 15,
   },
   modalCloseBtn: {
     backgroundColor: '#00E5FF',
-    borderRadius: 10,
+    borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 6,
+    justifyContent: 'center',
+    marginTop: 4,
   },
   modalCloseText: {
     fontSize: 13,

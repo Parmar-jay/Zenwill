@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -655,20 +656,24 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   stepNumberBadge: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderColor: 'rgba(0, 229, 255, 0.45)',
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
   },
   stepNumberBadgeText: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '900',
     color: '#00E5FF',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    lineHeight: Platform.OS === 'ios' ? 14 : 16,
   },
   stepItemText: {
     flex: 1,

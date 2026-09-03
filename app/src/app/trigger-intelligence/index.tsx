@@ -177,10 +177,12 @@ export default function TriggerIntelligenceScreen() {
             {triggerData?.current_phase && (
               <View style={[styles.diurnalPhaseCard, { borderColor: `${triggerData.current_phase.color}45` }]}>
                 <View style={styles.diurnalHeaderRow}>
-                  <View style={[styles.phasePulseDot, { backgroundColor: triggerData.current_phase.color }]} />
-                  <ThemedText style={[styles.diurnalStatusText, { color: triggerData.current_phase.color }]}>
-                    {triggerData.current_phase.status_label}
-                  </ThemedText>
+                  <View style={styles.diurnalStatusGroup}>
+                    <View style={[styles.phasePulseDot, { backgroundColor: triggerData.current_phase.color }]} />
+                    <ThemedText style={[styles.diurnalStatusText, { color: triggerData.current_phase.color }]} numberOfLines={2}>
+                      {triggerData.current_phase.status_label}
+                    </ThemedText>
+                  </View>
                   <View style={[styles.diurnalTimeBadge, { backgroundColor: `${triggerData.current_phase.color}18`, borderColor: `${triggerData.current_phase.color}35` }]}>
                     <ThemedText style={[styles.diurnalTimeBadgeText, { color: triggerData.current_phase.color }]}>
                       {triggerData.current_phase.time_window}
@@ -222,20 +224,18 @@ export default function TriggerIntelligenceScreen() {
                 </View>
               </View>
 
-              {/* Peak Danger Window & Critical Day */}
+              {/* Peak Danger Window & Critical Day (Fully Responsive, Anti-Overlap) */}
               <View style={styles.timingBox}>
                 <View style={styles.timingLeftCol}>
                   <ThemedText style={styles.timingLabel}>NEXT PREDICTED TRIGGER</ThemedText>
-                  <ThemedText style={styles.timingValue} numberOfLines={2}>
+                  <ThemedText style={styles.timingValue}>
                     {triggerData?.next_predicted_window || triggerData?.peak_risk_window || 'Tonight, 10:30 PM - 12:30 AM'}
                   </ThemedText>
                 </View>
 
-                <View style={styles.timingDivider} />
-
                 <View style={styles.timingRightCol}>
                   <ThemedText style={styles.timingLabel}>PEAK VULNERABILITY</ThemedText>
-                  <ThemedText style={styles.timingDayValue} numberOfLines={1}>
+                  <ThemedText style={styles.timingDayValue}>
                     {triggerData?.highest_risk_day || 'Weekends'}
                   </ThemedText>
                 </View>
@@ -614,7 +614,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
     gap: 8,
+  },
+  diurnalStatusGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    minWidth: 150,
   },
   phasePulseDot: {
     width: 8,
@@ -633,6 +641,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
+    flexShrink: 0,
   },
   diurnalTimeBadgeText: {
     fontSize: 9.5,
@@ -706,30 +715,26 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  /* Timing Box */
+  /* Timing Box (Responsive Anti-Overlap) */
   timingBox: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     backgroundColor: '#111215',
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
-    alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   timingLeftCol: {
-    flex: 1.25,
+    flex: 1,
+    minWidth: 130,
     gap: 3,
   },
   timingRightCol: {
-    flex: 0.85,
+    flex: 1,
+    minWidth: 110,
     gap: 3,
-    alignItems: 'flex-end',
-  },
-  timingDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   timingLabel: {
     fontSize: 8.5,
@@ -738,15 +743,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   timingValue: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#00E5FF',
-    lineHeight: 17,
+    lineHeight: 16,
   },
   timingDayValue: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#C084FC',
+    lineHeight: 16,
   },
 
   /* Vulnerability Section */
@@ -900,10 +906,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    flexWrap: 'wrap',
     gap: 8,
   },
   slotTitleGroup: {
     flex: 1,
+    minWidth: 140,
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
@@ -918,12 +926,14 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '800',
     color: '#F8FAFC',
+    flexShrink: 1,
   },
   activeBadge: {
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 1,
+    flexShrink: 0,
   },
   activeBadgeText: {
     fontSize: 7.5,
