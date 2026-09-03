@@ -580,7 +580,6 @@ export default function CommunityWorldChatScreen() {
             }}
           >
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
-            {unreadCount > 0 && <View style={styles.unreadTopLeftBadge} />}
           </TouchableOpacity>
 
           {/* Centered Pill Tab Switcher */}

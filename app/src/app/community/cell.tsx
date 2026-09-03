@@ -22,7 +22,6 @@ import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData } from '../../services/spartan-api';
 import { communityApi } from '../../services/community-api';
-import { useUnreadStore } from '../../store/unread-store';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -133,7 +132,6 @@ export default function SpartanCellScreen() {
     return myCell.leader_id === userIdStr || myCell.leader_id === user.email;
   }, [myCell, user]);
 
-  const unreadCount = useUnreadStore((s) => s.unreadCount);
 
   const handleCreateCell = async () => {
     if (!newCellName.trim() || newCellName.trim().length < 3) {
@@ -322,7 +320,6 @@ export default function SpartanCellScreen() {
             }}
           >
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
-            {unreadCount > 0 && <View style={styles.unreadTopLeftBadge} />}
           </TouchableOpacity>
 
           <View style={styles.headerTitleGroup}>

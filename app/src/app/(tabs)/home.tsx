@@ -1288,9 +1288,6 @@ export default function HomeScreen() {
                           {cellRank ? cellRank.name.toUpperCase() : 'JOIN CELL'}
                         </ThemedText>
                       </View>
-                      {unreadCount > 0 && (
-                        <View style={styles.spartanWidgetUnreadDot} />
-                      )}
                     </View>
                     <ThemedText style={styles.spartanWidgetTitle} numberOfLines={1}>
                       {myCell ? myCell.name : 'Spartan Squad'}
@@ -1391,7 +1388,7 @@ export default function HomeScreen() {
                           </View>
                         )}
                         {/* UNREAD DM POPUP IN COMMUNITY ICON IN HOME PAGE */}
-                        {unreadCount > 0 && (action.id === 'community' || action.id === 'spartan-cell' || action.category === 'Community') && (
+                        {unreadCount > 0 && action.id === 'community' && (
                           <View style={styles.quickActionUnreadDot} />
                         )}
                       </View>
