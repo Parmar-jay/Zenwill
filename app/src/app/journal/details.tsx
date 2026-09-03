@@ -233,30 +233,6 @@ export default function JournalDetailsScreen() {
               )}
             </View>
 
-            {/* AI Extracted Summary & System Influences */}
-            {entry?.ai_insight && (
-              <View style={styles.aiBox}>
-                <View style={styles.aiHeader}>
-                  <Ionicons name="sparkles" size={16} color="#FBBF24" />
-                  <ThemedText style={styles.aiTitle}>AI Insight</ThemedText>
-                </View>
-
-                <ThemedText style={styles.aiSummaryText}>
-                  "{entry.ai_insight}"
-                </ThemedText>
-
-                {entry.ai_themes && entry.ai_themes.length > 0 && (
-                  <View style={styles.impactList}>
-                    {entry.ai_themes.map((theme, i) => (
-                      <View key={i} style={styles.impactItem}>
-                        <Ionicons name="checkmark-circle" size={14} color="#10B981" />
-                        <ThemedText style={styles.impactText}>Extracted Theme: {theme}</ThemedText>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
 
             {/* Bottom Save & Return Action */}
             <TouchableOpacity 
@@ -415,43 +391,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     minHeight: 140,
     textAlignVertical: 'top',
-  },
-  aiBox: {
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.25)',
-    padding: 16,
-    gap: 10,
-  },
-  aiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  aiTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FBBF24',
-  },
-  aiSummaryText: {
-    fontSize: 12.5,
-    color: '#FDE68A',
-    fontStyle: 'italic',
-    lineHeight: 18,
-  },
-  impactList: {
-    gap: 6,
-    marginTop: 4,
-  },
-  impactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  impactText: {
-    fontSize: 11.5,
-    color: '#CBD5E1',
   },
   saveReturnBtn: {
     flexDirection: 'row',

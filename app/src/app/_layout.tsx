@@ -160,10 +160,11 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            animation: Platform.OS === 'android' ? 'fade_from_bottom' : 'default',
-            animationDuration: 180,
+            animation: Platform.OS === 'ios' ? 'default' : 'slide_from_right',
+            animationDuration: 220,
             contentStyle: { backgroundColor: '#000000' },
             freezeOnBlur: true,
+            gestureEnabled: true,
           }}
         >
           <Stack.Screen name="index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />

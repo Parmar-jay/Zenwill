@@ -331,14 +331,10 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    alignItems: 'center',
+    backgroundColor: 'transparent',
+    padding: 4,
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
   },
   stepIndicator: {
     fontSize: 9.5,

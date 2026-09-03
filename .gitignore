@@ -33,6 +33,9 @@ app/android/build/
 app/android/app/build/
 app/android/.cxx/
 app/android/app/.cxx/
+app/android/captures/
+app/android/local.properties
+local.properties
 *.apk
 *.aab
 
@@ -50,21 +53,35 @@ app/ios/DerivedData/
 *.mobileprovision
 *.pem
 
-# Environment Secrets
+# Environment Secrets & Databases
 .env
 app/.env
 backend/.env
 .env*.local
 !.env.example
+*.sqlite
+*.sqlite3
+*.db
+
+# Temporary Exports & Caches
+app/temp_export/
+temp_export/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # OS & System Files
 .DS_Store
 Thumbs.db
 *.tmp
+*.bak
+*~
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 inst_user_settings.tmp
 
 # IDE / Editor Files
@@ -77,3 +94,4 @@ inst_user_settings.tmp
 *.suo
 *.sln
 *.swp
+

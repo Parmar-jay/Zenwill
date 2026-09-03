@@ -159,10 +159,11 @@ async function executeFetch<T>(
         response = await fetch(url, options);
     } catch (err: any) {
         clearTimeout(timeoutTimer);
-        if (err.name === 'AbortError') {
-            throw { detail: 'Request timed out. Please check your connection.', status: 408 };
+        const errMsg = err?.message || '';
+        if (err.name === 'AbortError' || errMsg.includes('canceled') || errMsg.includes('cancelled') || errMsg.includes('aborted')) {
+            throw { detail: 'Request timed out or cancelled.', status: 408 };
         }
-        throw { detail: err.message || 'Network request failed', status: 0 };
+        throw { detail: errMsg || 'Network request failed', status: 0 };
     } finally {
         clearTimeout(timeoutTimer);
     }
@@ -229,7 +230,7 @@ async function request<T>(
     // For GET requests: check memory cache first for instant 0ms retrieval
     const cacheKey = normalizedPath;
     const now = Date.now();
-    const ttl = options?.ttl ?? 15000; // 15s default TTL
+    const ttl = options?.ttl ?? 30000; // 30s default TTL for instant screen loads
 
     if (!options?.noCache) {
         const cached = memoryCache.get(cacheKey);
@@ -249,6 +250,14 @@ async function request<T>(
                 memoryCache.set(cacheKey, { data, timestamp: Date.now(), ttl });
             }
             return data;
+        })
+        .catch((err) => {
+            // Stale-if-error: If network failed or timed out, gracefully return stale cached data if available
+            const fallback = memoryCache.get(cacheKey);
+            if (fallback && fallback.data) {
+                return fallback.data as T;
+            }
+            throw err;
         })
         .finally(() => {
             inFlightRequests.delete(cacheKey);

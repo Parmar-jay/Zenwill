@@ -10,6 +10,7 @@ import {
   Keyboard,
   Dimensions,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -53,18 +54,21 @@ const MemoizedBackgroundParticles = React.memo(() => (
 ));
 
 
-// Immediately purge any legacy chat caches from disk so no stale or "hello" messages ever persist
-const STALE_CACHE_KEYS = [
-  '@zenwill_battlefield_chat_cache',
-  '@zenwill_battlefield_chat_cache_v1',
-  '@zenwill_battlefield_chat_cache_v2',
-  '@zenwill_battlefield_chat_cache_v3',
-  '@zenwill_battlefield_chat_cache_v4',
-  '@zenwill_battlefield_chat_cache_v5',
-];
-STALE_CACHE_KEYS.forEach((k) => {
-  AsyncStorage.removeItem(k).catch(() => {});
-});
+// Persistent in-memory & disk cache for seamless 0ms load and no message loss
+const BATTLEFIELD_STORAGE_KEY = '@zenwill_battlefield_cached_messages';
+let memoryBattlefieldMessages: BattleMessageItem[] = [];
+
+AsyncStorage.getItem(BATTLEFIELD_STORAGE_KEY).then((data) => {
+  if (data) {
+    try {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryBattlefieldMessages = parsed;
+      }
+    } catch {}
+  }
+}).catch(() => {});
+
 
 export default function SpartanBattlefieldScreen() {
   const router = useRouter();
@@ -82,17 +86,23 @@ export default function SpartanBattlefieldScreen() {
   const currentUserName = user?.name || 'Brother Warrior';
   const currentUserStreak = user?.streak || 0;
 
-  // Local Chat and Presence State: Strictly starts empty, populated only by real live user messages
+  // Local Chat and Presence State: Seeded from memory cache or store for 0ms load
+  const isExitingRef = useRef<boolean>(false);
   const [inputText, setInputText] = useState<string>('');
   const [messages, setMessages] = useState<BattleMessageItem[]>(() => {
+    if (memoryBattlefieldMessages.length > 0) {
+      return memoryBattlefieldMessages;
+    }
     const active = useSpartanStore.getState().activeBattle?.messages;
     if (active && Array.isArray(active)) {
-      return active.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+      const clean = active.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+      if (clean.length > 0) return clean;
     }
     return [];
   });
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isConcludeModalVisible, setIsConcludeModalVisible] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900);
   const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
 
@@ -162,13 +172,13 @@ export default function SpartanBattlefieldScreen() {
 
     initBattlefield();
 
-    // 3. Heartbeat every 3s to sync active warriors and live incoming messages
+    // 3. Heartbeat every 4s to sync active warriors and live incoming messages
     const pollInterval = setInterval(async () => {
-      if (!isMounted) return;
+      if (!isMounted || isExitingRef.current) return;
       try {
         await battleHeartbeat();
       } catch (e) {}
-    }, 3000);
+    }, 4000);
 
     // 4. Sound loop keeper
     const soundInterval = setInterval(() => {
@@ -199,21 +209,21 @@ export default function SpartanBattlefieldScreen() {
     }
   }, []);
 
-  // ── 3. Clean Exit Handler (Back Button, Done Button) ──
-  const handleExitBattlefield = useCallback(async () => {
-    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+  // ── 3. Clean Exit Handler (Immediate, Smooth, Zero Flashing) ──
+  const handleExitBattlefield = useCallback(() => {
+    if (isExitingRef.current) return;
+    isExitingRef.current = true;
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     Keyboard.dismiss();
 
     if (soundManagerRef.current) {
       soundManagerRef.current.stopAndUnload().catch(() => {});
     }
-    useSpartanStore.setState({ activeBattle: null });
-    setMessages([]);
 
-    try {
-      await spartanApi.leaveBattleSession();
-    } catch (_) {}
+    // Leave session in background without delaying navigation or clearing chat
+    spartanApi.leaveBattleSession().catch(() => {});
 
+    // Navigate immediately
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -221,11 +231,19 @@ export default function SpartanBattlefieldScreen() {
     }
   }, [router]);
 
+  // Top-Right Conclude / Victory Action with Custom Modal Card
+  const handleConcludeBattlefield = useCallback(() => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    setIsConcludeModalVisible(true);
+  }, []);
+
   useEffect(() => {
     return () => {
+      isExitingRef.current = true;
       spartanApi.leaveBattleSession().catch(() => {});
-      useSpartanStore.setState({ activeBattle: null });
-      setMessages([]);
+      if (soundManagerRef.current) {
+        soundManagerRef.current.stopAndUnload().catch(() => {});
+      }
     };
   }, []);
 
@@ -244,6 +262,8 @@ export default function SpartanBattlefieldScreen() {
       setSecondsRemaining(rem);
 
       if (rem >= 899) {
+        memoryBattlefieldMessages = [];
+        AsyncStorage.removeItem(BATTLEFIELD_STORAGE_KEY).catch(() => {});
         setMessages([]);
         battleHeartbeat().catch(() => {});
       }
@@ -272,6 +292,7 @@ export default function SpartanBattlefieldScreen() {
 
   // ── 5. Merge Server Messages in Strict Chronological Order ──
   const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
+    if (isExitingRef.current) return;
     if (!serverMsgs || !Array.isArray(serverMsgs)) return;
     const cleanServer = serverMsgs.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
 
@@ -311,6 +332,8 @@ export default function SpartanBattlefieldScreen() {
         }
       }
 
+      memoryBattlefieldMessages = combined;
+      AsyncStorage.setItem(BATTLEFIELD_STORAGE_KEY, JSON.stringify(combined.slice(-100))).catch(() => {});
       return combined;
     });
   }, []);
@@ -462,7 +485,7 @@ export default function SpartanBattlefieldScreen() {
             <TouchableOpacity
               style={styles.concludeBtn}
               activeOpacity={0.8}
-              onPress={handleExitBattlefield}
+              onPress={handleConcludeBattlefield}
             >
               <Ionicons name="checkmark-done" size={16} color="#10B981" />
             </TouchableOpacity>
@@ -672,6 +695,68 @@ export default function SpartanBattlefieldScreen() {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Custom Spartan Conclude Battlefield Modal Card */}
+      <Modal
+        visible={isConcludeModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsConcludeModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.concludeModalCard}>
+            {/* Shield Icon Emblem */}
+            <View style={styles.concludeEmblemCircle}>
+              <Ionicons name="shield-checkmark" size={36} color="#10B981" />
+            </View>
+
+            {/* Title & Badge */}
+            <ThemedText style={styles.concludeModalTitle}>CONCLUDE BATTLEFIELD</ThemedText>
+            <View style={styles.concludeStatusPill}>
+              <View style={styles.concludeStatusDot} />
+              <ThemedText style={styles.concludeStatusText}>SHIELD WALL HELD</ThemedText>
+            </View>
+
+            {/* Subtitle description */}
+            <ThemedText style={styles.concludeModalSubtitle}>
+              Have you conquered the urge and held the line? Stand firm and record your victory with your brothers.
+            </ThemedText>
+
+            {/* Honor points badge */}
+            <View style={styles.honorAwardPill}>
+              <Ionicons name="trophy" size={14} color="#F59E0B" />
+              <ThemedText style={styles.honorAwardText}>+25 Spartan Honor Points</ThemedText>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.concludeActionsCol}>
+              <TouchableOpacity
+                style={styles.concludeVictoryBtn}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setIsConcludeModalVisible(false);
+                  const currentBattleId = useSpartanStore.getState().activeBattle?.id;
+                  if (currentBattleId) {
+                    spartanApi.completeBattleSession(currentBattleId).catch(() => {});
+                  }
+                  handleExitBattlefield();
+                }}
+              >
+                <Ionicons name="checkmark-done" size={18} color="#000000" />
+                <ThemedText style={styles.concludeVictoryBtnText}>CLAIM VICTORY & RETURN</ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.concludeStayBtn}
+                activeOpacity={0.7}
+                onPress={() => setIsConcludeModalVisible(false)}
+              >
+                <ThemedText style={styles.concludeStayBtnText}>KEEP BATTLING (STAY IN ROOM)</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1063,5 +1148,142 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.35,
+  },
+
+  /* Conclude Battlefield Custom Spartan Modal */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    zIndex: 999,
+  },
+  concludeModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#0F0E17',
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    paddingVertical: 28,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  concludeEmblemCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+  },
+  concludeModalTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+  },
+  concludeStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    marginTop: 8,
+  },
+  concludeStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  concludeStatusText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#10B981',
+    letterSpacing: 0.8,
+  },
+  concludeModalSubtitle: {
+    fontSize: 13,
+    color: '#CBD5E1',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginTop: 14,
+    paddingHorizontal: 8,
+  },
+  honorAwardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    marginTop: 14,
+  },
+  honorAwardText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#F59E0B',
+  },
+  concludeActionsCol: {
+    width: '100%',
+    gap: 10,
+    marginTop: 22,
+  },
+  concludeVictoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 14,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  concludeVictoryBtnText: {
+    color: '#000000',
+    fontSize: 13.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  concludeStayBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  concludeStayBtnText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

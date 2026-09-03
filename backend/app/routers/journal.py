@@ -4,7 +4,6 @@ from app.models.user import User
 from app.models.journal import JournalEntry
 from app.schemas.journal import JournalEntryCreate, JournalEntryResponse, JournalEntryUpdate
 from app.middleware.auth_middleware import get_current_user
-from app.services.ai_service import ai_service
 from app.services.mind_profile_service import get_or_create_mind_profile, record_journal_entry
 
 router = APIRouter(prefix="/journal", tags=["Journal"])
@@ -15,13 +14,6 @@ async def create_journal_entry(
     payload: JournalEntryCreate,
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        themes, insight = await ai_service.analyze_journal_entry(payload.content, current_user.name or "there")
-    except Exception as e:
-        print(f"AI journal analysis notice: {e}")
-        themes = ["self-reflection"]
-        insight = "Your reflection has been recorded successfully."
-
     entry = JournalEntry(
         user_id=str(current_user.id),
         author_name=current_user.name or "Anonymous Member",
@@ -31,8 +23,6 @@ async def create_journal_entry(
         mood_tag=payload.mood_tag,
         energy_tag=payload.energy_tag,
         emotional_tags=payload.emotional_tags or [],
-        ai_themes=themes or [],
-        ai_insight=insight,
         is_private=payload.is_private if payload.is_private is not None else False,
     )
     await entry.insert()
@@ -101,9 +91,6 @@ async def update_journal_entry(
         entry.title = payload.title
     if payload.content is not None:
         entry.content = payload.content
-        themes, insight = await ai_service.analyze_journal_entry(payload.content, current_user.name or "there")
-        entry.ai_themes = themes
-        entry.ai_insight = insight
     if payload.mood_tag is not None:
         entry.mood_tag = payload.mood_tag
     if payload.emotional_tags is not None:

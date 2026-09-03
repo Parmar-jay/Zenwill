@@ -58,7 +58,7 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
     if (!pollingInterval) {
       pollingInterval = setInterval(() => {
         get().fetchUnreadCount();
-      }, 3000); // 3-second rapid background polling for zero-delay real-time notification
+      }, 12000); // 12-second optimized polling for smooth network performance and battery efficiency
       set({ isPolling: true });
     }
 

@@ -188,8 +188,7 @@ export default function JournalIndexScreen() {
   const filteredMyEntries = myEntries.filter((e) => {
     const matchesSearch =
       (e.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (e.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (e.ai_insight || '').toLowerCase().includes(searchQuery.toLowerCase());
+      (e.content || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesEmotion =
       selectedEmotionFilter === 'All' ||
       (e.mood_tag || '').toLowerCase() === selectedEmotionFilter.toLowerCase();
@@ -321,15 +320,6 @@ export default function JournalIndexScreen() {
                         "{item.content}"
                       </ThemedText>
 
-                      {item.ai_insight ? (
-                        <View style={styles.aiInsightRow}>
-                          <Ionicons name="sparkles" size={12} color="#FBBF24" />
-                          <ThemedText style={styles.aiInsightSnippet} numberOfLines={2}>
-                            {item.ai_insight}
-                          </ThemedText>
-                        </View>
-                      ) : null}
-
                       <ThemedText style={styles.tileDate}>{formatDate(item.created_at)}</ThemedText>
                     </View>
                   );
@@ -430,13 +420,6 @@ export default function JournalIndexScreen() {
                       <ThemedText style={styles.entryBody} numberOfLines={3}>
                         {item.content}
                       </ThemedText>
-
-                      {item.ai_insight ? (
-                        <View style={styles.aiInsightBox}>
-                          <Ionicons name="sparkles" size={13} color="#FBBF24" />
-                          <ThemedText style={styles.aiInsightText}>{item.ai_insight}</ThemedText>
-                        </View>
-                      ) : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -779,19 +762,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontStyle: 'italic',
   },
-  aiInsightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 10,
-    padding: 8,
-  },
-  aiInsightSnippet: {
-    fontSize: 11,
-    color: '#FDE68A',
-    flex: 1,
-  },
+
   tileDate: {
     fontSize: 10,
     color: '#64748B',
@@ -869,22 +840,7 @@ const styles = StyleSheet.create({
     color: '#CBD5E1',
     lineHeight: 18,
   },
-  aiInsightBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.2)',
-  },
-  aiInsightText: {
-    fontSize: 11.5,
-    color: '#FDE68A',
-    fontStyle: 'italic',
-    flex: 1,
-  },
+
   loadingCard: {
     padding: 24,
     alignItems: 'center',

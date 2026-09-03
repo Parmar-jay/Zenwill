@@ -18,6 +18,8 @@ android/app/build/
 android/.cxx/
 android/app/.cxx/
 android/captures/
+android/local.properties
+local.properties
 *.apk
 *.aab
 
@@ -40,16 +42,23 @@ ios/DerivedData/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+pnpm-debug.*
 *.log
 
-# OS & Temp Files
+# OS, Temp Files & Exports
 .DS_Store
 Thumbs.db
 *.tmp
 *.bak
+*~
 inst_user_settings.tmp
+temp_export/
 
-# Environment Variables & Secrets
+# Environment Variables, Secrets & Local DBs
 .env
 .env*.local
 !.env.example
+*.sqlite
+*.sqlite3
+*.db
+

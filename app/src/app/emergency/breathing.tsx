@@ -41,8 +41,12 @@ const webNoOutline = Platform.OS === 'web'
 
 export default function EmergencyBreathingScreen() {
   const router = useRouter();
+  const isNavigatingRef = useRef<boolean>(false);
 
   const handleGoBack = () => {
+    if (isNavigatingRef.current) return;
+    isNavigatingRef.current = true;
+    setIsSosRunning(false);
     triggerHaptic();
     omSoundManager.stopAndUnload();
     if (router.canGoBack()) {
@@ -109,74 +113,100 @@ export default function EmergencyBreathingScreen() {
 
   // Complete Rescue Task and Log Feedback to Database
   const handleCompleteRescue = async () => {
-    setIsSubmitting(true);
-    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-    omSoundManager.stopAndUnload();
-
-    // 1. Complete Daily Mission Task
-    useDailyMissionStore.getState().completeTask('rescue');
-
-    // 2. Fire backend logging in background
     try {
-      await Promise.all([
-        analyticsApi.completeEmergency({
-          session_id: 'sos_' + Date.now(),
-          techniques_used: ['396Hz Box Breathing', 'Pranayama De-escalation'],
-          outcome: 'resisted',
-          trigger_reason: selectedTrigger,
-          most_helpful_technique: '396Hz Box Breathing',
-          user_feedback: userNote || `Effectiveness: ${effectivenessRating}/5 stars. Outcome: ${urgeOutcome}.`,
-          was_effective: effectivenessRating >= 3,
-        }),
-        analyticsApi.logEvent({
-          event_type: 'emergency_exercise',
-          screen_name: 'emergency_breathing',
-          feature_name: 'box_breathing',
-          duration_seconds: 180,
-          outcome: urgeOutcome === 'vanished' ? 'resisted' : 'managed',
-          emotional_state: 'grounded',
-          metadata: {
-            trigger: selectedTrigger,
-            rating: effectivenessRating,
-            outcome: urgeOutcome,
-            user_note: userNote,
-          },
-        }),
-      ]);
-      useHabitStore.getState().syncFromDatabase().catch(() => {});
-    } catch (_) {}
+      setIsSubmitting(true);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+      omSoundManager.stopAndUnload();
 
-    setIsSubmitting(false);
-    setIsFeedbackModalVisible(false);
-    router.replace('/(tabs)/home' as any);
+      // 1. Complete Daily Mission Task safely
+      try {
+        useDailyMissionStore.getState().completeTask('rescue');
+      } catch (err) {
+        // Non-blocking
+      }
+
+      // 2. Fire backend logging in background safely
+      const rating = typeof effectivenessRating === 'number' ? effectivenessRating : 5;
+      const isEffective = rating >= 3;
+      const feedbackNote = userNote ? String(userNote).trim() : `Effectiveness: ${rating}/5 stars. Outcome: ${urgeOutcome || 'resisted'}.`;
+
+      try {
+        await Promise.all([
+          analyticsApi.completeEmergency({
+            session_id: 'sos_' + Date.now(),
+            techniques_used: ['396Hz Box Breathing', 'Pranayama De-escalation'],
+            outcome: 'resisted',
+            trigger_reason: selectedTrigger || 'Screen / Late Night Phone',
+            most_helpful_technique: '396Hz Box Breathing',
+            user_feedback: feedbackNote,
+            was_effective: isEffective,
+          }).catch(() => null),
+          analyticsApi.logEvent({
+            event_type: 'emergency_exercise',
+            screen_name: 'emergency_breathing',
+            feature_name: 'box_breathing',
+            duration_seconds: 180,
+            outcome: urgeOutcome === 'vanished' ? 'resisted' : 'managed',
+            emotional_state: 'grounded',
+            metadata: {
+              trigger: selectedTrigger,
+              rating: rating,
+              outcome: urgeOutcome,
+              user_note: userNote,
+            },
+          }).catch(() => null),
+        ]);
+        useHabitStore.getState().syncFromDatabase().catch(() => {});
+      } catch (_) {}
+    } catch (e) {
+      console.warn('[EmergencyBreathing] Rescue completion warning:', e);
+    } finally {
+      setIsSubmitting(false);
+      setIsFeedbackModalVisible(false);
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)/home' as any);
+      }
+    }
   };
 
-  // SOS Timer Loop
+  // SOS Timer Loop - Pure state countdown
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (isSosRunning) {
-      interval = setInterval(() => {
-        setSosSecondsLeft((prev) => {
-          if (prev <= 1) {
-            if (sosPhaseIndex < EMERGENCY_SOS_SEQUENCE.phases.length - 1) {
-              const nextIdx = sosPhaseIndex + 1;
-              setSosPhaseIndex(nextIdx);
-              triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-              return EMERGENCY_SOS_SEQUENCE.phases[nextIdx].durationSec;
-            } else {
-              // On 5-min breathing completion, seamlessly advance to Step 2: Urge Surfing
-              setIsSosRunning(false);
-              triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-              router.push('/emergency/urge-surfing' as any);
-              return 0;
-            }
-          }
+    if (!isSosRunning) return;
+
+    const interval = setInterval(() => {
+      if (isNavigatingRef.current) return;
+
+      setSosSecondsLeft((prev) => {
+        if (prev > 1) {
           return prev - 1;
-        });
-      }, 1000);
-    }
+        }
+        return 0;
+      });
+    }, 1000);
+
     return () => clearInterval(interval);
-  }, [isSosRunning, sosPhaseIndex]);
+  }, [isSosRunning]);
+
+  // Phase transition and navigation when countdown finishes (outside reducer)
+  useEffect(() => {
+    if (sosSecondsLeft !== 0 || !isSosRunning || isNavigatingRef.current) return;
+
+    if (sosPhaseIndex < EMERGENCY_SOS_SEQUENCE.phases.length - 1) {
+      const nextIdx = sosPhaseIndex + 1;
+      setSosPhaseIndex(nextIdx);
+      setSosSecondsLeft(EMERGENCY_SOS_SEQUENCE.phases[nextIdx].durationSec);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    } else {
+      // On 5-min breathing completion, advance to Step 2: Urge Surfing
+      isNavigatingRef.current = true;
+      setIsSosRunning(false);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+      omSoundManager.stopAndUnload();
+      router.push('/emergency/urge-surfing' as any);
+    }
+  }, [sosSecondsLeft, isSosRunning, sosPhaseIndex, router]);
 
   // Synchronized Breathing Animation & Phase Text Loop (4s Inhale, 2s Hold, 4s Exhale, 2s Hold)
   useEffect(() => {

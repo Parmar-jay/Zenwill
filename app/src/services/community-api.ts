@@ -316,10 +316,10 @@ export const communityApi = {
 
   async getDmUnreadCount(): Promise<DirectMessageUnreadInfo> {
     try {
-      return await api.get<DirectMessageUnreadInfo>('/community/dm/unread-count');
+      return await api.get<DirectMessageUnreadInfo>('/community/dm/unread-count', { ttl: 15000 });
     } catch {
       try {
-        const convs = await this.getDmConversations();
+        const convs = memoryCachedDmConversations;
         const unreadSum = convs.reduce((acc, c) => acc + (c.unread_count || 0), 0);
         const latestWithUnread = convs.find((c) => (c.unread_count || 0) > 0);
         return {
