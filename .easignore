@@ -1,0 +1,71 @@
+# ==============================================================================
+# Root EAS Build & Update Ignore File (.easignore)
+# Ensures backend, virtual environments, and build caches are excluded.
+# ==============================================================================
+
+# Backend, Python & Virtual Environments
+backend/
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Dependencies
+node_modules/
+app/node_modules/
+.pnpm-store/
+.yarn/
+
+# Expo Cache & Build Outputs
+.expo/
+app/.expo/
+dist/
+app/dist/
+web-build/
+app/web-build/
+*.tsbuildinfo
+
+# Native Android Build Artifacts & Large Caches
+android/.gradle/
+app/android/.gradle/
+android/build/
+app/android/build/
+android/app/build/
+app/android/app/build/
+android/.cxx/
+app/android/.cxx/
+android/app/.cxx/
+app/android/app/.cxx/
+android/captures/
+app/android/captures/
+*.apk
+*.aab
+local.properties
+app/local.properties
+
+# Native iOS Build Artifacts & Pods
+ios/Pods/
+app/ios/Pods/
+ios/build/
+app/ios/build/
+ios/DerivedData/
+app/ios/DerivedData/
+
+# IDE & Editor Files
+.idea/
+.vscode/
+
+# Logs, Temp Files & Exports
+*.log
+*.tmp
+temp_export/
+app/temp_export/
+inst_user_settings.tmp
+app/inst_user_settings.tmp
+.DS_Store
+Thumbs.db
+
+# Environment Local Overrides
+.env*.local

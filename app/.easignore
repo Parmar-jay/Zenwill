@@ -1,0 +1,47 @@
+# ==============================================================================
+# EAS Build & Update Ignore File (.easignore)
+# Ensures ONLY necessary frontend application code and assets are uploaded.
+# ==============================================================================
+
+# Dependencies (Installed cleanly on EAS Cloud)
+node_modules/
+.pnpm-store/
+.yarn/
+
+# Expo Cache & Build Outputs
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# Native Android Build Artifacts & Large Caches
+android/.gradle/
+android/build/
+android/app/build/
+android/.cxx/
+android/app/.cxx/
+android/captures/
+android/local.properties
+local.properties
+*.apk
+*.aab
+
+# Native iOS Build Artifacts & Pods
+ios/Pods/
+ios/build/
+ios/DerivedData/
+
+# Logs, Temp Files & Exports
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+pnpm-debug.*
+*.log
+*.tmp
+inst_user_settings.tmp
+temp_export/
+.DS_Store
+Thumbs.db
+
+# Environment Local Overrides
+.env*.local
