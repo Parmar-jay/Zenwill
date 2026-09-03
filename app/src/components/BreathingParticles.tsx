@@ -23,7 +23,7 @@ interface BreathingParticlesProps {
   showText?: boolean;
 }
 
-export const BreathingParticles: React.FC<BreathingParticlesProps> = ({
+export const BreathingParticles: React.FC<BreathingParticlesProps> = React.memo(({
   phase = 'Inhale',
   title,
   subtitle,
@@ -503,7 +503,7 @@ export const BreathingParticles: React.FC<BreathingParticlesProps> = ({
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

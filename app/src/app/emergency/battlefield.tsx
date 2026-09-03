@@ -23,10 +23,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
+import { BreathingParticles } from '../../components/BreathingParticles';
 import { OmSoundManager } from '../../utils/audio-player';
 import { BattleMessageItem, BattleParticipant, spartanApi } from '../../services/spartan-api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const MemoizedBackgroundParticles = React.memo(() => (
+  <View style={styles.particlesLayer} pointerEvents="none">
+    <BreathingParticles
+      isRunning={true}
+      color="#00E5FF"
+      size={Math.min(SCREEN_WIDTH * 1.15, 420)}
+      showText={false}
+    />
+    <LinearGradient
+      colors={['rgba(5, 7, 14, 0.75)', 'rgba(5, 7, 14, 0.4)', 'rgba(5, 7, 14, 0.88)']}
+      style={StyleSheet.absoluteFill}
+    />
+  </View>
+));
 
 const BATTLEFIELD_CHAT_CACHE_KEY = '@zenwill_battlefield_chat_cache_v3';
 let memoryBattlefieldMessages: BattleMessageItem[] = [];
@@ -94,27 +110,7 @@ export default function SpartanBattlefieldScreen() {
   const countdownTimerRef = useRef<any>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
 
-  // GPU-Accelerated Hypnotic Tactical Pulse (Runs on Native Thread, 0% JS Thread overhead)
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.15,
-          duration: 3200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 3200,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulseLoop.start();
-    return () => pulseLoop.stop();
-  }, [pulseAnim]);
 
   const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
     try {
@@ -424,28 +420,10 @@ export default function SpartanBattlefieldScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── BACKGROUND: GPU-Accelerated Hypnotic Tactical Energy Core (0% JS Thread overhead) ── */}
-      <View style={styles.particlesLayer} pointerEvents="none">
-        <Animated.View
-          style={[
-            styles.tacticalGlowCore,
-            {
-              transform: [{ scale: pulseAnim }],
-            },
-          ]}
-        >
-          <LinearGradient
-            colors={['rgba(0, 229, 255, 0.18)', 'rgba(0, 229, 255, 0.04)', 'transparent']}
-            style={styles.tacticalGlowCircle}
-          />
-        </Animated.View>
-        <LinearGradient
-          colors={['rgba(5, 7, 14, 0.75)', 'rgba(5, 7, 14, 0.4)', 'rgba(5, 7, 14, 0.92)']}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
+      {/* ── BACKGROUND: Breathing Particles Hypnotic Visual ── */}
+      <MemoizedBackgroundParticles />
 
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         {/* ── 1. TACTICAL HUD HEADER ── */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -594,7 +572,7 @@ export default function SpartanBattlefieldScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={0}
         >
-          <View style={styles.chatContainer}>
+          <View style={[styles.chatContainer, { paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
             <ScrollView
               ref={scrollViewRef}
               contentContainerStyle={styles.chatScrollContent}
@@ -704,7 +682,9 @@ export default function SpartanBattlefieldScreen() {
               style={[
                 styles.inputBarWrapper,
                 {
-                  paddingBottom: Platform.OS === 'ios' && keyboardHeight > 0 ? 8 : Math.max(8, insets.bottom),
+                  paddingBottom: keyboardHeight > 0
+                    ? 8
+                    : Math.max(8, insets.bottom),
                 },
               ]}
             >
@@ -712,7 +692,7 @@ export default function SpartanBattlefieldScreen() {
                 <TextInput
                   style={styles.textInput}
                   placeholder="Transmit to your brothers..."
-                  placeholderTextColor="rgba(255, 255, 255, 0.42)"
+                  placeholderTextColor="rgba(255, 255, 255, 0.45)"
                   value={inputText}
                   onChangeText={setInputText}
                   onFocus={() => {
@@ -720,10 +700,7 @@ export default function SpartanBattlefieldScreen() {
                     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
                   }}
                   onBlur={() => setIsInputFocused(false)}
-                  multiline={false}
-                  returnKeyType="send"
-                  onSubmitEditing={() => handleSendMessage()}
-                  blurOnSubmit={false}
+                  multiline={true}
                   maxLength={1000}
                   cursorColor="#00E5FF"
                   selectionColor="rgba(0, 229, 255, 0.35)"
@@ -732,15 +709,14 @@ export default function SpartanBattlefieldScreen() {
 
                 <TouchableOpacity
                   style={[styles.sendBtn, (!inputText.trim() || isSending) && styles.sendBtnDisabled]}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                   disabled={!inputText.trim() || isSending}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   onPress={() => handleSendMessage()}
                 >
                   {isSending ? (
                     <ActivityIndicator size="small" color="#000000" />
                   ) : (
-                    <Ionicons name="arrow-up" size={19} color="#000000" />
+                    <Ionicons name="arrow-up" size={18} color="#000000" />
                   )}
                 </TouchableOpacity>
               </View>
@@ -774,17 +750,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 0,
   },
-  tacticalGlowCore: {
-    width: Math.min(SCREEN_WIDTH * 1.1, 420),
-    height: Math.min(SCREEN_WIDTH * 1.1, 420),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tacticalGlowCircle: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 210,
-  },
+
   safeArea: {
     flex: 1,
     zIndex: 1,
@@ -1230,20 +1196,22 @@ const styles = StyleSheet.create({
   /* ── 6. Community-Style Floating Message Input Bar ── */
   inputBarWrapper: {
     paddingHorizontal: 12,
-    paddingTop: 6,
-    backgroundColor: 'rgba(4, 6, 11, 0.96)',
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    backgroundColor: '#04070F',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
   },
   inputInnerPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: '#0C1322',
     borderRadius: 24,
-    paddingHorizontal: 12,
-    paddingVertical: Platform.OS === 'ios' ? 6 : 2,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.45)',
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'ios' ? 4 : 2,
+    minHeight: 46,
   },
   inputInnerPillFocused: {
     borderColor: '#00E5FF',
@@ -1254,21 +1222,27 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 13.5,
     color: '#FFFFFF',
-    paddingVertical: 6,
+    fontSize: 14.5,
+    lineHeight: 20,
+    minHeight: 38,
+    maxHeight: 120,
+    textAlignVertical: 'center',
+    paddingVertical: Platform.OS === 'web' ? 8 : (Platform.OS === 'ios' ? 8 : 4),
     paddingRight: 8,
-    maxHeight: 90,
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
   },
   sendBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
     backgroundColor: '#00E5FF',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+    alignSelf: 'center',
   },
   sendBtnDisabled: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    opacity: 0.35,
   },
 });

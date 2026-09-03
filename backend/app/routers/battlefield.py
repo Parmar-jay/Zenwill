@@ -79,7 +79,7 @@ async def purge_old_battlefield_epochs(current_epoch_number: int):
         print(f"[Battlefield Purge Error]: {e}")
 
 
-async def get_or_create_battle_session(current_user: User) -> BattleSession:
+async def get_or_create_battle_session(current_user: User, auto_join: bool = True) -> BattleSession:
     """
     Finds or provisions the active 15-minute session anchored to the global wall-clock epoch.
     Wipes old chat history when an epoch expires.
