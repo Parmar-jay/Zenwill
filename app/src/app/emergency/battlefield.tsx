@@ -10,21 +10,44 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Keyboard,
+  Animated,
+  InteractionManager,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
-import { BreathingParticles } from '../../components/BreathingParticles';
 import { OmSoundManager } from '../../utils/audio-player';
 import { BattleMessageItem, BattleParticipant, spartanApi } from '../../services/spartan-api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const BATTLEFIELD_CHAT_CACHE_KEY = '@zenwill_battlefield_chat_cache_v3';
+let memoryBattlefieldMessages: BattleMessageItem[] = [];
+
+export const getCachedBattlefieldMessages = (): BattleMessageItem[] => memoryBattlefieldMessages;
+export const setCachedBattlefieldMessages = (msgs: BattleMessageItem[]) => {
+  memoryBattlefieldMessages = msgs;
+  AsyncStorage.setItem(BATTLEFIELD_CHAT_CACHE_KEY, JSON.stringify(msgs.slice(-100))).catch(() => {});
+};
+
+// Immediate disk hydration
+AsyncStorage.getItem(BATTLEFIELD_CHAT_CACHE_KEY).then((raw) => {
+  if (raw && memoryBattlefieldMessages.length === 0) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        memoryBattlefieldMessages = parsed;
+      }
+    } catch {}
+  }
+});
 
 const QUICK_TRANSMISSION_CHIPS = [
   'Hold the line ⚔️',
@@ -58,7 +81,7 @@ export default function SpartanBattlefieldScreen() {
 
   // Local Chat and Presence State
   const [inputText, setInputText] = useState<string>('');
-  const [localMessages, setLocalMessages] = useState<BattleMessageItem[]>([]);
+  const [localMessages, setLocalMessages] = useState<BattleMessageItem[]>(() => getCachedBattlefieldMessages());
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isResettingSession, setIsResettingSession] = useState<boolean>(false);
@@ -71,6 +94,28 @@ export default function SpartanBattlefieldScreen() {
   const countdownTimerRef = useRef<any>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
 
+  // GPU-Accelerated Hypnotic Tactical Pulse (Runs on Native Thread, 0% JS Thread overhead)
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.15,
+          duration: 3200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 3200,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [pulseAnim]);
+
   const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
     try {
       if (Platform.OS !== 'web') {
@@ -78,41 +123,87 @@ export default function SpartanBattlefieldScreen() {
         else if (style === 'medium') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
-    } catch {}
+    } catch { }
   }, []);
 
-  // ── 1. Background Emergency Audio Auto-Play & Continuous Loop ────────────
+  // ── 1. Deferred Background Audio & Network Sync (Ensures 60fps Silk Navigation) ──
   useEffect(() => {
+    let isMounted = true;
     const soundMgr = OmSoundManager.getInstance();
     soundManagerRef.current = soundMgr;
 
-    const startAudio = async () => {
-      try {
-        const emergencyTune = soundMgr.getTuneForTechnique('emergency-sos');
-        await soundMgr.setTune(emergencyTune);
-        await soundMgr.play();
-        setIsMuted(soundMgr.getIsMuted());
-      } catch (e) {
-        // Audio fallback
-      }
-    };
+    // Defer heavy audio loading and network calls until AFTER the screen slide transition completes
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      if (!isMounted) return;
 
-    startAudio();
+      // 1. Play emergency audio smoothly
+      soundMgr
+        .setTune(soundMgr.getTuneForTechnique('emergency-sos'))
+        .then(() => {
+          if (isMounted) {
+            soundMgr.play().catch(() => {});
+            setIsMuted(soundMgr.getIsMuted());
+          }
+        })
+        .catch(() => {});
 
-    // Loop keeper: ensures the background urge reset music continuously loops without cutting out
+      // 2. Initialize battlefield session in background
+      const initBattlefield = async () => {
+        try {
+          fetchMyCell().catch(() => {});
+          let battle = await spartanApi.getActiveBattleSession();
+          if (!battle || battle.status !== 'active') {
+            battle = await triggerBattleHorn('Global Sanctum');
+          }
+          if (isMounted && battle) {
+            useSpartanStore.setState({ activeBattle: battle });
+            setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 200);
+          }
+        } catch (err) {
+          try {
+            const fallbackBattle = await triggerBattleHorn('Global Sanctum');
+            if (isMounted && fallbackBattle) {
+              useSpartanStore.setState({ activeBattle: fallbackBattle });
+            }
+          } catch (_) {}
+        }
+      };
+
+      initBattlefield();
+
+      // 3. Heartbeat every 3s to sync warriors presence and real messages
+      pollTimerRef.current = setInterval(async () => {
+        if (!isMounted) return;
+        try {
+          await battleHeartbeat();
+        } catch (e) {}
+      }, 3000);
+    });
+
+    // Loop keeper
     const loopInterval = setInterval(() => {
-      if (soundManagerRef.current && !soundManagerRef.current.getIsMuted() && !soundManagerRef.current.getIsPlaying()) {
+      if (
+        soundManagerRef.current &&
+        !soundManagerRef.current.getIsMuted() &&
+        !soundManagerRef.current.getIsPlaying()
+      ) {
         soundManagerRef.current.play().catch(() => {});
       }
-    }, 2500);
+    }, 3000);
 
     return () => {
+      isMounted = false;
+      interactionTask.cancel();
       clearInterval(loopInterval);
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
       if (soundManagerRef.current) {
         soundManagerRef.current.stopAndUnload().catch(() => {});
       }
     };
-  }, []);
+  }, [triggerBattleHorn, battleHeartbeat, fetchMyCell]);
 
   const handleToggleMute = useCallback(() => {
     triggerHaptic('light');
@@ -145,75 +236,47 @@ export default function SpartanBattlefieldScreen() {
   // ── 3. Clean Exit Handler (Back Button, Done Button, Screen Exit) ─────────
   const handleExitBattlefield = useCallback(async () => {
     triggerHaptic('medium');
+    // Immediately stop polling so no heartbeat re-registers the user
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    // Stop audio
+    if (soundManagerRef.current) {
+      soundManagerRef.current.stopAndUnload().catch(() => {});
+    }
+    // Clear active presence from local store
+    useSpartanStore.setState({ activeBattle: null });
+
+    // Tell server to drop presence
     try {
       await spartanApi.leaveBattleSession();
-      if (activeBattle?.id) {
-        completeBattle(activeBattle.id).catch(() => {});
-      }
     } catch (_) {}
+
     if (router.canGoBack()) {
       router.back();
     } else {
       router.replace('/(tabs)/home' as any);
     }
-  }, [router, triggerHaptic, activeBattle?.id, completeBattle]);
+  }, [router, triggerHaptic]);
 
   useEffect(() => {
     return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
       spartanApi.leaveBattleSession().catch(() => {});
+      useSpartanStore.setState({ activeBattle: null });
     };
   }, []);
 
   // ── 4. Global 15-Minute Background Countdown Synchronization ─────────────
-  // Runs based on absolute wall-clock 15-minute epoch (:00, :15, :30, :45)
-  // Individual user presence never resets or affects the timer!
   const calculateGlobalRemaining = useCallback(() => {
     const nowTs = Math.floor(Date.now() / 1000);
     const secondsIntoEpoch = nowTs % 900;
     return 900 - secondsIntoEpoch;
   }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const initBattlefield = async () => {
-      try {
-        fetchMyCell().catch(() => {});
-        let battle = await spartanApi.getActiveBattleSession();
-        if (!battle || battle.status !== 'active') {
-          battle = await triggerBattleHorn('Global Sanctum');
-        }
-        if (isMounted && battle) {
-          useSpartanStore.setState({ activeBattle: battle });
-          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 250);
-        }
-      } catch (err) {
-        try {
-          const fallbackBattle = await triggerBattleHorn('Global Sanctum');
-          if (isMounted && fallbackBattle) {
-            useSpartanStore.setState({ activeBattle: fallbackBattle });
-          }
-        } catch (_) {}
-      }
-    };
-
-    initBattlefield();
-
-    // Heartbeat every 3 seconds to sync active warriors roster and real messages
-    pollTimerRef.current = setInterval(async () => {
-      if (!isMounted) return;
-      try {
-        await battleHeartbeat();
-      } catch (e) {
-        // Silent catch
-      }
-    }, 3000);
-
-    return () => {
-      isMounted = false;
-      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    };
-  }, [triggerBattleHorn, battleHeartbeat, fetchMyCell]);
 
   // Global 15-Minute Wall-Clock Countdown Timer
   useEffect(() => {
@@ -223,7 +286,6 @@ export default function SpartanBattlefieldScreen() {
       const rem = calculateGlobalRemaining();
       setSecondsRemaining(rem);
 
-      // When reaching 900 (the exact boundary of a 15-min epoch), wipe old chat and refresh room
       if (rem >= 899) {
         setLocalMessages([]);
         battleHeartbeat().catch(() => {});
@@ -253,20 +315,20 @@ export default function SpartanBattlefieldScreen() {
     return '#00E5FF'; // Cyan default
   }, [secondsRemaining]);
 
-  // ── 5. Send Message (Instant Optimistic + Resilient Backend Sync) ─────────
+  // ── 5. Send Message (Instant Optimistic + Resilient Unique Tracking) ──────
   const handleSendMessage = useCallback(async (customText?: string) => {
     const textToSend = (customText || inputText).trim();
-    if (!textToSend || isSending) return;
+    if (!textToSend) return;
 
     triggerHaptic('medium');
     if (!customText) {
       setInputText('');
     }
-    setIsSending(true);
 
-    // 1. Optimistic instant local append: 0ms delay!
+    // 1. Optimistic instant local append: 0ms delay with unique ID so messages NEVER disappear
+    const uniqueId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const optimisticMsg: BattleMessageItem = {
-      id: `local-${Date.now()}-${Math.random()}`,
+      id: uniqueId,
       user_id: currentUserId,
       user_name: currentUserName,
       user_streak: currentUserStreak,
@@ -275,25 +337,27 @@ export default function SpartanBattlefieldScreen() {
       created_at: new Date().toISOString(),
     };
 
-    setLocalMessages((prev) => [...prev, optimisticMsg]);
-    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
+    setLocalMessages((prev) => {
+      const next = [...prev, optimisticMsg];
+      setCachedBattlefieldMessages(next);
+      return next;
+    });
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 40);
 
     // 2. Dispatch to backend API
     try {
       await sendBattleMessage(textToSend);
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (err) {
-      // Message already visible locally
-    } finally {
-      setIsSending(false);
+      console.log('Error dispatching battle message:', err);
     }
-  }, [inputText, isSending, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, triggerHaptic]);
+  }, [inputText, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, triggerHaptic]);
 
   // ── 6. Real Active Warriors Roster ───────────────────────────────────────
   const activeParticipants: BattleParticipant[] = useMemo(() => {
     const map = new Map<string, BattleParticipant>();
 
-    // 1. Current user
+    // Current user
     map.set(currentUserId || 'me', {
       user_id: currentUserId || 'me',
       name: currentUserName,
@@ -302,7 +366,7 @@ export default function SpartanBattlefieldScreen() {
       joined_at: new Date().toISOString(),
     });
 
-    // 2. Real server participants currently in the room
+    // Real server participants currently in the room
     const serverList = activeBattle?.participants || [];
     serverList.forEach((p) => {
       const key = (p.user_id || p.name || '').trim().toLowerCase();
@@ -314,43 +378,39 @@ export default function SpartanBattlefieldScreen() {
     return Array.from(map.values());
   }, [activeBattle?.participants, currentUserId, currentUserName, currentUserStreak]);
 
-  // ── 7. Merged Clean Messages Stream (No Dummy Messages) ───────────────────
+  // ── 7. Merged Clean Messages Stream (No Disappearing, Instant Cache) ─────
   const allMessages: BattleMessageItem[] = useMemo(() => {
-    const list: BattleMessageItem[] = [];
-    const seen = new Set<string>();
+    const map = new Map<string, BattleMessageItem>();
 
-    // Server messages
-    if (activeBattle?.messages && Array.isArray(activeBattle.messages)) {
-      activeBattle.messages.forEach((m) => {
-        // Filter out fake or duplicate dummy banners
-        if (m.text && !m.text.includes('🚨 SESSION #')) {
-          const key = `${m.user_name}-${m.text}-${m.created_at}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            list.push(m);
-          }
-        }
-      });
-    }
-
-    // Local optimistic messages
+    // 1. Local / cached messages
     localMessages.forEach((lm) => {
-      const key = `${lm.user_name}-${lm.text}`;
-      const duplicateOnServer = list.some(
-        (m) => m.text === lm.text && m.user_name === lm.user_name
-      );
-      if (!duplicateOnServer && !seen.has(key)) {
-        seen.add(key);
-        list.push(lm);
+      if (lm && lm.id) {
+        map.set(lm.id, lm);
       }
     });
 
-    // Sort chronologically
-    return list.sort((a, b) => {
+    // 2. Server messages from active session
+    if (activeBattle?.messages && Array.isArray(activeBattle.messages)) {
+      activeBattle.messages.forEach((m) => {
+        if (!m || !m.text) return;
+        if (m.text.includes('🚨 SESSION #')) return;
+        const key = m.id || `${m.user_id}-${m.created_at}`;
+        map.set(key, m);
+      });
+    }
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => {
       const tA = new Date(a.created_at || 0).getTime();
       const tB = new Date(b.created_at || 0).getTime();
       return tA - tB;
     });
+
+    if (list.length > 0) {
+      setCachedBattlefieldMessages(list);
+    }
+
+    return list;
   }, [activeBattle?.messages, localMessages]);
 
   const sessionNumber = activeBattle?.session_number || 1;
@@ -364,16 +424,23 @@ export default function SpartanBattlefieldScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── BACKGROUND: Breathing Particles Hypnotic Diaphragmatic Visual ── */}
+      {/* ── BACKGROUND: GPU-Accelerated Hypnotic Tactical Energy Core (0% JS Thread overhead) ── */}
       <View style={styles.particlesLayer} pointerEvents="none">
-        <BreathingParticles
-          isRunning={true}
-          color="#00E5FF"
-          size={Math.min(SCREEN_WIDTH * 1.15, 420)}
-          showText={false}
-        />
+        <Animated.View
+          style={[
+            styles.tacticalGlowCore,
+            {
+              transform: [{ scale: pulseAnim }],
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={['rgba(0, 229, 255, 0.18)', 'rgba(0, 229, 255, 0.04)', 'transparent']}
+            style={styles.tacticalGlowCircle}
+          />
+        </Animated.View>
         <LinearGradient
-          colors={['rgba(5, 7, 14, 0.75)', 'rgba(5, 7, 14, 0.4)', 'rgba(5, 7, 14, 0.88)']}
+          colors={['rgba(5, 7, 14, 0.75)', 'rgba(5, 7, 14, 0.4)', 'rgba(5, 7, 14, 0.92)']}
           style={StyleSheet.absoluteFill}
         />
       </View>
@@ -527,7 +594,7 @@ export default function SpartanBattlefieldScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={0}
         >
-          <View style={[styles.chatContainer, { paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
+          <View style={styles.chatContainer}>
             <ScrollView
               ref={scrollViewRef}
               contentContainerStyle={styles.chatScrollContent}
@@ -535,13 +602,6 @@ export default function SpartanBattlefieldScreen() {
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
             >
-              {/* Session Start Transmission Banner */}
-              <View style={styles.sessionBannerCard}>
-                <Ionicons name="radio" size={14} color="#00E5FF" style={{ marginRight: 6 }} />
-                <ThemedText style={styles.sessionBannerText}>
-                  BATTLEFIELD SESSION #{sessionNumber} ACTIVE • 15-MIN EPHEMERAL COMM
-                </ThemedText>
-              </View>
 
               {allMessages.length === 0 ? (
                 <View style={styles.emptyStateContainer}>
@@ -644,7 +704,7 @@ export default function SpartanBattlefieldScreen() {
               style={[
                 styles.inputBarWrapper,
                 {
-                  paddingBottom: keyboardHeight > 0 ? 8 : Math.max(8, insets.bottom),
+                  paddingBottom: Platform.OS === 'ios' && keyboardHeight > 0 ? 8 : Math.max(8, insets.bottom),
                 },
               ]}
             >
@@ -660,7 +720,10 @@ export default function SpartanBattlefieldScreen() {
                     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
                   }}
                   onBlur={() => setIsInputFocused(false)}
-                  multiline={true}
+                  multiline={false}
+                  returnKeyType="send"
+                  onSubmitEditing={() => handleSendMessage()}
+                  blurOnSubmit={false}
                   maxLength={1000}
                   cursorColor="#00E5FF"
                   selectionColor="rgba(0, 229, 255, 0.35)"
@@ -669,8 +732,9 @@ export default function SpartanBattlefieldScreen() {
 
                 <TouchableOpacity
                   style={[styles.sendBtn, (!inputText.trim() || isSending) && styles.sendBtnDisabled]}
-                  activeOpacity={0.8}
+                  activeOpacity={0.7}
                   disabled={!inputText.trim() || isSending}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   onPress={() => handleSendMessage()}
                 >
                   {isSending ? (
@@ -709,6 +773,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 0,
+  },
+  tacticalGlowCore: {
+    width: Math.min(SCREEN_WIDTH * 1.1, 420),
+    height: Math.min(SCREEN_WIDTH * 1.1, 420),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tacticalGlowCircle: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 210,
   },
   safeArea: {
     flex: 1,

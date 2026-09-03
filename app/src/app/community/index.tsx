@@ -183,7 +183,7 @@ export default function CommunityWorldChatScreen() {
 
   // Tab View Mode: 'world' or 'dms'
   const [activeTab, setActiveTab] = useState<'world' | 'dms'>('world');
-  const unreadCount = useUnreadStore((s) => s.unreadCount);
+  const { unreadCount, startRealtimePolling } = useUnreadStore();
 
   // Messages State hydrated instantly from cache (zero reload flicker)
   const [messages, setMessages] = useState<WorldChatMessage[]>(() => getCachedMessages());
@@ -312,6 +312,17 @@ export default function CommunityWorldChatScreen() {
       console.log('Error deleting DM conversation:', e);
     }
   };
+
+  // Real-time unread messages background subscription
+  useEffect(() => {
+    const unsub = startRealtimePolling();
+    return () => unsub();
+  }, [startRealtimePolling]);
+
+  // When unreadCount updates in real time, refresh DM conversations with zero delay
+  useEffect(() => {
+    fetchDmConversations();
+  }, [unreadCount]);
 
   // Fetch World Chat & DM conversations with smooth 3s polling
   useEffect(() => {
@@ -602,7 +613,7 @@ export default function CommunityWorldChatScreen() {
               <ThemedText style={[styles.tabBtnText, activeTab === 'dms' && styles.tabBtnTextActive]}>
                 Direct DMs
               </ThemedText>
-              {dmConversations.some((c) => (c.unread_count || 0) > 0) && (
+              {(unreadCount > 0 || dmConversations.some((c) => (c.unread_count || 0) > 0)) && (
                 <View style={styles.unreadBadgeDot} />
               )}
             </TouchableOpacity>
@@ -806,43 +817,54 @@ export default function CommunityWorldChatScreen() {
                     </ThemedText>
                   </View>
                 ) : (
-                  dmConversations.map((conv) => (
-                    <TouchableOpacity
-                      key={conv.other_user_id}
-                      style={styles.dmUserCard}
-                      activeOpacity={0.75}
-                      onPress={() => handleOpenUserDm(conv.other_user_id, conv.other_user_name)}
-                    >
-                      <View style={styles.dmAvatarCircle}>
-                        <Ionicons name="person" size={16} color="#00E5FF" />
-                        <View style={styles.dmOnlineDot} />
-                      </View>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <ThemedText style={styles.dmUserName}>{getCleanUserName(conv.other_user_name)}</ThemedText>
-                          <ThemedText style={styles.dmTimeText}>
-                            {formatDmTime(conv.last_message_at)}
+                  dmConversations.map((conv) => {
+                    const isUnread = (conv.unread_count || 0) > 0;
+                    return (
+                      <TouchableOpacity
+                        key={conv.other_user_id}
+                        style={styles.dmUserCard}
+                        activeOpacity={0.75}
+                        onPress={() => handleOpenUserDm(conv.other_user_id, conv.other_user_name)}
+                      >
+                        <View style={styles.dmAvatarCircle}>
+                          <Ionicons name="person" size={16} color="#00E5FF" />
+                          <View style={styles.dmOnlineDot} />
+                        </View>
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <ThemedText style={styles.dmUserName}>
+                              {getCleanUserName(conv.other_user_name)}
+                            </ThemedText>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <ThemedText style={styles.dmTimeText}>
+                                {formatDmTime(conv.last_message_at)}
+                              </ThemedText>
+                              {isUnread && (
+                                <View style={styles.dmRowUnreadDot} />
+                              )}
+                            </View>
+                          </View>
+                          <ThemedText style={styles.dmLastMsg} numberOfLines={1}>
+                            {conv.last_message}
                           </ThemedText>
                         </View>
-                        <ThemedText style={styles.dmLastMsg} numberOfLines={1}>
-                          {conv.last_message}
-                        </ThemedText>
-                      </View>
 
-                      {/* Small Red-Bordered Dustbin: 1 Click to Delete */}
-                      <TouchableOpacity
-                        style={styles.smallRedBorderedDustbin}
-                        activeOpacity={0.65}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        onPress={(e) => {
-                          e.stopPropagation?.();
-                          handleDeleteDmDirect(conv.other_user_id);
-                        }}
-                      >
-                        <Ionicons name="trash-outline" size={15} color="#EF4444" />
+
+                        {/* Small Red-Bordered Dustbin: 1 Click to Delete */}
+                        <TouchableOpacity
+                          style={styles.smallRedBorderedDustbin}
+                          activeOpacity={0.65}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            handleDeleteDmDirect(conv.other_user_id);
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                        </TouchableOpacity>
                       </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))
+                    );
+                  })
                 )}
               </View>
             </ScrollView>
@@ -1402,6 +1424,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
     padding: 12,
+    position: 'relative',
+  },
+  cardCornerUnreadDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#EF4444',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 4,
   },
   dmAvatarCircle: {
     width: 36,
@@ -1439,6 +1476,95 @@ const styles = StyleSheet.create({
   dmTimeText: {
     fontSize: 10,
     color: '#64748B',
+  },
+  unreadBadgePill: {
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    marginLeft: 4,
+    borderWidth: 1,
+    borderColor: '#030712',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  unreadBadgePillText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  dmUserCardUnread: {
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+  },
+  dmAvatarCircleUnread: {
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  dmUnreadDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#0A0D14',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  dmUserNameUnread: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  dmTimeTextUnread: {
+    color: '#EF4444',
+    fontWeight: '700',
+  },
+  dmRowUnreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dmRowUnreadBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  dmRowUnreadText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  dmLastMsgUnread: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 
   /* One-Click Action Modal */

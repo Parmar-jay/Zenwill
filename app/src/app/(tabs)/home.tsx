@@ -957,77 +957,24 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
                 onPress={() => {
                   triggerHaptic();
-                  if (unreadCount > 0) {
-                    if (latestSenderId) {
-                      router.push({
-                        pathname: '/community/dm',
-                        params: {
-                          user_id: latestSenderId,
-                          user_name: latestSenderName || 'Brother',
-                          username: (latestSenderName || 'brother').toLowerCase().replace(/\s+/g, '_'),
-                        },
-                      });
-                    } else {
-                      router.push('/community' as any);
-                    }
-                  } else {
-                    router.push('/profile');
-                  }
+                  router.push('/profile');
                 }}
               >
                 <LinearGradient
-                  colors={unreadCount > 0 ? ['#7F1D1D', '#EF4444'] : ['#0F172A', '#1E293B']}
-                  style={[styles.avatarGradient, unreadCount > 0 && styles.avatarGradientUnread]}
+                  colors={['#0F172A', '#1E293B']}
+                  style={styles.avatarGradient}
                 >
-                  <ThemedText style={[styles.avatarText, unreadCount > 0 && styles.avatarTextUnread]}>
+                  <ThemedText style={styles.avatarText}>
                     {displayName.charAt(0).toUpperCase()}
                   </ThemedText>
                 </LinearGradient>
-
-                {/* Small Red Popup Badge Over the Icon on Top Left */}
-                {unreadCount > 0 ? (
-                  <View style={styles.unreadRedBadgePopup}>
-                    <ThemedText style={styles.unreadRedBadgeText}>
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </ThemedText>
-                  </View>
-                ) : (
-                  <View style={styles.onlineDot} />
-                )}
+                <View style={styles.onlineDot} />
               </TouchableOpacity>
 
               <View style={styles.welcomeTextContainer}>
-                {unreadCount > 0 ? (
-                  <TouchableOpacity
-                    style={styles.unreadMessageTooltip}
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      triggerHaptic();
-                      if (latestSenderId) {
-                        router.push({
-                          pathname: '/community/dm',
-                          params: {
-                            user_id: latestSenderId,
-                            user_name: latestSenderName || 'Brother',
-                            username: (latestSenderName || 'brother').toLowerCase().replace(/\s+/g, '_'),
-                          },
-                        });
-                      } else {
-                        router.push('/community' as any);
-                      }
-                    }}
-                  >
-                    <View style={styles.unreadTooltipDot} />
-                    <ThemedText style={styles.unreadTooltipText} numberOfLines={1}>
-                      New message from {latestSenderName || 'Brother'}
-                    </ThemedText>
-                    <Ionicons name="chevron-forward" size={11} color="#EF4444" />
-                  </TouchableOpacity>
-                ) : (
-                  <ThemedText style={styles.welcomeGreetingEyebrow}>
-                    {timeGreeting.toUpperCase()}
-                  </ThemedText>
-                )}
+                <ThemedText style={styles.welcomeGreetingEyebrow}>
+                  {timeGreeting.toUpperCase()}
+                </ThemedText>
                 <ThemedText style={styles.welcomeTitle} numberOfLines={1}>
                   {displayName}
                 </ThemedText>
@@ -1359,10 +1306,13 @@ export default function HomeScreen() {
               >
                 <View style={styles.spartanWidgetHeader}>
                   <ThemedText style={styles.spartanWidgetEmoji}>⚔️</ThemedText>
-                  <View style={[styles.spartanShieldPill, { backgroundColor: 'rgba(239, 68, 68, 0.2)' }]}>
-                    <View style={styles.liveRedDot} />
-                    <ThemedText style={[styles.spartanShieldPillText, { color: '#EF4444' }]}>
-                      {activeBattle ? 'LIVE SOS' : 'BATTLE FIELD'}
+                  <View style={[
+                    styles.spartanShieldPill,
+                    { backgroundColor: (activeBattle && (activeBattle.participant_count || 0) > 0) ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)' }
+                  ]}>
+                    {(activeBattle && (activeBattle.participant_count || 0) > 0) && <View style={styles.liveRedDot} />}
+                    <ThemedText style={[styles.spartanShieldPillText, { color: (activeBattle && (activeBattle.participant_count || 0) > 0) ? '#EF4444' : '#94A3B8' }]}>
+                      {(activeBattle && (activeBattle.participant_count || 0) > 0) ? 'LIVE SOS' : 'BATTLE FIELD'}
                     </ThemedText>
                   </View>
                 </View>
@@ -1370,7 +1320,9 @@ export default function HomeScreen() {
                   Battlefield
                 </ThemedText>
                 <ThemedText style={styles.spartanWidgetSub} numberOfLines={1}>
-                  {activeBattle ? `🚨 ${activeBattle.participant_count} Warriors in Wall` : '90s Live Urge Wall (+25 XP)'}
+                  {(activeBattle && (activeBattle.participant_count || 0) > 0)
+                    ? `🚨 ${activeBattle.participant_count} Warriors in Wall`
+                    : '90s Live Urge Wall (+25 XP)'}
                 </ThemedText>
               </TouchableOpacity>
             </Animated.View>
@@ -1427,11 +1379,7 @@ export default function HomeScreen() {
                         )}
                         {/* UNREAD DM POPUP IN COMMUNITY ICON IN HOME PAGE */}
                         {unreadCount > 0 && (action.id === 'community' || action.id === 'spartan-cell' || action.category === 'Community') && (
-                          <View style={styles.quickActionUnreadBadge}>
-                            <ThemedText style={styles.quickActionUnreadText}>
-                              {unreadCount > 9 ? '9+' : unreadCount}
-                            </ThemedText>
-                          </View>
+                          <View style={styles.quickActionUnreadDot} />
                         )}
                       </View>
                       <ThemedText
@@ -2474,30 +2422,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FF6B6B',
   },
-  quickActionUnreadBadge: {
+  quickActionUnreadDot: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     backgroundColor: '#EF4444',
     borderWidth: 1.5,
     borderColor: '#030712',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
     shadowColor: '#EF4444',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9,
     shadowRadius: 4,
     elevation: 4,
     zIndex: 10,
-  },
-  quickActionUnreadText: {
-    fontSize: 8.5,
-    fontWeight: '900',
-    color: '#FFFFFF',
   },
   spartanWidgetUnreadDot: {
     width: 8,

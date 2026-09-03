@@ -110,18 +110,21 @@ async def get_or_create_battle_session(current_user: User) -> BattleSession:
     }
 
     if not session:
-        # Create fresh session for this 15-minute epoch (Clean, zero dummy messages)
+        # Create fresh session for this 15-minute epoch
+        participant_ids = [user_id_str] if auto_join else []
+        participants = [initiator_participant] if auto_join else []
+
         session = BattleSession(
             id=str(uuid.uuid4()),
             session_number=epoch_number,
-            initiator_id=user_id_str,
-            initiator_name=user_name,
-            initiator_streak=user_streak,
+            initiator_id=user_id_str if auto_join else "system",
+            initiator_name=user_name if auto_join else "Spartan Commander",
+            initiator_streak=user_streak if auto_join else 0,
             initiator_location="Global Sanctum",
             duration_seconds=EPOCH_SECONDS,
             status="active",
-            participant_ids=[user_id_str],
-            participants=[initiator_participant],
+            participant_ids=participant_ids,
+            participants=participants,
             messages=[],
             reactions=[],
             honor_points_awarded=25,
@@ -131,24 +134,26 @@ async def get_or_create_battle_session(current_user: User) -> BattleSession:
         await session.insert()
         return session
 
-    # Session already active: add or refresh user presence
-    participant_found = False
-    updated_participants = []
-    for p in (session.participants or []):
-        if p.get("user_id") == user_id_str or p.get("name") == user_name:
-            participant_found = True
-            p["last_active_at"] = now.isoformat()
-            p["streak"] = user_streak
-            p["name"] = user_name
-        updated_participants.append(p)
+    # Session already active: add or refresh user presence if auto_join is True
+    if auto_join:
+        participant_found = False
+        updated_participants = []
+        for p in (session.participants or []):
+            if p.get("user_id") == user_id_str or p.get("name") == user_name:
+                participant_found = True
+                p["last_active_at"] = now.isoformat()
+                p["streak"] = user_streak
+                p["name"] = user_name
+            updated_participants.append(p)
 
-    if not participant_found:
-        updated_participants.append(initiator_participant)
-        if user_id_str not in (session.participant_ids or []):
-            session.participant_ids = (session.participant_ids or []) + [user_id_str]
+        if not participant_found:
+            updated_participants.append(initiator_participant)
+            if user_id_str not in (session.participant_ids or []):
+                session.participant_ids = (session.participant_ids or []) + [user_id_str]
 
-    session.participants = updated_participants
-    await session.save()
+        session.participants = updated_participants
+        await session.save()
+
     return session
 
 
@@ -156,16 +161,17 @@ def format_battle_response(session: BattleSession, current_user_id: str) -> Batt
     now = datetime.utcnow()
     time_left = max(0, int((session.expires_at - now).total_seconds()))
 
-    # Filter active participants who checked in within last 5 minutes
-    recent_threshold = (now - timedelta(minutes=5)).isoformat()
+    # Filter active participants who checked in within last 75 seconds (heartbeat is every 3s)
+    recent_threshold = (now - timedelta(seconds=75)).isoformat()
     active_members = []
     for p in (session.participants or []):
-        # Keep if joined recently or sent heartbeat
         last_act = p.get("last_active_at") or p.get("joined_at") or ""
         if last_act >= recent_threshold:
             active_members.append(p)
-        elif p.get("user_id") == current_user_id:
-            active_members.append(p)
+
+    is_joined = current_user_id in (session.participant_ids or []) or any(
+        p.get("user_id") == current_user_id for p in active_members
+    )
 
     return BattleSessionResponse(
         id=str(session.id),
@@ -183,7 +189,7 @@ def format_battle_response(session: BattleSession, current_user_id: str) -> Batt
         started_at=session.started_at,
         expires_at=session.expires_at,
         time_remaining_seconds=time_left,
-        is_joined=True,
+        is_joined=is_joined,
     )
 
 
@@ -193,10 +199,9 @@ async def get_active_battle_session(
 ):
     """
     Retrieves the current 15-minute live Spartan Battlefield urge room.
-    Automatically registers the entering user as an active member.
-    If the previous 15-minute session expired, purges it with all chat and initializes a fresh session.
+    auto_join=False: Does NOT register presence on passive reads (e.g. Home screen).
     """
-    session = await get_or_create_battle_session(current_user)
+    session = await get_or_create_battle_session(current_user, auto_join=False)
     return format_battle_response(session, str(current_user.id))
 
 
@@ -254,11 +259,25 @@ async def send_battle_message(
     # Keep last 150 messages in current session
     session.messages = session.messages[-150:]
 
-    # Update warrior's last_active_at in participants
+    # Update or add sender to participants
+    sender_found = False
     for p in (session.participants or []):
         if p.get("user_id") == user_id_str:
+            sender_found = True
             p["last_active_at"] = now.isoformat()
             p["streak"] = user_streak
+
+    if not sender_found:
+        session.participants = (session.participants or []) + [{
+            "user_id": user_id_str,
+            "name": user_name,
+            "streak": user_streak,
+            "badge": "🛡️",
+            "joined_at": now.isoformat(),
+            "last_active_at": now.isoformat(),
+        }]
+        if user_id_str not in (session.participant_ids or []):
+            session.participant_ids = (session.participant_ids or []) + [user_id_str]
 
     await session.save()
     return format_battle_response(session, user_id_str)
@@ -413,18 +432,24 @@ async def leave_battle_session(
     Removes the user from active participants list when they leave the battlefield
     (either by pressing Back or tapping Done).
     """
-    now = datetime.utcnow()
-    user_id_str = str(current_user.id)
-    session = await BattleSession.find_one(
+    user_id_str = str(current_user.id).strip().lower()
+    user_name = (current_user.name or "").strip().lower()
+
+    sessions = await BattleSession.find(
         BattleSession.status == "active",
-        BattleSession.expires_at > now,
-    )
-    if session:
-        session.participant_ids = [pid for pid in (session.participant_ids or []) if pid != user_id_str]
+    ).to_list()
+
+    for session in sessions:
+        session.participant_ids = [
+            pid for pid in (session.participant_ids or [])
+            if str(pid).strip().lower() != user_id_str
+        ]
         session.participants = [
             p for p in (session.participants or [])
-            if p.get("user_id") != user_id_str and p.get("name") != current_user.name
+            if str(p.get("user_id", "")).strip().lower() != user_id_str
+            and (not user_name or str(p.get("name", "")).strip().lower() != user_name)
         ]
         await session.save()
+
     return {"status": "success", "message": "Left battlefield"}
 

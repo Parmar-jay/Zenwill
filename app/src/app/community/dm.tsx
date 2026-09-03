@@ -19,7 +19,13 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
-import { communityApi, DirectMessageItem } from '@/services/community-api';
+import {
+  communityApi,
+  DirectMessageItem,
+  getCachedDmHistory,
+  setCachedDmHistory,
+  warmUpDmCacheFromDisk,
+} from '@/services/community-api';
 import { useOnboardingStore } from '@/store/onboarding-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useUnreadStore } from '@/store/unread-store';
@@ -67,7 +73,7 @@ export default function DirectMessageScreen() {
     return ids;
   }, [currentUser?.id, currentUser?.email]);
 
-  const [messages, setMessages] = useState<DirectMessageItem[]>([]);
+  const [messages, setMessages] = useState<DirectMessageItem[]>(() => getCachedDmHistory(targetUserId));
   const [inputText, setInputText] = useState<string>('');
   const [inputHeight, setInputHeight] = useState<number>(40);
   const [isSending, setIsSending] = useState<boolean>(false);
@@ -83,6 +89,17 @@ export default function DirectMessageScreen() {
 
   // Load real DM Chat history & target user status every 3s
   useEffect(() => {
+    // 1. Immediately hydrate from disk cache if memory was empty
+    warmUpDmCacheFromDisk(targetUserId).then((diskMessages) => {
+      if (diskMessages && diskMessages.length > 0) {
+        setMessages((prev) => (prev.length === 0 ? diskMessages : prev));
+        requestAnimationFrame(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: false });
+        });
+      }
+    });
+
+    // 2. Load latest messages over network silently
     loadChatHistory(true);
     fetchUserOnlineStatus();
 
@@ -132,6 +149,14 @@ export default function DirectMessageScreen() {
       const history = await communityApi.getDmHistory(targetUserId);
       if (history && Array.isArray(history)) {
         setMessages((prev) => {
+          // Prevent unnecessary re-render if identical to avoid reload flashes
+          if (
+            prev.length === history.length &&
+            prev.length > 0 &&
+            prev[prev.length - 1]?.id === history[history.length - 1]?.id
+          ) {
+            return prev;
+          }
           const historyIds = new Set(history.map((h) => h.id));
           // Preserve any in-flight or unconfirmed message that is not yet in history
           const unconfirmedPrev = prev.filter((p) => {
@@ -141,12 +166,14 @@ export default function DirectMessageScreen() {
             );
             return !alreadyInHistory;
           });
-          return [...history, ...unconfirmedPrev];
+          const merged = [...history, ...unconfirmedPrev];
+          setCachedDmHistory(targetUserId, merged);
+          return merged;
         });
       }
       if (shouldScroll) {
         requestAnimationFrame(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
+          scrollViewRef.current?.scrollToEnd({ animated: false });
         });
       }
       useUnreadStore.getState().fetchUnreadCount().catch(() => {});
@@ -181,7 +208,11 @@ export default function DirectMessageScreen() {
       created_at: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }),
     };
 
-    setMessages((prev) => [...prev, tempMsg]);
+    setMessages((prev) => {
+      const updated = [...prev, tempMsg];
+      setCachedDmHistory(targetUserId, updated);
+      return updated;
+    });
     requestAnimationFrame(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     });
@@ -189,9 +220,11 @@ export default function DirectMessageScreen() {
     try {
       const res = await communityApi.sendDirectMessage(targetUserId, textToSend, 'text');
       if (res && res.id) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? res : m))
-        );
+        setMessages((prev) => {
+          const updated = prev.map((m) => (m.id === tempId ? res : m));
+          setCachedDmHistory(targetUserId, updated);
+          return updated;
+        });
       }
     } catch (e) {
       console.log('Error sending DM:', e);
@@ -210,6 +243,7 @@ export default function DirectMessageScreen() {
     setIsDeleting(true);
     setShowDeleteModal(false);
     setMessages([]);
+    setCachedDmHistory(targetUserId, []);
     try {
       await communityApi.deleteDmConversation(targetUserId);
       if (router.canGoBack()) {

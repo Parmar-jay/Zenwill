@@ -116,6 +116,34 @@ export const setCachedDmConversations = (convs: ConversationSummaryItem[]) => {
 
 export const getDeletedConvIds = (): Set<string> => memoryDeletedConvIds;
 
+const memoryCachedDmHistories = new Map<string, DirectMessageItem[]>();
+
+export const getCachedDmHistory = (targetUserId: string): DirectMessageItem[] => {
+  return memoryCachedDmHistories.get(targetUserId) || [];
+};
+
+export const setCachedDmHistory = (targetUserId: string, msgs: DirectMessageItem[]) => {
+  memoryCachedDmHistories.set(targetUserId, msgs);
+  AsyncStorage.setItem(`@zenwill_dm_history_${targetUserId}`, JSON.stringify(msgs)).catch(() => {});
+};
+
+export const warmUpDmCacheFromDisk = async (targetUserId: string): Promise<DirectMessageItem[]> => {
+  if (memoryCachedDmHistories.has(targetUserId) && (memoryCachedDmHistories.get(targetUserId)?.length || 0) > 0) {
+    return memoryCachedDmHistories.get(targetUserId)!;
+  }
+  try {
+    const cached = await AsyncStorage.getItem(`@zenwill_dm_history_${targetUserId}`);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        memoryCachedDmHistories.set(targetUserId, parsed);
+        return parsed;
+      }
+    }
+  } catch {}
+  return [];
+};
+
 export const communityApi = {
   async getMessages(limit = 100): Promise<WorldChatMessage[]> {
     try {
@@ -205,11 +233,27 @@ export const communityApi = {
 
   async getDmHistory(targetUserIdentifier: string): Promise<DirectMessageItem[]> {
     try {
-      return await api.get<DirectMessageItem[]>(`/community/dm/${encodeURIComponent(targetUserIdentifier)}`);
+      const messages = await api.get<DirectMessageItem[]>(`/community/dm/${encodeURIComponent(targetUserIdentifier)}`);
+      if (Array.isArray(messages)) {
+        setCachedDmHistory(targetUserIdentifier, messages);
+        return messages;
+      }
     } catch (e) {
       console.log('[Community API] getDmHistory notice:', e);
-      return [];
     }
+    const mem = getCachedDmHistory(targetUserIdentifier);
+    if (mem.length > 0) return mem;
+    try {
+      const disk = await AsyncStorage.getItem(`@zenwill_dm_history_${targetUserIdentifier}`);
+      if (disk) {
+        const parsed = JSON.parse(disk);
+        if (Array.isArray(parsed)) {
+          memoryCachedDmHistories.set(targetUserIdentifier, parsed);
+          return parsed;
+        }
+      }
+    } catch {}
+    return [];
   },
 
   async sendDirectMessage(
@@ -219,15 +263,22 @@ export const communityApi = {
     audioDuration?: string,
   ): Promise<DirectMessageItem> {
     try {
-      return await api.post<DirectMessageItem>(`/community/dm/${encodeURIComponent(targetUserIdentifier)}`, {
+      const res = await api.post<DirectMessageItem>(`/community/dm/${encodeURIComponent(targetUserIdentifier)}`, {
         receiver_id: targetUserIdentifier,
         content,
         message_type: messageType,
         audio_duration: audioDuration,
       });
+      if (res && res.id) {
+        const current = getCachedDmHistory(targetUserIdentifier);
+        if (!current.some((m) => m.id === res.id)) {
+          setCachedDmHistory(targetUserIdentifier, [...current, res]);
+        }
+      }
+      return res;
     } catch (e) {
       console.log('[Community API] sendDirectMessage notice:', e);
-      return {
+      const fallbackMsg: DirectMessageItem = {
         id: `dm-local-${Date.now()}`,
         sender_id: 'user_current',
         sender_name: 'You',
@@ -239,6 +290,9 @@ export const communityApi = {
         is_read: true,
         created_at: new Date().toISOString(),
       };
+      const current = getCachedDmHistory(targetUserIdentifier);
+      setCachedDmHistory(targetUserIdentifier, [...current, fallbackMsg]);
+      return fallbackMsg;
     }
   },
 
