@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 # pyrefly: ignore [missing-import]
 from beanie import Document, Indexed
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class User(Document):
@@ -28,7 +28,17 @@ class User(Document):
     last_retain_date: Optional[str] = None
     last_retain_status: Optional[str] = None
     total_points: int = 0
-    mind_strength: int = 50
+    mind_strength: Union[int, float] = 50.0
+
+    @field_validator("mind_strength", mode="before")
+    @classmethod
+    def validate_mind_strength(cls, v):
+        if v is None:
+            return 50.0
+        try:
+            return round(float(v), 1)
+        except (ValueError, TypeError):
+            return 50.0
 
     # OTP Auth
     otp_code: Optional[str] = None

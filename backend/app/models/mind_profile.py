@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from beanie import Document, Indexed
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class MindProfile(Document):
@@ -10,10 +10,20 @@ class MindProfile(Document):
     user_id: Indexed(str, unique=True)
 
     # ── Core Metrics ───────────────────────────────────────────────────────────
-    mind_strength: int = 50
+    mind_strength: Union[int, float] = 50.0
     recovery_days: int = 0
     current_flow: int = 0
     longest_flow: int = 0
+
+    @field_validator("mind_strength", mode="before")
+    @classmethod
+    def validate_mind_strength(cls, v):
+        if v is None:
+            return 50.0
+        try:
+            return round(float(v), 1)
+        except (ValueError, TypeError):
+            return 50.0
 
     # ── Behavioral Averages ────────────────────────────────────────────────────
     avg_sleep_quality: float = 5.0

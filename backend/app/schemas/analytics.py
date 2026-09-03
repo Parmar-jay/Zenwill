@@ -1,15 +1,25 @@
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, field_validator
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 
 
 class MindProfileResponse(BaseModel):
     id: str
     user_id: str
-    mind_strength: int
+    mind_strength: Union[int, float]
     recovery_days: int
     current_flow: int
     longest_flow: int
+
+    @field_validator("mind_strength", mode="before")
+    @classmethod
+    def validate_mind_strength(cls, v):
+        if v is None:
+            return 50
+        try:
+            return round(float(v), 1)
+        except (ValueError, TypeError):
+            return 50
     avg_sleep_quality: float
     avg_stress_level: float
     avg_mood: float

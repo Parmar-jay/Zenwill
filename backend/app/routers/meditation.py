@@ -101,7 +101,7 @@ async def log_meditation_session(
     await event.insert()
 
     # 3. Award Mind Strength & log activity to Mind Profile
-    profile.mind_strength = min(100.0, (profile.mind_strength or 50.0) + 1.5)
+    profile.mind_strength = min(100, int((profile.mind_strength or 50) + 2))
     activity_entry = {
         "timestamp": now.isoformat(),
         "activity_type": "meditation_session",
@@ -135,7 +135,7 @@ async def log_meditation_session(
         "technique_title": payload.technique_title,
         "duration_minutes": duration_mins,
         "rounds_completed": session.rounds_completed,
-        "mind_strength_awarded": 1.5,
+        "mind_strength_awarded": 2,
         "created_at": now.isoformat(),
     }
 
