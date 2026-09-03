@@ -1,4 +1,4 @@
-package com.anonymous.app
+package com.zenwill.app
 
 import android.app.Application
 import android.content.res.Configuration
