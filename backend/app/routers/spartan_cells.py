@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.models.user import User
 from app.models.spartan_cell import SpartanCell
 from app.models.community_message import CommunityMessage
+from app.models.direct_message import DirectMessage
 from app.middleware.auth_middleware import get_current_user
 from app.services.spartan_cell_service import (
     generate_cell_join_code,
@@ -327,8 +328,6 @@ async def nudge_cell_member(
 
     dm_content = f"🛡️ Streak Reminder: Hey {target_name}, please complete your daily streak check-in today to hold the line for our Squad!"
     try:
-        # pyrefly: ignore [missing-import]
-        from app.models.community import DirectMessage
         new_dm = DirectMessage(
             sender_id=sender_id_str,
             sender_name=sender_name,
