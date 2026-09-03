@@ -41,3 +41,11 @@ class MissionCompleteResponse(BaseModel):
     message: str
     missions: Optional[List[MissionResponse]] = None
 
+
+class DailyTasksStatusResponse(BaseModel):
+    date: str
+    tasks: dict
+    completed_count: int
+    total_points: int
+    all_completed: bool
+

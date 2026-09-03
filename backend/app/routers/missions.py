@@ -5,11 +5,13 @@ from app.models.user import User
 from app.models.mission import Mission
 from app.models.daily_checkin import DailyCheckin
 from app.models.journal import JournalEntry
+from app.models.meditation_session import MeditationSession
 from app.schemas.mission import (
     MissionResponse,
     MissionCompleteCategoryRequest,
     MissionSyncTasksRequest,
     MissionCompleteResponse,
+    DailyTasksStatusResponse,
 )
 from app.middleware.auth_middleware import get_current_user
 from app.services.mission_service import generate_todays_missions
@@ -25,8 +27,8 @@ CATEGORY_MAP = {
     "focus": ["focus", "journal", "reflection"],
     "coach": ["purpose", "coach", "connection"],
     "purpose": ["purpose", "coach", "connection"],
-    "rescue": ["exercise", "rescue", "emergency", "calm"],
-    "exercise": ["exercise", "rescue", "emergency", "calm"],
+    "rescue": ["exercise", "rescue", "emergency"],
+    "exercise": ["exercise", "rescue", "emergency"],
 }
 
 
@@ -44,11 +46,106 @@ async def get_todays_missions(
 
     todays_missions = await Mission.find(
         Mission.user_id == str(current_user.id),
-        Mission.date_assigned >= today_start,
-        Mission.date_assigned < today_end,
+        {"$or": [
+            {"date_assigned": {"$gte": today_start, "$lt": today_end}},
+            {"date_completed": {"$gte": today_start, "$lt": today_end}},
+            {"created_at": {"$gte": today_start, "$lt": today_end}},
+        ]}
     ).sort("-date_assigned").to_list()
 
     return [_to_response(m) for m in todays_missions]
+
+
+@router.get("/today-tasks", response_model=DailyTasksStatusResponse)
+async def get_today_tasks_status(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Direct, 100% authoritative endpoint returning the real-time status of the 5 daily rituals.
+    Cross-verifies Missions, DailyCheckin, MeditationSession, and JournalEntry collections.
+    """
+    user_id = str(current_user.id)
+    user_email = current_user.email
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    today_end = today_start + timedelta(days=1)
+    today_str = now.strftime("%Y-%m-%d")
+    today_date = now.date()
+
+    # 1. Missions completed today
+    user_query = {"$or": [{"user_id": user_id}, {"user_email": user_email}]} if user_email else {"user_id": user_id}
+    mission_query = {
+        **user_query,
+        "$or": [
+            {"date_assigned": {"$gte": today_start, "$lt": today_end}},
+            {"date_completed": {"$gte": today_start, "$lt": today_end}},
+            {"created_at": {"$gte": today_start, "$lt": today_end}},
+        ]
+    }
+    missions = await Mission.find(mission_query).to_list()
+    completed_missions = [m for m in missions if m.is_completed]
+    completed_cats = {m.category.lower().strip() for m in completed_missions if m.category}
+
+    # 2. Checkin verification
+    has_checkin = bool(
+        any(c in completed_cats for c in ["checkin", "morning"])
+        or (current_user.last_checkin_date == today_str)
+        or await DailyCheckin.find_one(
+            DailyCheckin.user_id == user_id,
+            DailyCheckin.date == today_date,
+        )
+    )
+
+    # 3. Meditation verification
+    has_meditation = bool(
+        any(c in completed_cats for c in ["meditation", "calm", "sleep"])
+        or await MeditationSession.find_one(
+            {"$or": [{"user_id": user_id}, {"user_email": user_email}] if user_email else {"user_id": user_id}},
+            {"$or": [
+                {"created_at": {"$gte": today_start, "$lt": today_end}},
+                {"completed_at": {"$gte": today_start, "$lt": today_end}},
+            ]}
+        )
+    )
+
+    # 4. Journal verification
+    has_journal = bool(
+        any(c in completed_cats for c in ["journal", "focus", "reflection"])
+        or await JournalEntry.find_one(
+            JournalEntry.user_id == user_id,
+            JournalEntry.created_at >= today_start,
+            JournalEntry.created_at < today_end,
+        )
+    )
+
+    # 5. Coach verification
+    has_coach = bool(
+        any(c in completed_cats for c in ["coach", "purpose", "connection"])
+    )
+
+    # 6. Rescue verification
+    has_rescue = bool(
+        any(c in completed_cats for c in ["rescue", "exercise", "emergency"])
+    )
+
+    tasks_dict = {
+        "checkin": has_checkin,
+        "meditation": has_meditation,
+        "journal": has_journal,
+        "coach": has_coach,
+        "rescue": has_rescue,
+    }
+
+    completed_count = sum(1 for v in tasks_dict.values() if v)
+    total_pts = completed_count * 20
+
+    return DailyTasksStatusResponse(
+        date=today_str,
+        tasks=tasks_dict,
+        completed_count=completed_count,
+        total_points=total_pts,
+        all_completed=completed_count == 5,
+    )
 
 
 @router.get("/history")
@@ -192,8 +289,11 @@ async def complete_mission_by_category(
 
     todays_missions = await Mission.find(
         Mission.user_id == str(current_user.id),
-        Mission.date_assigned >= today_start,
-        Mission.date_assigned < today_end,
+        {"$or": [
+            {"date_assigned": {"$gte": today_start, "$lt": today_end}},
+            {"date_completed": {"$gte": today_start, "$lt": today_end}},
+            {"created_at": {"$gte": today_start, "$lt": today_end}},
+        ]}
     ).to_list()
 
     cat_key = payload.category.lower().strip()
@@ -275,8 +375,11 @@ async def sync_daily_tasks(
 
     todays_missions = await Mission.find(
         Mission.user_id == str(current_user.id),
-        Mission.date_assigned >= today_start,
-        Mission.date_assigned < today_end,
+        {"$or": [
+            {"date_assigned": {"$gte": today_start, "$lt": today_end}},
+            {"date_completed": {"$gte": today_start, "$lt": today_end}},
+            {"created_at": {"$gte": today_start, "$lt": today_end}},
+        ]}
     ).to_list()
 
     tasks = payload.tasks or {}

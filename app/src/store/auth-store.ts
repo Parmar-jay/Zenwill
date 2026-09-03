@@ -53,9 +53,13 @@ interface AuthState {
   registerLocal: (email: string) => void;
 }
 
-const syncUserStats = (response: AuthResponse) => {
+const syncUserStats = async (response: AuthResponse) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const today = `${year}-${month}-${day}`;
     const lastRetainDate = response.last_retain_date || null;
     const lastRetainStatus = response.last_retain_status || null;
     const dbStreak = typeof response.streak === 'number' ? response.streak : 0;
@@ -75,9 +79,11 @@ const syncUserStats = (response: AuthResponse) => {
       useOnboardingStore.setState({ firstName: response.name });
     }
 
-    // Immediately trigger full database sync for missions and habit history
-    useDailyMissionStore.getState().syncWithBackend().catch(() => {});
-    useHabitStore.getState().syncFromDatabase().catch(() => {});
+    // Immediately trigger and await full database sync for missions and habit history
+    await Promise.allSettled([
+      useDailyMissionStore.getState().syncWithBackend(),
+      useHabitStore.getState().syncFromDatabase(),
+    ]);
   } catch (err) {
     // Fail-safe silent catch if stores are initializing
   }
@@ -107,7 +113,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           const response: AuthResponse = await authApi.login({ email, password });
-          syncUserStats(response);
+          await syncUserStats(response);
           const verified = response.email_verified !== false;
           set({
             isAuthenticated: true,
@@ -159,7 +165,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           const response: AuthResponse = await authApi.verifyOtp({ email, code, name });
-          syncUserStats(response);
+          await syncUserStats(response);
           set({
             isAuthenticated: true,
             isEmailVerified: true,
@@ -188,7 +194,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         try {
           const response: AuthResponse = await authApi.googleAuth(payload);
-          syncUserStats(response);
+          await syncUserStats(response);
           set({
             isAuthenticated: true,
             isEmailVerified: true,

@@ -231,12 +231,12 @@ export default function HomeScreen() {
     useSpartanStore.getState().fetchActiveBattle().catch(() => { });
   }, []);
 
-  const lastFocusSyncRef = useRef<number>(Date.now());
+  const lastFocusSyncRef = useRef<number>(0);
 
   useFocusEffect(
     React.useCallback(() => {
       const now = Date.now();
-      if (now - lastFocusSyncRef.current < 25000) {
+      if (now - lastFocusSyncRef.current < 5000) {
         return;
       }
       lastFocusSyncRef.current = now;
