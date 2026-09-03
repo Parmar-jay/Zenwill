@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
   LayoutAnimation,
 } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -90,6 +90,12 @@ export default function MeditationScreen() {
       if (data) setMeditationStats(data);
     } catch (_) {}
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+    }, [])
+  );
 
   useEffect(() => {
     loadStats();
@@ -472,7 +478,12 @@ export default function MeditationScreen() {
               <View style={styles.statDivider} />
               <View style={styles.statBox}>
                 <ThemedText style={styles.statValue} numberOfLines={1}>
-                  {meditationStats.favorite_technique.split(' ')[0]}
+                  {meditationStats.total_sessions > 0 &&
+                  meditationStats.favorite_technique &&
+                  meditationStats.favorite_technique !== 'None' &&
+                  meditationStats.favorite_technique !== '—'
+                    ? meditationStats.favorite_technique.split(' ')[0]
+                    : '—'}
                 </ThemedText>
                 <ThemedText style={styles.statLabel}>TOP FOCUS</ThemedText>
               </View>

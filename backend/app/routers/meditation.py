@@ -146,8 +146,11 @@ async def get_meditation_history(
     current_user: User = Depends(get_current_user),
 ):
     """Returns recent meditation sessions for the current user."""
+    user_id = str(current_user.id)
+    user_email = current_user.email
+    query = {"$or": [{"user_id": user_id}, {"user_email": user_email}]} if user_email else {"user_id": user_id}
     sessions = (
-        await MeditationSession.find(MeditationSession.user_id == str(current_user.id))
+        await MeditationSession.find(query)
         .sort("-created_at")
         .limit(limit)
         .to_list()
@@ -164,17 +167,21 @@ async def get_meditation_stats(
     total sessions, total minutes, favorite practice, and streak.
     """
     user_id = str(current_user.id)
-    sessions = await MeditationSession.find(MeditationSession.user_id == user_id).to_list()
+    user_email = current_user.email
+    query = {"$or": [{"user_id": user_id}, {"user_email": user_email}]} if user_email else {"user_id": user_id}
+    sessions = await MeditationSession.find(query).to_list()
 
     total_sessions = len(sessions)
-    total_seconds = sum(s.duration_seconds for s in sessions)
+    total_seconds = sum(s.duration_seconds for s in sessions if s.duration_seconds)
     total_minutes = round(total_seconds / 60.0, 1)
 
     technique_counts: Dict[str, int] = {}
     for s in sessions:
-        technique_counts[s.technique_title] = technique_counts.get(s.technique_title, 0) + 1
+        title = (s.technique_title or "").strip()
+        if title:
+            technique_counts[title] = technique_counts.get(title, 0) + 1
 
-    favorite_technique = max(technique_counts.keys(), key=lambda k: technique_counts[k]) if technique_counts else "Nadi Shodhana"
+    favorite_technique = max(technique_counts.keys(), key=lambda k: technique_counts[k]) if technique_counts else "—"
 
     # Count distinct days meditated
     distinct_dates = {s.created_at.date() for s in sessions if s.created_at}
@@ -191,5 +198,5 @@ async def get_meditation_stats(
         "favorite_technique": favorite_technique,
         "completed_today": len(today_sessions) > 0,
         "today_sessions_count": len(today_sessions),
-        "today_minutes": round(sum(s.duration_seconds for s in today_sessions) / 60.0, 1),
+        "today_minutes": round(sum(s.duration_seconds for s in today_sessions if s.duration_seconds) / 60.0, 1),
     }

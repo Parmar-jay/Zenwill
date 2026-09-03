@@ -87,11 +87,20 @@ export const meditationApi = {
       total_sessions: 0,
       total_minutes: 0,
       total_days_meditated: 0,
-      favorite_technique: 'Nadi Shodhana',
+      favorite_technique: '—',
       completed_today: false,
       today_sessions_count: 0,
       today_minutes: 0,
     };
+  },
+
+  /**
+   * Clears cached meditation stats on logout / user switch
+   */
+  async clearCache(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(STATS_CACHE_KEY);
+    } catch (_) {}
   },
 
   /**

@@ -228,6 +228,7 @@ export const useAuthStore = create<AuthState>()(
             'zenwill-onboarding-profile',
             'zenwill_access_token',
             'zenwill_refresh_token',
+            '@zenwill_meditation_stats',
           ]);
         } catch (e) {
           // Ignore storage removal errors
