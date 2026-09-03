@@ -1,4 +1,5 @@
 import '../global.css';
+import '@/utils/safe-router';
 import React, { useEffect } from 'react';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -160,16 +161,34 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            animation: Platform.OS === 'ios' ? 'default' : 'slide_from_right',
-            animationDuration: 220,
+            animation: Platform.OS === 'ios' ? 'default' : 'fade',
+            animationDuration: 130,
             contentStyle: { backgroundColor: '#000000' },
-            freezeOnBlur: true,
+            freezeOnBlur: false,
             gestureEnabled: true,
           }}
         >
           <Stack.Screen name="index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="(auth)" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="daily-checkin/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="meditation/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="journal/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="emergency/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="emergency/breathing" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="emergency/urge-surfing" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="emergency/grounding" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="emergency/reflection" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="emergency/battlefield" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="missions/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="community/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="community/dm" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="community/cell" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="community/leaderboard" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="relapse-autopsy/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="trigger-intelligence/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="purpose/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="billing/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="+not-found" options={{ title: 'Oops!' }} />
         </Stack>
       </AuthGuard>

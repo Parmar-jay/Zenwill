@@ -1,12 +1,14 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Union
+# pyrefly: ignore [missing-import]
 from beanie import Document, Indexed
 from pydantic import Field, field_validator
 
 
 class MindProfile(Document):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    # pyrefly: ignore [invalid-annotation]
     user_id: Indexed(str, unique=True)
 
     # ── Core Metrics ───────────────────────────────────────────────────────────
