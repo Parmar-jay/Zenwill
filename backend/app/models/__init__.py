@@ -7,6 +7,7 @@ from app.models.behavioral_event import BehavioralEvent
 from app.models.emergency_session import EmergencySession
 from app.models.chat_message import ChatMessage
 from app.models.community_message import CommunityMessage
+from app.models.meditation_session import MeditationSession
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "EmergencySession",
     "ChatMessage",
     "CommunityMessage",
+    "MeditationSession",
 ]

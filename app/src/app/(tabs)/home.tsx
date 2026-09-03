@@ -31,6 +31,9 @@ import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { useSpartanStore } from '@/store/spartan-store';
 import { SmoothSkeleton, PageEntrance } from '@/components/ui/smooth-loader';
 import { analyticsApi, UserRecommendations, RecommendationActionTask, getCachedRecommendations } from '@/services/analytics-api';
+import { BreathingParticles } from '@/components/BreathingParticles';
+import { omSoundManager } from '@/utils/audio-player';
+import { useUnreadStore } from '@/store/unread-store';
 
 const MEDITATION_IMAGE_MAP: Record<string, any> = {
   nadi_shodhana: require('../../../assets/images/nadi_shodhana.png'),
@@ -62,8 +65,9 @@ export const ALL_QUICK_ACTIONS: QuickActionDef[] = [
   { id: 'purpose', title: 'Purpose', subtitle: 'Life mission & vision', icon: 'heart-outline', route: '/purpose', category: 'Reflection', color: '#EF4444' },
   { id: 'trigger-intel', title: 'Trigger Intel', subtitle: 'Trigger analytics', icon: 'flash-outline', route: '/trigger-intelligence', category: 'Analytics', color: '#F97316' },
   { id: 'leaderboard', title: 'Leaderboard', subtitle: 'Rankings & streaks', icon: 'trophy-outline', route: '/community/leaderboard', category: 'Community', color: '#F59E0B' },
-  { id: 'progress', title: 'Progress', subtitle: 'Milestones & analytics', icon: 'stats-chart-outline', route: '/progress', category: 'Analytics', color: '#00E5FF' },
+  { id: 'community', title: 'Community', subtitle: 'Global Chat & DMs', icon: 'people-outline', route: '/community', category: 'Community', color: '#00E5FF' },
   { id: 'spartan-cell', title: 'Spartan Cell', subtitle: '5-20 Man Squad Stakes', icon: 'shield-half-outline', route: '/community/cell', category: 'Community', color: '#00E5FF' },
+  { id: 'progress', title: 'Progress', subtitle: 'Milestones & analytics', icon: 'stats-chart-outline', route: '/progress', category: 'Analytics', color: '#00E5FF' },
   { id: 'battlefield', title: 'Battlefield', subtitle: 'Live 90s Urge Rescue', icon: 'flame-outline', route: '/emergency/battlefield', category: 'Core', color: '#EF4444' },
   { id: 'billing', title: 'Pro Upgrade', subtitle: 'Subscription & features', icon: 'card-outline', route: '/billing', category: 'Account', color: '#EAB308' },
 ];
@@ -209,9 +213,15 @@ export default function HomeScreen() {
     resetChallenge,
   } = useHabitStore();
 
-  // Daily Mission Store & Spartan Store
+  // Daily Mission Store & Spartan Store & Unread Messages Store
   const { todayTasks, totalPoints, completeTask, checkAndResetMidnight } = useDailyMissionStore();
   const { myCell, activeBattle } = useSpartanStore();
+  const { unreadCount, latestSenderName, latestSenderId, startRealtimePolling } = useUnreadStore();
+
+  useEffect(() => {
+    const unsub = startRealtimePolling();
+    return () => unsub();
+  }, [startRealtimePolling]);
 
   useEffect(() => {
     checkAndResetMidnight();
@@ -221,8 +231,16 @@ export default function HomeScreen() {
     useSpartanStore.getState().fetchActiveBattle().catch(() => { });
   }, []);
 
+  const lastFocusSyncRef = useRef<number>(Date.now());
+
   useFocusEffect(
     React.useCallback(() => {
+      const now = Date.now();
+      if (now - lastFocusSyncRef.current < 25000) {
+        return;
+      }
+      lastFocusSyncRef.current = now;
+
       checkAndResetMidnight();
       useHabitStore.getState().syncFromDatabase();
       useDailyMissionStore.getState().syncWithBackend().catch(() => { });
@@ -660,6 +678,13 @@ export default function HomeScreen() {
     isBreathingRef.current = true;
     setBreathingActive(true);
     setBreathCycleCount(0);
+
+    // Start 396Hz Emergency Audio in Background
+    const tune = omSoundManager.getTuneForTechnique('emergency-sos');
+    omSoundManager.setTune(tune).then(() => {
+      omSoundManager.play();
+    });
+
     runBreathingCycle(0);
   };
 
@@ -671,6 +696,7 @@ export default function HomeScreen() {
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
     }
+    omSoundManager.pause();
     breathAnim.stopAnimation();
     Animated.spring(breathAnim, {
       toValue: 1,
@@ -783,7 +809,14 @@ export default function HomeScreen() {
     setTimeout(() => {
       setTriggerModalVisible(false);
       setMentalShiftApplied(false);
-      stopBreathing();
+      isBreathingRef.current = false;
+      setBreathingActive(false);
+      setBreathText('Tap Start to Begin');
+      setBreathCountdown(null);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+      // Audio remains playing until final submit on reflection screen
       router.push('/emergency/reflection' as any);
     }, 800);
   };
@@ -924,24 +957,77 @@ export default function HomeScreen() {
                 activeOpacity={0.8}
                 onPress={() => {
                   triggerHaptic();
-                  router.push('/profile');
+                  if (unreadCount > 0) {
+                    if (latestSenderId) {
+                      router.push({
+                        pathname: '/community/dm',
+                        params: {
+                          user_id: latestSenderId,
+                          user_name: latestSenderName || 'Brother',
+                          username: (latestSenderName || 'brother').toLowerCase().replace(/\s+/g, '_'),
+                        },
+                      });
+                    } else {
+                      router.push('/community' as any);
+                    }
+                  } else {
+                    router.push('/profile');
+                  }
                 }}
               >
                 <LinearGradient
-                  colors={['#0F172A', '#1E293B']}
-                  style={styles.avatarGradient}
+                  colors={unreadCount > 0 ? ['#7F1D1D', '#EF4444'] : ['#0F172A', '#1E293B']}
+                  style={[styles.avatarGradient, unreadCount > 0 && styles.avatarGradientUnread]}
                 >
-                  <ThemedText style={styles.avatarText}>
+                  <ThemedText style={[styles.avatarText, unreadCount > 0 && styles.avatarTextUnread]}>
                     {displayName.charAt(0).toUpperCase()}
                   </ThemedText>
                 </LinearGradient>
-                <View style={styles.onlineDot} />
+
+                {/* Small Red Popup Badge Over the Icon on Top Left */}
+                {unreadCount > 0 ? (
+                  <View style={styles.unreadRedBadgePopup}>
+                    <ThemedText style={styles.unreadRedBadgeText}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </ThemedText>
+                  </View>
+                ) : (
+                  <View style={styles.onlineDot} />
+                )}
               </TouchableOpacity>
 
               <View style={styles.welcomeTextContainer}>
-                <ThemedText style={styles.welcomeGreetingEyebrow}>
-                  {timeGreeting.toUpperCase()}
-                </ThemedText>
+                {unreadCount > 0 ? (
+                  <TouchableOpacity
+                    style={styles.unreadMessageTooltip}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      triggerHaptic();
+                      if (latestSenderId) {
+                        router.push({
+                          pathname: '/community/dm',
+                          params: {
+                            user_id: latestSenderId,
+                            user_name: latestSenderName || 'Brother',
+                            username: (latestSenderName || 'brother').toLowerCase().replace(/\s+/g, '_'),
+                          },
+                        });
+                      } else {
+                        router.push('/community' as any);
+                      }
+                    }}
+                  >
+                    <View style={styles.unreadTooltipDot} />
+                    <ThemedText style={styles.unreadTooltipText} numberOfLines={1}>
+                      New message from {latestSenderName || 'Brother'}
+                    </ThemedText>
+                    <Ionicons name="chevron-forward" size={11} color="#EF4444" />
+                  </TouchableOpacity>
+                ) : (
+                  <ThemedText style={styles.welcomeGreetingEyebrow}>
+                    {timeGreeting.toUpperCase()}
+                  </ThemedText>
+                )}
                 <ThemedText style={styles.welcomeTitle} numberOfLines={1}>
                   {displayName}
                 </ThemedText>
@@ -1247,6 +1333,9 @@ export default function HomeScreen() {
                       {myCell ? getGamifiedRank(myCell.total_streak ?? 0).name.toUpperCase() : 'JOIN CELL'}
                     </ThemedText>
                   </View>
+                  {unreadCount > 0 && (
+                    <View style={styles.spartanWidgetUnreadDot} />
+                  )}
                 </View>
                 <ThemedText style={styles.spartanWidgetTitle} numberOfLines={1}>
                   {myCell ? myCell.name : 'Spartan Squad'}
@@ -1334,6 +1423,14 @@ export default function HomeScreen() {
                         {isTaskCompleted && (
                           <View style={styles.quickActionDoneBadge}>
                             <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                          </View>
+                        )}
+                        {/* UNREAD DM POPUP IN COMMUNITY ICON IN HOME PAGE */}
+                        {unreadCount > 0 && (action.id === 'community' || action.id === 'spartan-cell' || action.category === 'Community') && (
+                          <View style={styles.quickActionUnreadBadge}>
+                            <ThemedText style={styles.quickActionUnreadText}>
+                              {unreadCount > 9 ? '9+' : unreadCount}
+                            </ThemedText>
                           </View>
                         )}
                       </View>
@@ -1502,7 +1599,9 @@ export default function HomeScreen() {
                       <ThemedText style={styles.metricLabelText} numberOfLines={1}>Check-In</ThemedText>
                     </View>
                     {todayTasks?.checkin ? (
-                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                      <View style={styles.cardTaskDoneBadge}>
+                        <ThemedText style={styles.cardTaskDoneText}>Done ✓</ThemedText>
+                      </View>
                     ) : (
                       <TouchableOpacity
                         style={styles.cardTaskStartBtn}
@@ -1528,7 +1627,9 @@ export default function HomeScreen() {
                       <ThemedText style={styles.metricLabelText} numberOfLines={1}>Meditation</ThemedText>
                     </View>
                     {todayTasks?.meditation ? (
-                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                      <View style={styles.cardTaskDoneBadge}>
+                        <ThemedText style={styles.cardTaskDoneText}>Done ✓</ThemedText>
+                      </View>
                     ) : (
                       <TouchableOpacity
                         style={styles.cardTaskStartBtn}
@@ -1554,7 +1655,9 @@ export default function HomeScreen() {
                       <ThemedText style={styles.metricLabelText} numberOfLines={1}>Journal</ThemedText>
                     </View>
                     {todayTasks?.journal ? (
-                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                      <View style={styles.cardTaskDoneBadge}>
+                        <ThemedText style={styles.cardTaskDoneText}>Done ✓</ThemedText>
+                      </View>
                     ) : (
                       <TouchableOpacity
                         style={styles.cardTaskStartBtn}
@@ -1580,7 +1683,9 @@ export default function HomeScreen() {
                       <ThemedText style={styles.metricLabelText} numberOfLines={1}>AI Coach</ThemedText>
                     </View>
                     {todayTasks?.coach ? (
-                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                      <View style={styles.cardTaskDoneBadge}>
+                        <ThemedText style={styles.cardTaskDoneText}>Done ✓</ThemedText>
+                      </View>
                     ) : (
                       <TouchableOpacity
                         style={styles.cardTaskStartBtn}
@@ -1606,7 +1711,9 @@ export default function HomeScreen() {
                       <ThemedText style={styles.metricLabelText} numberOfLines={1}>Urge Rescue</ThemedText>
                     </View>
                     {todayTasks?.rescue ? (
-                      <ThemedText style={[styles.metricValueText, { color: '#10B981' }]}>Done ✓</ThemedText>
+                      <View style={styles.cardTaskDoneBadge}>
+                        <ThemedText style={styles.cardTaskDoneText}>Done ✓</ThemedText>
+                      </View>
                     ) : (
                       <TouchableOpacity
                         style={styles.cardTaskStartBtn}
@@ -1882,11 +1989,11 @@ export default function HomeScreen() {
                   resizeMode="cover"
                 />
                 <LinearGradient
-                  colors={['transparent', 'rgba(3, 7, 18, 0.45)', 'rgba(3, 7, 18, 0.92)']}
+                  colors={['transparent', 'rgba(0, 0, 0, 0.12)', 'rgba(0, 0, 0, 0.32)']}
                   style={styles.chariotBottomGradient}
                 >
                   <View style={styles.chariotHeroPill}>
-                    <Ionicons name="flash" size={10} color="#00E5FF" />
+                    <Ionicons name="flash" size={10} color="rgba(0, 229, 255, 0.8)" />
                     <ThemedText style={styles.chariotHeroPillText}>YOU HOLD THE REINS</ThemedText>
                   </View>
                   <ThemedText style={styles.chariotCursiveQuote}>
@@ -1898,45 +2005,25 @@ export default function HomeScreen() {
                 </LinearGradient>
               </View>
 
-              {/* 3. Clean Interactive Breathing Visualizer */}
+              {/* 3. Galaxy Particle Breathing Visualizer */}
               <View style={styles.breathExerciseContainer}>
                 <TouchableOpacity
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                   onPress={breathingActive ? stopBreathing : startBreathing}
-                  style={styles.breathTouchWrap}
+                  style={{ width: '100%', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  <Animated.View
-                    style={[
-                      styles.breathCircleOuter,
-                      { transform: [{ scale: breathAnim }] },
-                    ]}
-                  >
-                    <View style={styles.breathCircleInner}>
-                      {breathCountdown !== null ? (
-                        <Animated.Text
-                          style={[
-                            styles.breathCountdownText,
-                            { transform: [{ scale: numberPulseAnim }] },
-                          ]}
-                        >
-                          {breathCountdown}
-                        </Animated.Text>
-                      ) : (
-                        <Ionicons name="leaf" size={24} color="#000000" />
-                      )}
-                    </View>
-                  </Animated.View>
+                  <BreathingParticles
+                    phase={breathingActive ? breathText : 'READY'}
+                    subtitle={
+                      breathingActive
+                        ? `Cycle ${breathCycleCount + 1} of 7 • Tap to Pause`
+                        : 'Tap Galaxy to Start 7-Cycle Reset'
+                    }
+                    color="#00F5D4"
+                    isRunning={breathingActive}
+                    size={260}
+                  />
                 </TouchableOpacity>
-
-                {/* Status & Subtitle */}
-                <ThemedText style={styles.breathStatusText}>
-                  {breathingActive ? breathText : 'Tap Circle to Begin'}
-                </ThemedText>
-                <ThemedText style={styles.breathGuideSubtitle}>
-                  {breathingActive
-                    ? `Cycle ${breathCycleCount + 1} of 7 • Tap circle to pause`
-                    : '7-Cycle Box Breathing to eliminate cravings'}
-                </ThemedText>
               </View>
 
               <View style={styles.divider} />
@@ -2330,6 +2417,101 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
     borderWidth: 2,
     borderColor: '#030712',
+  },
+  unreadRedBadgePopup: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    minWidth: 19,
+    height: 19,
+    borderRadius: 9.5,
+    backgroundColor: '#EF4444',
+    borderWidth: 2,
+    borderColor: '#030712',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 5,
+    elevation: 6,
+    zIndex: 10,
+  },
+  unreadRedBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  avatarGradientUnread: {
+    borderColor: '#EF4444',
+    shadowColor: '#EF4444',
+  },
+  avatarTextUnread: {
+    color: '#FFFFFF',
+  },
+  unreadMessageTooltip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    gap: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 2,
+  },
+  unreadTooltipDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#EF4444',
+  },
+  unreadTooltipText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#FF6B6B',
+  },
+  quickActionUnreadBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#030712',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 10,
+  },
+  quickActionUnreadText: {
+    fontSize: 8.5,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  spartanWidgetUnreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    marginLeft: 'auto',
+    borderWidth: 1.5,
+    borderColor: '#05070E',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 3,
   },
   welcomeTextContainer: {
     justifyContent: 'center',
@@ -3283,7 +3465,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(99, 102, 241, 0.18)',
     borderColor: 'rgba(99, 102, 241, 0.35)',
     borderWidth: 1,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 3.5,
     borderRadius: 7,
     minWidth: 50,
@@ -3295,6 +3477,24 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: '#818CF8',
+    textAlign: 'center',
+  },
+  cardTaskDoneBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.16)',
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+    minWidth: 50,
+    minHeight: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardTaskDoneText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#10B981',
     textAlign: 'center',
   },
   checkinLinkRow: {
@@ -3699,8 +3899,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0, 229, 255, 0.18)',
-    borderColor: 'rgba(0, 229, 255, 0.4)',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderColor: 'rgba(0, 229, 255, 0.28)',
     borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -3710,7 +3910,7 @@ const styles = StyleSheet.create({
   chariotHeroPillText: {
     fontSize: 8.5,
     fontWeight: '900',
-    color: '#00E5FF',
+    color: 'rgba(0, 229, 255, 0.8)',
     letterSpacing: 0.8,
   },
   chariotCursiveQuote: {
@@ -3718,21 +3918,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontStyle: 'italic',
     fontFamily: Platform.OS === 'ios' ? 'Georgia-Italic' : 'serif',
-    color: '#FFFFFF',
+    color: 'rgba(255, 255, 255, 0.62)',
     letterSpacing: 0.2,
     lineHeight: 21,
-    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 5,
+    textShadowRadius: 3,
   },
   chariotCursiveSubtitle: {
     fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: 'rgba(255, 255, 255, 0.45)',
     letterSpacing: 0.2,
     lineHeight: 15,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowColor: 'rgba(0, 0, 0, 0.35)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 2,
   },
   breathExerciseContainer: {
     alignItems: 'center',

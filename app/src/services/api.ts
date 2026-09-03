@@ -69,6 +69,36 @@ export const TokenStorage = {
     },
 };
 
+// ── In-Memory Fast Cache & Request Deduplication ────────────────────────────
+
+interface CacheEntry<T> {
+    data: T;
+    timestamp: number;
+    ttl: number;
+}
+
+const memoryCache = new Map<string, CacheEntry<any>>();
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export interface RequestOptions {
+    ttl?: number; // Cache TTL in ms (default 15000ms for GET)
+    noCache?: boolean; // Bypass cache
+    timeoutMs?: number; // Request timeout in ms (default 12000ms)
+}
+
+export function invalidateApiCache(pathPrefix?: string) {
+    if (!pathPrefix) {
+        memoryCache.clear();
+        return;
+    }
+    const normalized = pathPrefix.startsWith('/') ? pathPrefix : `/${pathPrefix}`;
+    for (const key of memoryCache.keys()) {
+        if (key.startsWith(normalized)) {
+            memoryCache.delete(key);
+        }
+    }
+}
+
 // ── Core Fetch Wrapper ─────────────────────────────────────────────────────
 
 let isRefreshing = false;
@@ -96,11 +126,12 @@ async function refreshAccessToken(): Promise<string | null> {
     }
 }
 
-async function request<T>(
+async function executeFetch<T>(
     method: string,
     path: string,
     body?: any,
     requiresAuth: boolean = true,
+    timeoutMs: number = 12000
 ): Promise<T> {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const url = `${BASE_URL}${normalizedPath}`;
@@ -113,13 +144,28 @@ async function request<T>(
         if (token) headers['Authorization'] = `Bearer ${token}`;
     }
 
+    const controller = new AbortController();
+    const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
+
     const options: RequestInit = {
         method,
         headers,
         body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
     };
 
-    let response = await fetch(url, options);
+    let response: Response;
+    try {
+        response = await fetch(url, options);
+    } catch (err: any) {
+        clearTimeout(timeoutTimer);
+        if (err.name === 'AbortError') {
+            throw { detail: 'Request timed out. Please check your connection.', status: 408 };
+        }
+        throw { detail: err.message || 'Network request failed', status: 0 };
+    } finally {
+        clearTimeout(timeoutTimer);
+    }
 
     // Auto-refresh on 401
     if (response.status === 401 && requiresAuth) {
@@ -135,11 +181,10 @@ async function request<T>(
                 options.headers = headers;
                 response = await fetch(url, options);
             } else {
-                import('@/store/auth-store')
-                    .then(({ useAuthStore }) => {
-                        useAuthStore.getState().logout();
-                    })
-                    .catch(() => { });
+                try {
+                    const { useAuthStore } = require('../store/auth-store');
+                    useAuthStore.getState().logout();
+                } catch {}
             }
         }
     }
@@ -163,14 +208,65 @@ async function request<T>(
     return data as T;
 }
 
+async function request<T>(
+    method: string,
+    path: string,
+    body?: any,
+    requiresAuth: boolean = true,
+    options?: RequestOptions
+): Promise<T> {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+    // For write operations: execute and invalidate cache for relevant domain
+    if (method !== 'GET') {
+        const domainPrefix = normalizedPath.split('/')[1];
+        if (domainPrefix) {
+            invalidateApiCache(`/${domainPrefix}`);
+        }
+        return executeFetch<T>(method, path, body, requiresAuth, options?.timeoutMs || 15000);
+    }
+
+    // For GET requests: check memory cache first for instant 0ms retrieval
+    const cacheKey = normalizedPath;
+    const now = Date.now();
+    const ttl = options?.ttl ?? 15000; // 15s default TTL
+
+    if (!options?.noCache) {
+        const cached = memoryCache.get(cacheKey);
+        if (cached && (now - cached.timestamp) < cached.ttl) {
+            return cached.data as T;
+        }
+    }
+
+    // Deduplicate in-flight concurrent requests for the exact same endpoint
+    if (inFlightRequests.has(cacheKey)) {
+        return inFlightRequests.get(cacheKey) as Promise<T>;
+    }
+
+    const fetchPromise = executeFetch<T>(method, path, body, requiresAuth, options?.timeoutMs || 12000)
+        .then((data) => {
+            if (!options?.noCache && ttl > 0) {
+                memoryCache.set(cacheKey, { data, timestamp: Date.now(), ttl });
+            }
+            return data;
+        })
+        .finally(() => {
+            inFlightRequests.delete(cacheKey);
+        });
+
+    inFlightRequests.set(cacheKey, fetchPromise);
+    return fetchPromise;
+}
+
 // ── HTTP Methods ──────────────────────────────────────────────────────────
 
 export const api = {
-    get: <T>(path: string) => request<T>('GET', path),
-    post: <T>(path: string, body?: any, auth = true) => request<T>('POST', path, body, auth),
-    patch: <T>(path: string, body?: any) => request<T>('PATCH', path, body),
-    put: <T>(path: string, body?: any) => request<T>('PUT', path, body),
-    delete: <T>(path: string) => request<T>('DELETE', path),
+    get: <T>(path: string, options?: RequestOptions) => request<T>('GET', path, undefined, true, options),
+    post: <T>(path: string, body?: any, auth = true, options?: RequestOptions) => request<T>('POST', path, body, auth, options),
+    patch: <T>(path: string, body?: any, options?: RequestOptions) => request<T>('PATCH', path, body, true, options),
+    put: <T>(path: string, body?: any, options?: RequestOptions) => request<T>('PUT', path, body, true, options),
+    delete: <T>(path: string, options?: RequestOptions) => request<T>('DELETE', path, undefined, true, options),
+    invalidateCache: invalidateApiCache,
     BASE_URL,
 };
 

@@ -317,12 +317,38 @@ async def nudge_cell_member(
     payload: NudgeMemberRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Sends a brotherhood accountability reminder to a cell member."""
+    """Sends a brotherhood accountability streak reminder directly to a cell member's DM."""
+    target_id = payload.target_user_id
     target_name = payload.target_user_name
+    sender_id_str = str(current_user.id)
+    sender_name = current_user.name.split(" ")[0] if current_user.name else "Brother"
+    sender_username = (current_user.name or "brother").lower().replace(" ", "_")
+    target_username = target_name.lower().replace(" ", "_")
+
+    dm_content = f"🛡️ Streak Reminder: Hey {target_name}, please complete your daily streak check-in today to hold the line for our Squad!"
+    try:
+        # pyrefly: ignore [missing-import]
+        from app.models.community import DirectMessage
+        new_dm = DirectMessage(
+            sender_id=sender_id_str,
+            sender_name=sender_name,
+            sender_username=sender_username,
+            receiver_id=target_id,
+            receiver_name=target_name,
+            receiver_username=target_username,
+            content=dm_content,
+            message_type="system_reminder",
+            audio_duration=None,
+            is_read=False,
+            created_at=datetime.utcnow(),
+        )
+        await new_dm.insert()
+    except Exception as e:
+        print(f"[SpartanCell Nudge DM Error]: {e}")
 
     return {
         "status": "success",
-        "message": f"Brotherhood reminder sent to {target_name}. The line holds strong!",
+        "message": f"Streak reminder sent to {target_name}'s DM! The line holds strong.",
     }
 
 

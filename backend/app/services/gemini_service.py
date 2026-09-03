@@ -17,20 +17,37 @@ SYSTEM_PROMPT_EMPOWERMENT = (
     "Always respond with empowering, practical, articulate, and deeply motivating guidance."
 )
 
-async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_EMPOWERMENT, model: Optional[str] = None) -> str:
-    """Call Google Gemini API using fast and reliable production models with auto-fallback."""
+_cached_working_model: Optional[str] = None
+
+async def call_gemini_api(
+    prompt: str,
+    system_instruction: str = SYSTEM_PROMPT_EMPOWERMENT,
+    model: Optional[str] = None,
+    max_tokens: int = 1000,
+    temperature: float = 0.4
+) -> str:
+    """Call Google Gemini API using fast and reliable production models with auto-fallback and caching."""
+    global _cached_working_model
     api_key = settings.GEMINI_API_KEY
     if not api_key:
         logger.warning("No GEMINI_API_KEY set in config.")
         return ""
 
-    candidate_models = [
-        model or settings.GEMINI_MODEL or "gemini-2.5-flash",
+    candidate_models = []
+    if _cached_working_model:
+        candidate_models.append(_cached_working_model)
+    if model:
+        candidate_models.append(model)
+    if settings.GEMINI_MODEL:
+        candidate_models.append(settings.GEMINI_MODEL)
+    
+    # Priority on the active working model
+    candidate_models.extend([
         "gemini-2.5-flash",
-        "gemini-flash-latest",
         "gemini-2.5-pro",
-        "gemini-pro-latest",
-    ]
+        "gemini-flash-latest",
+    ])
+    
     # Remove duplicates while preserving order
     models_to_try = list(dict.fromkeys(candidate_models))
 
@@ -45,12 +62,15 @@ async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_E
             }
         ],
         "generationConfig": {
-            "temperature": 0.5,
-            "maxOutputTokens": 2048,
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+            "thinkingConfig": {
+                "thinkingBudget": 0
+            }
         }
     }
 
-    async with httpx.AsyncClient(timeout=35.0) as client:
+    async with httpx.AsyncClient(timeout=12.0) as client:
         for target_model in models_to_try:
             url = f"{GEMINI_BASE_URL}/{target_model}:generateContent?key={api_key}"
             try:
@@ -61,9 +81,10 @@ async def call_gemini_api(prompt: str, system_instruction: str = SYSTEM_PROMPT_E
                     if candidates:
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts:
+                            _cached_working_model = target_model
                             return parts[0].get("text", "").strip()
                 elif response.status_code == 404:
-                    logger.warning(f"Gemini model {target_model} returned 404, attempting next fallback...")
+                    logger.warning(f"Gemini model {target_model} returned 404, attempting next fast fallback...")
                     continue
                 else:
                     logger.warning(f"Gemini model {target_model} returned HTTP {response.status_code}: {response.text}")
@@ -196,69 +217,66 @@ Generate STRICT JSON ONLY (no markdown code blocks):
 
 
 async def get_chat_response(messages: List[Dict[str, str]], user_context: Dict[str, Any]) -> str:
-    """Generate multi-turn AI Coach chat response focused on calibrated brevity, professional guidance, and 7-turn memory."""
-    # Build history from last 14 messages (up to 7 full conversational turns)
-    recent_turns = messages[-14:] if len(messages) > 14 else messages
+    """Generate lightning-fast, friendly, simple, and concise AI Coach responses."""
+    # Build history from last 6 messages (up to 3 full conversational turns)
+    recent_turns = messages[-6:] if len(messages) > 6 else messages
     history_lines = []
     for msg in recent_turns[:-1]:
-        role = "User" if msg.get("role") == "user" else "ZenWill Coach"
+        role = "User" if msg.get("role") == "user" else "Coach"
         content = (msg.get("content") or "").strip()
         if content:
             history_lines.append(f"{role}: {content}")
-    history_text = "\n".join(history_lines) if history_lines else "No previous conversation."
+    history_text = "\n".join(history_lines) if history_lines else "None."
 
     last_user_msg = (messages[-1].get("content", "") if messages else "").strip()
-    user_name = user_context.get("name", "Operative")
+    user_name = user_context.get("name", "Friend")
     streak_days = user_context.get("streak", 0)
     time_of_day = user_context.get("time_of_day", "Today")
     local_time = user_context.get("local_time", "")
-    local_date = user_context.get("local_date", "")
-    timezone = user_context.get("timezone", "")
 
-    # Detect if user message is a short greeting or quick check-in
     clean_lower = last_user_msg.lower().strip(" .!?,:;")
     is_greeting = clean_lower in [
         "hi", "hii", "hiii", "hello", "hey", "heyy", "sup", "yo", "good morning",
         "good afternoon", "good evening", "how are you", "howdy", "morning", "evening"
-    ] or len(clean_lower.split()) <= 2 and any(w in clean_lower for w in ["hi", "hey", "hello", "sup", "yo"])
+    ] or (len(clean_lower.split()) <= 2 and any(w in clean_lower for w in ["hi", "hey", "hello", "sup", "yo"]))
 
     is_urgent_urge = any(w in clean_lower for w in ["urge", "relapse", "craving", "horny", "help", "struggling", "trigger", "edge", "edging"])
 
+    system_instruction = (
+        "You are ZenWill AI Coach, a friendly, warm, and supportive personal guide for focus and self-discipline. "
+        "Rules: "
+        "1. Write in SIMPLE, EASY everyday words that anyone can instantly understand. "
+        "2. Keep answers SHORT (1 to 2 short sentences, max 30 words). "
+        "3. Only necessary tokens. NO extra talking, NO long lectures, NO filler paragraphs. "
+        "4. Be kind, practical, encouraging, and helpful."
+    )
+
     prompt = f"""
-You are the ZenWill AI Mind & Willpower Coach. You are speaking with {user_name}.
-
-REAL-TIME TEMPORAL CONTEXT (MANDATORY & STRICT):
-- User's Exact Local Date: {local_date}
-- User's Exact Local Time: {local_time} ({time_of_day}) [Timezone: {timezone}]
-- User's Current Clean Streak: {streak_days} days
-CRITICAL INSTRUCTION: You MUST strictly match the user's real-time temporal context ({time_of_day} at {local_time}). If it is Afternoon, NEVER say "Good morning". If it is Evening/Night, NEVER say "Good afternoon" or "Good morning". Match all greetings, check-ins, and temporal phrasing precisely to {time_of_day}.
-
-CORE CONVERSATIONAL PRINCIPLES:
-1. CALIBRATED BREVITY (CRITICAL):
-   - If the user sends a simple greeting or short remark (e.g. "hi", "hello", "hey"): Respond in ONLY 1 to 2 short, warm, professional sentences matching the current {time_of_day.lower()}. NEVER preach, lecture, or dump paragraphs on a greeting.
-   - If the user asks a specific question or shares a challenge: Deliver a sharp, actionable, highly professional response (2 to 4 concise sentences max).
-   - If the user is in an active urge: Give 1-2 immediate physical/mental grounding steps.
-2. PROFESSIONAL & EMPATHETIC: Speak like an elite executive performance and mindfulness mentor. Calm, disciplined, respectful, and sharp. No fluff, no robotic filler.
-3. CONVERSATIONAL CONTINUITY: Use the previous 7 turns of context below to understand what {user_name} is going through. Do not repeat what was already said.
-
-Previous Conversation Context (Last 7 Turns):
+User: {user_name} (Streak: {streak_days} days, Time: {time_of_day} {local_time})
+Recent context:
 {history_text}
 
-User's Latest Message:
+User's message:
 "{last_user_msg}"
 
-Reply:
+Reply in 1-2 short, easy, friendly sentences:
 """
 
-    response = await call_gemini_api(prompt)
+    response = await call_gemini_api(
+        prompt=prompt,
+        system_instruction=system_instruction,
+        max_tokens=150,
+        temperature=0.3
+    )
+
     if response:
         cleaned = response.strip().strip('"')
         return cleaned
 
     # Contextual Smart Fallback
     if is_greeting:
-        return f"Hello {user_name}. Good {time_of_day.lower()}. Ready to assist your focus and discipline. What's on your mind?"
+        return f"Hey {user_name}! Good {time_of_day.lower()}. I'm right here with you—what's on your mind today?"
     elif is_urgent_urge:
-        return f"Pause right now, {user_name}. Place your device down, take 3 deep breaths, and ground your attention in this room. The urge wave will peak and dissipate."
+        return f"Take 3 deep slow breaths right now, {user_name}. Put your phone down and drink a glass of water. You've got this!"
     else:
-        return f"Understood, {user_name}. Maintain your presence and focus this {time_of_day.lower()}. What specific challenge or objective are you working through right now?"
+        return f"I'm with you, {user_name}. Stay focused and take it one moment at a time. What are you working on right now?"

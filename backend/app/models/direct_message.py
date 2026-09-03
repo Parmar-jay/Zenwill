@@ -56,3 +56,11 @@ class ConversationSummary(BaseModel):
     last_message: str
     last_message_at: str
     unread_count: int = 0
+
+
+class DirectMessageUnreadResponse(BaseModel):
+    unread_count: int = 0
+    latest_sender_name: Optional[str] = None
+    latest_sender_id: Optional[str] = None
+    latest_message: Optional[str] = None
+    latest_created_at: Optional[str] = None

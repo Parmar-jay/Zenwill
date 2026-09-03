@@ -14,6 +14,7 @@ interface SpartanState {
   isLoadingBattle: boolean;
   isNudging: boolean;
 
+  updateLocalMemberStreak: (userIdOrEmail: string, newStreak: number) => void;
   fetchMyCell: () => Promise<SpartanCellData | null>;
   fetchActiveBattle: () => Promise<BattleSessionData | null>;
   fetchCellLeaderboard: () => Promise<void>;
@@ -26,6 +27,9 @@ interface SpartanState {
   triggerBattleHorn: (location?: string) => Promise<BattleSessionData>;
   joinActiveBattle: (sessionId: string) => Promise<BattleSessionData>;
   sendReactionRune: (sessionId: string, rune: string) => Promise<void>;
+  sendBattleMessage: (text: string) => Promise<BattleSessionData | null>;
+  battleHeartbeat: () => Promise<BattleSessionData | null>;
+  startNewBattleSession: () => Promise<BattleSessionData | null>;
   completeBattle: (sessionId: string) => Promise<void>;
 }
 
@@ -37,6 +41,41 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   isLoadingCell: false,
   isLoadingBattle: false,
   isNudging: false,
+
+  updateLocalMemberStreak: (userIdOrEmail: string, newStreak: number) => {
+    set((state) => {
+      if (!state.myCell) return {};
+      let streakDiff = 0;
+      const today = new Date().toISOString().split('T')[0];
+      const updatedMembers = state.myCell.members.map((m) => {
+        if (m.user_id === userIdOrEmail || m.name === userIdOrEmail) {
+          streakDiff = newStreak - (m.streak || 0);
+          return {
+            ...m,
+            streak: newStreak,
+            today_checked_in: true,
+            last_checkin_date: today,
+          };
+        }
+        return m;
+      });
+      const updatedTotalStreak = Math.max(0, (state.myCell.total_streak || 0) + streakDiff);
+      const updatedCell: SpartanCellData = {
+        ...state.myCell,
+        members: updatedMembers,
+        total_streak: updatedTotalStreak,
+      };
+
+      const updatedLeaderboard = state.cellLeaderboard.map((c) =>
+        c.id === updatedCell.id ? updatedCell : c
+      );
+
+      return {
+        myCell: updatedCell,
+        cellLeaderboard: updatedLeaderboard,
+      };
+    });
+  },
 
   fetchMyCell: async () => {
     try {
@@ -166,6 +205,37 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       set({ activeBattle: updated });
     } catch {
       // Silent catch
+    }
+  },
+
+  sendBattleMessage: async (text: string) => {
+    try {
+      const sessionId = get().activeBattle?.id;
+      const updated = await spartanApi.sendBattleMessage(text, sessionId);
+      set({ activeBattle: updated });
+      return updated;
+    } catch (err) {
+      return null;
+    }
+  },
+
+  battleHeartbeat: async () => {
+    try {
+      const updated = await spartanApi.battleHeartbeat();
+      set({ activeBattle: updated });
+      return updated;
+    } catch {
+      return null;
+    }
+  },
+
+  startNewBattleSession: async () => {
+    try {
+      const fresh = await spartanApi.startNewBattleSession();
+      set({ activeBattle: fresh });
+      return fresh;
+    } catch {
+      return null;
     }
   },
 

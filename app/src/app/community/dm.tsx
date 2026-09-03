@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { communityApi, DirectMessageItem } from '@/services/community-api';
 import { useOnboardingStore } from '@/store/onboarding-store';
 import { useAuthStore } from '@/store/auth-store';
+import { useUnreadStore } from '@/store/unread-store';
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -148,6 +149,7 @@ export default function DirectMessageScreen() {
           scrollViewRef.current?.scrollToEnd({ animated: true });
         });
       }
+      useUnreadStore.getState().fetchUnreadCount().catch(() => {});
     } catch (e) {
       console.log('Error loading DM history:', e);
     }

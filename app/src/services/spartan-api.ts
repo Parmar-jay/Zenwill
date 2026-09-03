@@ -33,8 +33,20 @@ export interface SpartanCellData {
 export interface BattleParticipant {
   user_id: string;
   name: string;
+  streak?: number;
   badge: string;
   joined_at: string;
+  last_active_at?: string;
+}
+
+export interface BattleMessageItem {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_streak: number;
+  text: string;
+  is_system?: boolean;
+  created_at: string;
 }
 
 export interface BattleReaction {
@@ -46,6 +58,7 @@ export interface BattleReaction {
 
 export interface BattleSessionData {
   id: string;
+  session_number?: number;
   initiator_id: string;
   initiator_name: string;
   initiator_streak: number;
@@ -54,6 +67,7 @@ export interface BattleSessionData {
   status: 'active' | 'completed' | 'expired';
   participant_count: number;
   participants: BattleParticipant[];
+  messages: BattleMessageItem[];
   reactions: BattleReaction[];
   started_at: string;
   expires_at: string;
@@ -98,7 +112,7 @@ export const spartanApi = {
     });
   },
 
-  // ── Spartan Battlefield (Live Urge Rescue) ─────────────────────────────────
+  // ── Spartan Battlefield (Live Chat & 15-Min Urge Rescue) ──────────────────
   async triggerBattleHornSOS(location: string = 'Global Sanctum'): Promise<BattleSessionData> {
     return api.post<BattleSessionData>('/battlefield/sos', { location });
   },
@@ -111,11 +125,40 @@ export const spartanApi = {
     return api.post<BattleSessionData>(`/battlefield/join/${sessionId}`);
   },
 
+  async sendBattleMessage(text: string, sessionId?: string): Promise<BattleSessionData> {
+    try {
+      return await api.post<BattleSessionData>('/battlefield/message', { text });
+    } catch (err: any) {
+      if (sessionId) {
+        try {
+          return await api.post<BattleSessionData>(`/battlefield/react/${sessionId}`, { rune: text });
+        } catch (_) {}
+      }
+      throw err;
+    }
+  },
+
+  async battleHeartbeat(): Promise<BattleSessionData> {
+    return api.post<BattleSessionData>('/battlefield/heartbeat');
+  },
+
+  async startNewBattleSession(): Promise<BattleSessionData> {
+    return api.post<BattleSessionData>('/battlefield/new-session');
+  },
+
   async sendBattleReactionRune(sessionId: string, rune: string): Promise<BattleSessionData> {
     return api.post<BattleSessionData>(`/battlefield/react/${sessionId}`, { rune });
   },
 
   async completeBattleSession(sessionId: string): Promise<{ status: string; message: string; honor_awarded: number }> {
     return api.post<{ status: string; message: string; honor_awarded: number }>(`/battlefield/complete/${sessionId}`);
+  },
+
+  async leaveBattleSession(): Promise<{ status: string; message: string }> {
+    try {
+      return await api.post<{ status: string; message: string }>('/battlefield/leave');
+    } catch {
+      return { status: 'success', message: 'Left local session' };
+    }
   },
 };

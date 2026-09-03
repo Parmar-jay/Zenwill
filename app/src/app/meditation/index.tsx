@@ -4,11 +4,13 @@ import {
   TouchableOpacity,
   ScrollView,
   View,
+  Text,
   Platform,
   Modal,
   Image,
   Animated,
   useWindowDimensions,
+  LayoutAnimation,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -20,8 +22,11 @@ import * as Haptics from 'expo-haptics';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { useHabitStore } from '@/store/habit-store';
 import { analyticsApi, getCachedRecommendations } from '@/services/analytics-api';
+import { meditationApi, MeditationStats } from '@/services/meditation-api';
 import { YOGIC_PRACTICES, YogicTechnique, EMERGENCY_SOS_SEQUENCE } from '@/constants/practices';
 import { PageEntrance } from '@/components/ui/smooth-loader';
+import { omSoundManager, MEDITATION_TUNES, MeditationTune } from '@/utils/audio-player';
+import { BreathingParticles } from '@/components/BreathingParticles';
 
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
@@ -53,12 +58,23 @@ export default function MeditationScreen() {
   const [secondsRemaining, setSecondsRemaining] = useState<number>(300);
   const [stepTimer, setStepTimer] = useState<number>(4);
 
+  // Sacred Om Sound State for Meditation
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [selectedTune, setSelectedTune] = useState<MeditationTune>(MEDITATION_TUNES[0]);
+
+  // Start Timestamp for accurate logging
+  const sessionStartTimeRef = useRef<Date | null>(null);
+
+  // User Meditation Stats from Database
+  const [meditationStats, setMeditationStats] = useState<MeditationStats | null>(null);
+
   // Visualizer Animation
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(0.6)).current;
 
   // Completion Modal State
   const [isCompletedModalVisible, setIsCompletedModalVisible] = useState<boolean>(false);
+  const [completedSummary, setCompletedSummary] = useState<any>(null);
 
   const categories = ['All', 'Pranayama', 'Devotional & Mantra', 'Emergency Reset', 'Focus & Gita'];
 
@@ -68,7 +84,15 @@ export default function MeditationScreen() {
 
   const [recommendedData, setRecommendedData] = useState<any>(null);
 
+  const loadStats = async () => {
+    try {
+      const data = await meditationApi.getStats();
+      if (data) setMeditationStats(data);
+    } catch (_) {}
+  };
+
   useEffect(() => {
+    loadStats();
     const cached = getCachedRecommendations();
     if (cached) setRecommendedData(cached);
 
@@ -109,6 +133,10 @@ export default function MeditationScreen() {
 
   const handleStartSession = (technique: YogicTechnique) => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    sessionStartTimeRef.current = new Date();
+    const initialTune = omSoundManager.getTuneForTechnique(technique.id);
+    setSelectedTune(initialTune);
+    omSoundManager.setTune(initialTune);
     setActiveTechnique(technique);
     setSecondsRemaining(technique.durationMinutes * 60);
     setCurrentStepIndex(0);
@@ -143,6 +171,9 @@ export default function MeditationScreen() {
                 nextIndex = activeTechnique.steps.length > 1 ? 1 : 0;
                 setRoundCount((r) => r + 1);
               }
+              try {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              } catch (_) {}
               setCurrentStepIndex(nextIndex);
               triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
               return activeTechnique.steps[nextIndex]?.durationSec || 4;
@@ -215,15 +246,67 @@ export default function MeditationScreen() {
     }
   }, [isPlaying, currentStepIndex, activeTechnique]);
 
+  // Handle Continuous Ambient / Sacred Sound for All Practices (Dirgha, Krishna-Centered, Bhramari, Nadi Shodhana, Ajapa Japa)
+  // Starts after seating posture setup step (step 0) completes and stays on till meditation finishes
+  useEffect(() => {
+    const hasAudioSupport = Boolean(activeTechnique);
+    if (isPlayerVisible && hasAudioSupport) {
+      const isSeatingPostureFinished = currentStepIndex > 0 || !activeTechnique?.steps[currentStepIndex]?.isMandatorySetup;
+      if (isSeatingPostureFinished && isPlaying) {
+        omSoundManager.play();
+      } else {
+        omSoundManager.pause();
+      }
+    } else {
+      omSoundManager.stopAndUnload();
+    }
+  }, [isPlayerVisible, activeTechnique?.id, currentStepIndex, isPlaying, isMuted]);
+
+  // Clean up audio when player modal closes or unmounts
+  useEffect(() => {
+    if (!isPlayerVisible) {
+      omSoundManager.stopAndUnload();
+    }
+  }, [isPlayerVisible]);
+
   const formatTime = (totalSecs: number) => {
     const mins = Math.floor(totalSecs / 60);
     const secs = totalSecs % 60;
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  const handleFinishSession = () => {
+  const handleFinishSession = async () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    omSoundManager.stopAndUnload();
+    const now = new Date();
+    const startedAt = sessionStartTimeRef.current || new Date(now.getTime() - (activeTechnique?.durationMinutes || 5) * 60000);
     const durationSec = activeTechnique ? Math.max(activeTechnique.durationMinutes * 60 - secondsRemaining, 30) : 300;
+    const durationMin = Math.round((durationSec / 60) * 10) / 10;
+    const executedSteps = activeTechnique ? activeTechnique.steps.map((s) => s.title) : [];
+
+    // 1. Direct MongoDB Logging via Dedicated Meditation API
+    try {
+      await meditationApi.logSession({
+        technique_id: activeTechnique?.id || 'meditation',
+        technique_title: activeTechnique?.title || 'Meditation Practice',
+        category: activeTechnique?.category || 'Pranayama',
+        duration_seconds: durationSec,
+        duration_minutes: durationMin,
+        rounds_completed: roundCount,
+        completed: true,
+        started_at: startedAt.toISOString(),
+        completed_at: now.toISOString(),
+        emotional_state: 'calm',
+        rating: activeTechnique?.rating || 5,
+        steps_performed: executedSteps,
+        metadata: {
+          difficulty: activeTechnique?.difficulty,
+          source: activeTechnique?.source,
+        },
+      });
+    } catch (_) {}
+
+    // 2. Behavioral Telemetry Logging
     analyticsApi.logEvent({
       event_type: 'meditation_session',
       screen_name: 'meditation_screen',
@@ -235,14 +318,24 @@ export default function MeditationScreen() {
         technique_id: activeTechnique?.id,
         technique_title: activeTechnique?.title,
         category: activeTechnique?.category,
-        duration_minutes: activeTechnique?.durationMinutes,
+        duration_minutes: durationMin,
         difficulty: activeTechnique?.difficulty,
         completed: true,
       },
     }).catch(() => {});
 
+    // 3. Mark Daily Mission Complete & Sync Mind Strength
     useDailyMissionStore.getState().completeTask('meditation');
     useHabitStore.getState().syncFromDatabase().catch(() => {});
+    loadStats();
+
+    setCompletedSummary({
+      title: activeTechnique?.title || 'Meditation Practice',
+      durationMinutes: durationMin,
+      rounds: roundCount,
+      timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    });
+
     setIsPlayerVisible(false);
     setIsCompletedModalVisible(true);
   };
@@ -359,6 +452,33 @@ export default function MeditationScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
+          {/* User Lifetime Meditation Stats Strip */}
+          {meditationStats && (
+            <View style={styles.statsStripContainer}>
+              <View style={styles.statBox}>
+                <ThemedText style={styles.statValue}>{meditationStats.total_sessions}</ThemedText>
+                <ThemedText style={styles.statLabel}>SESSIONS</ThemedText>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statBox}>
+                <ThemedText style={styles.statValue}>{meditationStats.total_minutes}m</ThemedText>
+                <ThemedText style={styles.statLabel}>MINUTES</ThemedText>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statBox}>
+                <ThemedText style={styles.statValue}>{meditationStats.total_days_meditated}d</ThemedText>
+                <ThemedText style={styles.statLabel}>DISCIPLINE</ThemedText>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statBox}>
+                <ThemedText style={styles.statValue} numberOfLines={1}>
+                  {meditationStats.favorite_technique.split(' ')[0]}
+                </ThemedText>
+                <ThemedText style={styles.statLabel}>TOP FOCUS</ThemedText>
+              </View>
+            </View>
+          )}
+
           {/* Category Filters */}
           <View style={styles.categorySection}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
@@ -447,14 +567,17 @@ export default function MeditationScreen() {
                   {/* Footer Action */}
                   <View style={styles.cardFooterRow}>
                     <TouchableOpacity
-                      style={[styles.detailBtn, { borderColor: `${technique.color}40` }]}
+                      style={[styles.detailBtn, { borderColor: `${technique.color}50`, backgroundColor: 'transparent' }]}
+                      activeOpacity={0.8}
                       onPress={() => handleOpenDetail(technique)}
                     >
-                      <ThemedText style={styles.detailBtnText}>View Details & Benefits</ThemedText>
+                      <Ionicons name="information-circle-outline" size={14} color={technique.color} />
+                      <ThemedText style={[styles.detailBtnText, { color: technique.color }]}>How to Practice</ThemedText>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[styles.startBtn, { backgroundColor: technique.color }]}
+                      activeOpacity={0.88}
                       onPress={() => handleStartSession(technique)}
                     >
                       <Ionicons name="play" size={13} color="#ffffff" />
@@ -470,7 +593,7 @@ export default function MeditationScreen() {
       </PageEntrance>
       </SafeAreaView>
 
-      {/* Technique Detail Modal */}
+      {/* Technique Detail & Step-by-Step Preparation Modal */}
       <Modal
         visible={isDetailModalVisible}
         transparent
@@ -539,6 +662,69 @@ export default function MeditationScreen() {
                   </View>
                 </View>
 
+                {/* ── 1. STEP-BY-STEP PRACTICE PROTOCOL (WHAT & HOW TO PERFORM) ── */}
+                <View style={styles.detailSection}>
+                  <View style={styles.sectionHeaderFlex}>
+                    <Ionicons name="list-circle" size={20} color={activeTechnique.color} />
+                    <ThemedText style={styles.detailSectionTitle}>How to Perform (Step-by-Step)</ThemedText>
+                  </View>
+                  <ThemedText style={styles.protocolIntroText}>
+                    Review all steps below carefully. Once you understand the sequence, posture, and breath timings, click 'I Understand' to start your practice.
+                  </ThemedText>
+
+                  <View style={styles.protocolStepsList}>
+                    {activeTechnique.steps.map((step, sIdx) => {
+                      const isSetup = step.isMandatorySetup;
+                      return (
+                        <View
+                          key={sIdx}
+                          style={[
+                            styles.protocolStepCard,
+                            isSetup && styles.protocolStepCardSetup,
+                          ]}
+                        >
+                          <View style={styles.protocolStepHeader}>
+                            <View
+                              style={[
+                                styles.stepBadgeNumber,
+                                { backgroundColor: isSetup ? '#F59E0B' : activeTechnique.color },
+                              ]}
+                            >
+                              <ThemedText style={styles.stepBadgeNumberText}>{sIdx + 1}</ThemedText>
+                            </View>
+                            <View style={{ flex: 1, marginLeft: 10 }}>
+                              <ThemedText style={styles.protocolStepTitle}>{step.title}</ThemedText>
+                              <View style={styles.protocolStepSubRow}>
+                                {step.phase && (
+                                  <View style={styles.phasePill}>
+                                    <ThemedText style={styles.phasePillText}>{step.phase.toUpperCase()}</ThemedText>
+                                  </View>
+                                )}
+                                {step.durationSec ? (
+                                  <ThemedText style={styles.protocolStepDurationText}>
+                                    ⏱️ {step.durationSec}s Duration
+                                  </ThemedText>
+                                ) : null}
+                              </View>
+                            </View>
+                          </View>
+
+                          <ThemedText style={styles.protocolStepDesc}>{step.description}</ThemedText>
+
+                          {step.visualCue && (
+                            <View style={styles.protocolVisualCueBox}>
+                              <Ionicons name="eye-outline" size={12} color="#38BDF8" style={{ marginRight: 5 }} />
+                              <ThemedText style={styles.protocolVisualCueText}>
+                                Focus: {step.visualCue}
+                              </ThemedText>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+
                 {/* Purpose Section */}
                 <View style={styles.detailSection}>
                   <ThemedText style={styles.detailSectionTitle}>Purpose & Core Philosophy</ThemedText>
@@ -591,13 +777,14 @@ export default function MeditationScreen() {
                   </View>
                 </View>
 
-                {/* Start Session CTA */}
+                {/* Confirmation CTA to Start Practice */}
                 <TouchableOpacity
                   style={[styles.startSessionLargeBtn, { backgroundColor: activeTechnique.color }]}
+                  activeOpacity={0.88}
                   onPress={() => handleStartSession(activeTechnique)}
                 >
-                  <Ionicons name="play" size={18} color="#ffffff" />
-                  <ThemedText style={styles.startSessionLargeText}>Begin Guided Session Now</ThemedText>
+                  <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+                  <ThemedText style={styles.startSessionLargeText}>I Understand the Steps • Begin Meditation</ThemedText>
                 </TouchableOpacity>
 
               </ScrollView>
@@ -649,32 +836,50 @@ export default function MeditationScreen() {
                     </ThemedText>
                   </View>
 
-                  {/* Pulsing Visualizer Circle */}
-                  <View style={styles.playerCircleContainer}>
-                    <Animated.View
-                      style={[
-                        styles.playerCircleOuter,
-                        {
-                          borderColor: activeTechnique.color,
-                          transform: [{ scale: scaleAnim }],
-                        },
-                      ]}
-                    >
-                      <Animated.View
-                        style={[
-                          styles.playerCircleInner,
-                          {
-                            backgroundColor: activeTechnique.color,
-                            opacity: pulseAnim,
-                          },
-                        ]}
-                      >
-                        <ThemedText style={styles.playerStepCue}>
-                          {activeTechnique.steps[currentStepIndex]?.visualCue || 'Breathe'}
+                  {/* Ambient / Sacred Sound Indicator for Practices */}
+                  {activeTechnique && (
+                    currentStepIndex === 0 && activeTechnique.steps[0]?.isMandatorySetup ? (
+                      <View style={styles.omWaitingBanner}>
+                        <Ionicons name="sparkles" size={14} color="#F59E0B" />
+                        <ThemedText style={styles.omWaitingText}>
+                          Sacred ambient sound will begin automatically after seating posture setup.
                         </ThemedText>
-                        <ThemedText style={styles.playerTimerDisplay}>{formatTime(secondsRemaining)}</ThemedText>
-                      </Animated.View>
-                    </Animated.View>
+                      </View>
+                    ) : (
+                      <View style={styles.omActiveBar}>
+                        <View style={styles.omActiveLeft}>
+                          <View style={styles.omPulsingDot} />
+                          <Ionicons name={isMuted ? "volume-mute" : "musical-notes"} size={13} color="#F59E0B" />
+                          <ThemedText style={styles.omActiveText} numberOfLines={1}>
+                            {isMuted ? "Muted" : `${selectedTune.frequency} • ${selectedTune.name.split(' ')[0]}`}
+                          </ThemedText>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.omMuteBtn}
+                          activeOpacity={0.8}
+                          onPress={async () => {
+                            triggerHaptic();
+                            const nextMuted = !isMuted;
+                            setIsMuted(nextMuted);
+                            await omSoundManager.setMuted(nextMuted);
+                          }}
+                        >
+                          <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={12} color="#ffffff" />
+                          <ThemedText style={styles.omMuteText}>{isMuted ? "Unmute" : "Mute"}</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                    )
+                  )}
+
+                  {/* Galaxy Particle Breathing Visualization */}
+                  <View style={styles.playerCircleContainer}>
+                    <BreathingParticles
+                      phase={activeTechnique.steps[currentStepIndex]?.visualCue || 'Breathe'}
+                      subtitle={formatTime(secondsRemaining)}
+                      color={activeTechnique.color || '#00F5D4'}
+                      isRunning={isPlaying}
+                      size={260}
+                    />
                   </View>
 
                   {/* Overall Timeline Progress Bar */}
@@ -729,11 +934,14 @@ export default function MeditationScreen() {
                           ]}
                           onPress={() => {
                             triggerHaptic();
+                            try {
+                              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            } catch (_) {}
                             setCurrentStepIndex(idx);
                             setStepTimer(step.durationSec || 4);
                           }}
                         >
-                          {/* Timeline Left Node Dot */}
+                          {/* Timeline Left Node Dot with Perfectly Centered Number */}
                           <View
                             style={[
                               styles.timelineNodeDot,
@@ -742,27 +950,28 @@ export default function MeditationScreen() {
                             ]}
                           >
                             {isPast ? (
-                              <Ionicons name="checkmark" size={12} color="#ffffff" />
+                              <Ionicons name="checkmark" size={14} color="#ffffff" style={{ alignSelf: 'center' }} />
                             ) : (
-                              <ThemedText style={[styles.timelineNodeText, isActive && { color: '#ffffff' }]}>
+                              <Text style={[styles.timelineNodeText, isActive && { color: '#ffffff' }]}>
                                 {idx + 1}
-                              </ThemedText>
+                              </Text>
                             )}
                           </View>
 
-                          {/* Step Content */}
+                          {/* Step Content: Title & Status Badges Only */}
                           <View style={styles.timelineStepContent}>
-                            <View style={styles.timelineStepTopRow}>
-                              <View style={styles.timelineStepBadgeRow}>
+                            <View style={styles.timelineStepMainCol}>
+                              <ThemedText style={[styles.timelineStepTitle, isActive && { color: '#ffffff', fontWeight: '800' }]}>
+                                {step.title}
+                              </ThemedText>
+
+                              <View style={styles.timelineStepSubRow}>
                                 {step.isMandatorySetup && (
                                   <View style={styles.mandatoryBadge}>
                                     <Ionicons name="shield-checkmark" size={10} color="#F59E0B" />
-                                    <ThemedText style={styles.mandatoryBadgeText}>MANDATORY POSTURE</ThemedText>
+                                    <ThemedText style={styles.mandatoryBadgeText}>POSTURE</ThemedText>
                                   </View>
                                 )}
-                                <ThemedText style={[styles.timelineStepTitle, isActive && { color: '#ffffff', fontWeight: '800' }]}>
-                                  {step.title}
-                                </ThemedText>
                                 {step.visualCue && (
                                   <View style={[styles.cuePill, { backgroundColor: `${activeTechnique.color}20` }]}>
                                     <ThemedText style={[styles.cuePillText, { color: activeTechnique.color }]}>
@@ -771,22 +980,11 @@ export default function MeditationScreen() {
                                   </View>
                                 )}
                               </View>
-
-                              {isActive && (
-                                <View style={[styles.activePill, { backgroundColor: activeTechnique.color }]}>
-                                  <ThemedText style={styles.activePillText}>Active • {stepTimer}s</ThemedText>
-                                </View>
-                              )}
                             </View>
 
-                            <ThemedText style={[styles.timelineStepDesc, isActive && styles.timelineStepDescActive]}>
-                              {step.description}
-                            </ThemedText>
-
-                            {step.durationSec && (
-                              <View style={styles.stepDurationMeta}>
-                                <Ionicons name="time-outline" size={11} color="#94A3B8" />
-                                <ThemedText style={styles.stepDurationText}>Target duration: {step.durationSec}s</ThemedText>
+                            {isActive && (
+                              <View style={[styles.activePill, { backgroundColor: activeTechnique.color }]}>
+                                <ThemedText style={styles.activePillText}>Active • {stepTimer}s</ThemedText>
                               </View>
                             )}
                           </View>
@@ -875,27 +1073,51 @@ export default function MeditationScreen() {
         <View style={styles.modalBackdropCenter}>
           <View style={styles.completedCard}>
             <View style={styles.completedIconCircle}>
-              <Ionicons name="checkmark-done-circle" size={48} color="#10B981" />
+              <Ionicons name="checkmark-done-circle" size={44} color="#10B981" />
             </View>
 
-            <ThemedText style={styles.completedTitle}>Session Completed</ThemedText>
+            <View style={styles.syncedBadge}>
+              <Ionicons name="cloud-done" size={13} color="#10B981" style={{ marginRight: 4 }} />
+              <ThemedText style={styles.syncedBadgeText}>LOGGED IN DATABASE</ThemedText>
+            </View>
+
+            <ThemedText style={styles.completedTitle}>{completedSummary?.title || 'Session Completed'}</ThemedText>
             <ThemedText style={styles.completedSub}>
-              You have completed {activeTechnique?.title || 'your practice'}. Mindful regulation logged into your daily mission streaks.
+              Your breathing discipline and physiological calm have been permanently recorded in your neural profile.
             </ThemedText>
 
+            {/* Logged Data Breakdown */}
+            <View style={styles.completedDataGrid}>
+              <View style={styles.completedDataCell}>
+                <ThemedText style={styles.completedDataCellLabel}>DURATION</ThemedText>
+                <ThemedText style={styles.completedDataCellValue}>{completedSummary?.durationMinutes || 5} min</ThemedText>
+              </View>
+              <View style={styles.completedDataDivider} />
+              <View style={styles.completedDataCell}>
+                <ThemedText style={styles.completedDataCellLabel}>CYCLES</ThemedText>
+                <ThemedText style={styles.completedDataCellValue}>{completedSummary?.rounds || 1} rounds</ThemedText>
+              </View>
+              <View style={styles.completedDataDivider} />
+              <View style={styles.completedDataCell}>
+                <ThemedText style={styles.completedDataCellLabel}>TIME</ThemedText>
+                <ThemedText style={styles.completedDataCellValue}>{completedSummary?.timestamp || 'Just now'}</ThemedText>
+              </View>
+            </View>
+
             <View style={styles.rewardBox}>
-              <Ionicons name="shield-checkmark" size={18} color="#F59E0B" />
-              <ThemedText style={styles.rewardText}>+50 Discipline XP Earned</ThemedText>
+              <Ionicons name="shield-checkmark" size={16} color="#F59E0B" />
+              <ThemedText style={styles.rewardText}>+50 Discipline XP • +1.5 Mind Strength</ThemedText>
             </View>
 
             <TouchableOpacity
               style={styles.completedDoneBtn}
+              activeOpacity={0.88}
               onPress={() => {
                 triggerHaptic();
                 setIsCompletedModalVisible(false);
               }}
             >
-              <ThemedText style={styles.completedDoneText}>Return to Library</ThemedText>
+              <ThemedText style={styles.completedDoneText}>Return to Practices</ThemedText>
             </TouchableOpacity>
           </View>
         </View>
@@ -1025,41 +1247,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   heroSubtitle: {
-    fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.78)',
-    lineHeight: 16,
+    fontSize: 10.5,
+    color: 'rgba(255, 255, 255, 0.72)',
+    lineHeight: 14.5,
   },
   heroFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8,
-    marginTop: 2,
+    marginTop: 4,
   },
   sourceTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     flex: 1,
+    flexShrink: 1,
+    marginRight: 6,
   },
   sourceTagText: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 9.5,
+    color: 'rgba(255, 255, 255, 0.55)',
     fontWeight: '600',
+    flexShrink: 1,
   },
   heroPlayBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: '#00E5FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6.5,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5.5,
+    minHeight: 30,
+    borderRadius: 8,
     flexShrink: 0,
   },
   heroPlayText: {
-    fontSize: 11.5,
+    fontSize: 10.5,
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.2,
@@ -1246,33 +1472,35 @@ const styles = StyleSheet.create({
   },
   detailBtn: {
     flex: 1,
-    minWidth: 125,
-    minHeight: 38,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  detailBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: 'rgba(255, 255, 255, 0.8)',
-    textAlign: 'center',
-  },
-  startBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    minHeight: 38,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
+    gap: 5,
+    minHeight: 33,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 9,
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  detailBtnText: {
+    fontSize: 10.8,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  startBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 33,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 9,
   },
   startBtnText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
     color: '#ffffff',
   },
@@ -1653,13 +1881,14 @@ const styles = StyleSheet.create({
   },
   timelineStepCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 12,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   timelineStepCardActive: {
     backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -1675,15 +1904,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.4)',
   },
   timelineNodeDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 2,
+    alignSelf: 'center',
     zIndex: 2,
   },
   timelineNodeDotActive: {
@@ -1694,31 +1923,36 @@ const styles = StyleSheet.create({
     borderColor: '#10B981',
   },
   timelineNodeText: {
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '900',
     color: '#94A3B8',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+    lineHeight: 15,
   },
   timelineStepContent: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  timelineStepMainCol: {
+    flex: 1,
     gap: 4,
   },
-  timelineStepTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 6,
-  },
-  timelineStepBadgeRow: {
+  timelineStepSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     flexWrap: 'wrap',
-    flex: 1,
   },
   timelineStepTitle: {
     fontSize: 13.5,
     fontWeight: '700',
     color: '#CBD5E1',
+    lineHeight: 18,
   },
   cuePill: {
     paddingHorizontal: 7,
@@ -1731,8 +1965,9 @@ const styles = StyleSheet.create({
   },
   activePill: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 8,
+    alignSelf: 'center',
   },
   activePillText: {
     fontSize: 10,
@@ -1897,6 +2132,243 @@ const styles = StyleSheet.create({
   completedDoneText: {
     fontSize: 13,
     fontWeight: '800',
+    color: '#ffffff',
+  },
+
+  // Stats Strip on Main Screen
+  statsStripContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  statBox: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#00E5FF',
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.45)',
+    letterSpacing: 0.6,
+  },
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+
+  // Step Protocol Guide Styles
+  sectionHeaderFlex: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  protocolIntroText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  protocolStepsList: {
+    gap: 10,
+  },
+  protocolStepCard: {
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  protocolStepCardSetup: {
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    backgroundColor: 'rgba(245, 158, 11, 0.04)',
+  },
+  protocolStepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  stepBadgeNumber: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepBadgeNumberText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#ffffff',
+  },
+  protocolStepTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  protocolStepSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  phasePill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  phasePillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#38BDF8',
+  },
+  protocolStepDurationText: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+  },
+  protocolStepDesc: {
+    fontSize: 12,
+    color: '#CBD5E1',
+    lineHeight: 17,
+    marginBottom: 6,
+  },
+  protocolVisualCueBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  protocolVisualCueText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#38BDF8',
+  },
+
+  // Completion Screen Data Grid
+  syncedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+  },
+  syncedBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: 0.6,
+  },
+  completedDataGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  completedDataCell: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  completedDataCellLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.45)',
+    marginBottom: 2,
+  },
+  completedDataCellValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  completedDataDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+
+  // Om Audio Controls & Indicators in Live Player
+  omWaitingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    width: '100%',
+  },
+  omWaitingText: {
+    fontSize: 11,
+    color: '#F59E0B',
+    fontWeight: '600',
+    flex: 1,
+  },
+  omActiveBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    width: '100%',
+  },
+  omActiveLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  omPulsingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F59E0B',
+  },
+  omActiveText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#F59E0B',
+  },
+  omMuteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  omMuteText: {
+    fontSize: 10.5,
+    fontWeight: '700',
     color: '#ffffff',
   },
 });

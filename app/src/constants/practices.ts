@@ -373,40 +373,32 @@ export const YOGIC_PRACTICES: YogicTechnique[] = [
 ];
 
 export const EMERGENCY_SOS_SEQUENCE = {
-  title: 'Emergency Urge De-escalation Protocol',
-  totalDurationText: '5 Mins Protocol',
+  title: '5-Minute Mind Shield Protocol',
+  totalDurationText: '5 Mins Breathing',
   phases: [
     {
       stepNumber: 1,
-      title: '1 Min Deep Diaphragmatic Breathing',
+      title: 'Deep Belly Breathing (1 Min)',
       sanskrit: 'Dirgha Pranayama',
       durationSec: 60,
       color: '#10B981',
-      description: 'Slow abdominal breathing to activate vagal parasympathetic nerves and lower heart rate spike.'
+      description: 'Slow, deep belly breaths to quickly slow down your racing heart and calm the urge spike.',
     },
     {
       stepNumber: 2,
-      title: '2 Mins Humming Bee Breath',
+      title: 'Humming Bee Breath (2 Mins)',
       sanskrit: 'Bhramari Pranayama',
       durationSec: 120,
       color: '#8B5CF6',
-      description: 'Acoustic humming vibration to quiet brain agitation and release mental tightness.'
+      description: 'Gently hum like a bee as you exhale to instantly relax your brain and release stress.',
     },
     {
       stepNumber: 3,
-      title: '2 Mins Alternate Nostril Breathing',
+      title: 'Balanced Nostril Breathing (2 Mins)',
       sanskrit: 'Nadi Shodhana',
       durationSec: 120,
-      color: '#3B82F6',
-      description: 'Purify subtle energy channels and bring left/right brain hemisphere balance.'
+      color: '#00E5FF',
+      description: 'Breathe through alternate nostrils to restore mental balance, focus, and clarity.',
     },
-    {
-      stepNumber: 4,
-      title: 'Grounding & Devotional Reflection',
-      sanskrit: 'Ajapa / Gita Anchor',
-      durationSec: 30,
-      color: '#F59E0B',
-      description: 'Brief grounding prompt and optional Krishna mantra or prayer anchor.'
-    }
-  ]
+  ],
 };

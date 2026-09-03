@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { analyticsApi } from '@/services/analytics-api';
 import { useHabitStore } from '@/store/habit-store';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
+import { BreathingParticles } from '@/components/BreathingParticles';
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
   try {
@@ -190,42 +191,36 @@ export default function EmergencyUrgeSurfingScreen() {
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
-            <ThemedText style={styles.stepIndicator}>DE-ESCALATION PROTOCOL</ThemedText>
-            <ThemedText style={styles.headerTitle}>Urge Surfing</ThemedText>
+            <ThemedText style={styles.stepIndicator}>STEP 2 OF 4 • URGE SURFING</ThemedText>
+            <ThemedText style={styles.headerTitle}>Ride the 90s Wave</ThemedText>
           </View>
           <View style={{ width: 38 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <ThemedText style={styles.title}>Ride the 90-Second Wave</ThemedText>
+          <ThemedText style={styles.title}>Ride the 90-Second Craving Wave</ThemedText>
           <ThemedText style={styles.sub}>
-            An urge is not a command. It is a wave of neuro-electrical activity. Observe it without resistance or judgment until it recedes.
+            An urge is not a command. It is a temporary wave of dopamine that peaks and fades away. You do not need to fight it—just observe and ride it with calm breaths.
           </ThemedText>
 
           {/* Animated Wave Timer Hero Box */}
           <View style={styles.waveHeroBox}>
-            <View style={styles.ringContainer}>
-              <Animated.View
-                style={[
-                  styles.pulseRing,
-                  {
-                    transform: [{ scale: wavePulseAnim }],
-                    opacity: waveOpacityAnim,
-                  },
-                ]}
-              />
-              <View style={styles.timerCircle}>
-                <ThemedText style={styles.timerNum}>{secondsRemaining}s</ThemedText>
-                <ThemedText style={styles.timerSub}>
-                  {secondsRemaining === 0
+            <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center', marginVertical: 4 }}>
+              <BreathingParticles
+                phase={
+                  secondsRemaining === 0
                     ? 'Wave Receded'
                     : secondsRemaining > 45
                     ? 'Wave Rising'
                     : secondsRemaining > 15
                     ? 'Peak Passing'
-                    : 'Wave Receding'}
-                </ThemedText>
-              </View>
+                    : 'Wave Receding'
+                }
+                subtitle={`${secondsRemaining}s • Observe & Breathe`}
+                color="#8B5CF6"
+                isRunning={isTimerRunning}
+                size={260}
+              />
             </View>
 
             {/* Wave Progress Bar */}
@@ -237,21 +232,21 @@ export default function EmergencyUrgeSurfingScreen() {
 
           {/* Mindful Stance Tips */}
           <View style={styles.tipsSection}>
-            <ThemedText style={styles.sectionTitle}>Mindful Stance Anchors</ThemedText>
+            <ThemedText style={styles.sectionTitle}>Helpful Reminders While Surfing</ThemedText>
 
             <View style={styles.tipCard}>
               <Ionicons name="water-outline" size={20} color="#8B5CF6" />
               <View style={{ flex: 1 }}>
-                <ThemedText style={styles.tipTitle}>Observe Physical Sensations</ThemedText>
-                <ThemedText style={styles.tipDesc}>Notice tightness in chest or belly without trying to force or change it.</ThemedText>
+                <ThemedText style={styles.tipTitle}>Notice the Physical Feeling</ThemedText>
+                <ThemedText style={styles.tipDesc}>Feel where the craving is in your body without reacting. It will peak and fade away soon.</ThemedText>
               </View>
             </View>
 
             <View style={styles.tipCard}>
               <Ionicons name="sparkles-outline" size={20} color="#00E5FF" />
               <View style={{ flex: 1 }}>
-                <ThemedText style={styles.tipTitle}>Separate Self from Craving</ThemedText>
-                <ThemedText style={styles.tipDesc}>Repeat: "I am experiencing an urge wave, but I am not the urge."</ThemedText>
+                <ThemedText style={styles.tipTitle}>You Are In Control</ThemedText>
+                <ThemedText style={styles.tipDesc}>Remind yourself: "This urge is just a temporary wave. I don't need to act on it."</ThemedText>
               </View>
             </View>
           </View>
@@ -263,14 +258,24 @@ export default function EmergencyUrgeSurfingScreen() {
             style={styles.nextBtn}
             activeOpacity={0.8}
             onPress={() => {
-              triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-              handleFinishSession();
+              triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+              router.push('/emergency/grounding' as any);
             }}
           >
-            <ThemedText style={styles.nextBtnText}>
-              {secondsRemaining === 0 ? 'Urge Transmuted • Return' : "I'm in Control • Wave Transmuted"}
-            </ThemedText>
-            <Ionicons name="checkmark-done" size={18} color="#000000" />
+            <ThemedText style={styles.nextBtnText}>Next: 5-4-3-2-1 Sensory Reset</ThemedText>
+            <Ionicons name="arrow-forward" size={17} color="#000000" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.skipBtn}
+            activeOpacity={0.8}
+            onPress={() => {
+              triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/emergency/reflection' as any);
+            }}
+          >
+            <Ionicons name="checkmark-circle-outline" size={16} color="#8B5CF6" />
+            <ThemedText style={styles.skipBtnText}>Skip to Victory Feedback</ThemedText>
           </TouchableOpacity>
         </View>
 
@@ -475,6 +480,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    gap: 8,
   },
   nextBtn: {
     flexDirection: 'row',
@@ -490,6 +496,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.2,
+  },
+  skipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  skipBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#8B5CF6',
   },
   victoryOverlay: {
     position: 'absolute',

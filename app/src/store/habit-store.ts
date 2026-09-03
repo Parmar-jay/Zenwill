@@ -22,7 +22,7 @@ export interface HabitState {
     sleep_quality: number;
     focus_score: number;
     date: string;
-  };
+  } | null;
   totalUrgesCount: number;
   todayUrgesCount: number;
   dailyUrgeCounts: Array<{ date: string; dayLabel: string; count: number; isToday?: boolean }>;
@@ -132,7 +132,33 @@ export const useHabitStore = create<HabitState>()(
             ...state.history.filter((h) => h.date !== today),
           ];
 
-          // Persist Retain/Relapse to backend database asynchronously
+          // 1. Immediately update AuthStore & SpartanStore in 0 milliseconds
+          try {
+            const { useAuthStore } = require('./auth-store');
+            const authState = useAuthStore.getState();
+            authState.updateUser({
+              streak: nextStreak,
+              maxStreak: nextMaxStreak,
+              mindStrength: nextStrength,
+              lastRetainDate: today,
+              lastRetainStatus: retained ? 'retained' : 'relapsed',
+            });
+            const userIdentifier = authState.user?.id || authState.user?.email || authState.user?.name || '';
+            if (userIdentifier) {
+              const { useSpartanStore } = require('./spartan-store');
+              useSpartanStore.getState().updateLocalMemberStreak(userIdentifier, nextStreak);
+            }
+          } catch (e) {}
+
+          // 2. Invalidate API caches immediately
+          try {
+            const { api } = require('../services/api');
+            api.invalidateCache('/spartan-cells');
+            api.invalidateCache('/profile');
+            api.invalidateCache('/community');
+          } catch (e) {}
+
+          // 3. Persist to backend database asynchronously in background
           profileApi
             .updateMe({
               streak: nextStreak,
@@ -140,6 +166,13 @@ export const useHabitStore = create<HabitState>()(
               mind_strength: nextStrength,
               last_retain_date: today,
               last_retain_status: retained ? 'retained' : 'relapsed',
+            })
+            .then(() => {
+              try {
+                const { useSpartanStore } = require('./spartan-store');
+                useSpartanStore.getState().fetchMyCell().catch(() => {});
+                useSpartanStore.getState().fetchCellLeaderboard().catch(() => {});
+              } catch (e) {}
             })
             .catch(() => {});
 
@@ -155,14 +188,59 @@ export const useHabitStore = create<HabitState>()(
       },
 
       resetChallenge: () => {
+        const today = getTodayDateString();
         const currentMax = get().maxStreak || get().streak || 0;
-        profileApi.updateMe({ streak: 0, max_streak: currentMax, mind_strength: 0, last_retain_date: null, last_retain_status: null }).catch(() => {});
+
+        // 1. Immediately update AuthStore & SpartanStore in 0 milliseconds
+        try {
+          const { useAuthStore } = require('./auth-store');
+          const authState = useAuthStore.getState();
+          authState.updateUser({
+            streak: 0,
+            maxStreak: currentMax,
+            mindStrength: 0,
+            lastRetainDate: today,
+            lastRetainStatus: 'relapsed',
+          });
+          const userIdentifier = authState.user?.id || authState.user?.email || authState.user?.name || '';
+          if (userIdentifier) {
+            const { useSpartanStore } = require('./spartan-store');
+            useSpartanStore.getState().updateLocalMemberStreak(userIdentifier, 0);
+          }
+        } catch (e) {}
+
+        // 2. Invalidate API caches
+        try {
+          const { api } = require('../services/api');
+          api.invalidateCache('/spartan-cells');
+          api.invalidateCache('/profile');
+          api.invalidateCache('/community');
+        } catch (e) {}
+
+        // 3. Persist to backend database asynchronously
+        profileApi
+          .updateMe({
+            streak: 0,
+            max_streak: currentMax,
+            mind_strength: 0,
+            last_retain_date: today,
+            last_retain_status: 'relapsed',
+          })
+          .then(() => {
+            try {
+              const { useSpartanStore } = require('./spartan-store');
+              useSpartanStore.getState().fetchMyCell().catch(() => {});
+              useSpartanStore.getState().fetchCellLeaderboard().catch(() => {});
+            } catch (e) {}
+          })
+          .catch(() => {});
+
         set({
           streak: 0,
           maxStreak: currentMax,
           mindStrength: 0,
-          lastLoggedDate: null,
-          lastLoggedStatus: null,
+          lastLoggedDate: today,
+          lastLoggedStatus: 'relapsed',
           history: [],
         });
       },
@@ -176,8 +254,11 @@ export const useHabitStore = create<HabitState>()(
           lastLoggedDate: null,
           lastLoggedStatus: null,
           history: [],
+          aiMindsetAnalysis: '',
           recentJournals: [],
           meditationsCount: 0,
+          afternoonMeditationDone: false,
+          latestCheckinSummary: null,
           totalUrgesCount: 0,
           todayUrgesCount: 0,
           dailyUrgeCounts: [],
@@ -187,9 +268,9 @@ export const useHabitStore = create<HabitState>()(
 
       syncFromDatabase: async () => {
         try {
+          const today = getTodayDateString();
           const profile = await profileApi.getMe();
           if (profile) {
-            const today = getTodayDateString();
             const lastRetainDate = profile.last_retain_date || null;
             const lastRetainStatus = profile.last_retain_status || null;
             const liveStreak = typeof profile.streak === 'number' ? profile.streak : 0;
@@ -241,6 +322,11 @@ export const useHabitStore = create<HabitState>()(
                   streak: liveStreak,
                   totalPoints: profile.total_points ?? authState.user.totalPoints,
                 });
+                const userIdentifier = authState.user.id || authState.user.email || authState.user.name || '';
+                if (userIdentifier) {
+                  const { useSpartanStore } = require('./spartan-store');
+                  useSpartanStore.getState().updateLocalMemberStreak(userIdentifier, liveStreak);
+                }
               }
             } catch (e) {}
           }

@@ -39,30 +39,33 @@ export default function EmergencyIndexScreen() {
   const emergencyTools = [
     {
       id: 'breathing',
-      title: '5-Min Mind Shield Protocol',
+      stepNumber: '1',
+      title: '5-Min Mind Shield',
       subtitle: 'Dirgha (1m) + Bhramari (2m) + Nadi Shodhana (2m)',
-      icon: 'sync-outline' as const,
+      icon: 'shield-outline' as const,
       route: '/emergency/breathing',
       color: '#EF4444',
-      badge: 'Immediate De-escalation',
-    },
-    {
-      id: 'grounding',
-      title: 'Sensory Grounding',
-      subtitle: '5-4-3-2-1 technique to anchor focus',
-      icon: 'body-outline' as const,
-      route: '/emergency/grounding',
-      color: '#10B981',
-      badge: 'Sensory Anchor',
+      badge: 'Step 1: Calm Breath',
     },
     {
       id: 'urge-surfing',
+      stepNumber: '2',
       title: 'Urge Surfing',
-      subtitle: 'Ride out the 90-second craving wave',
+      subtitle: 'Ride out the 90-second craving wave safely',
       icon: 'water-outline' as const,
       route: '/emergency/urge-surfing',
       color: '#8B5CF6',
-      badge: 'Mindfulness',
+      badge: 'Step 2: Mind Wave',
+    },
+    {
+      id: 'grounding',
+      stepNumber: '3',
+      title: 'Sensory Grounding',
+      subtitle: '5-4-3-2-1 reset to bring mind back to reality',
+      icon: 'body-outline' as const,
+      route: '/emergency/grounding',
+      color: '#10B981',
+      badge: 'Step 3: Physical Reset',
     },
   ];
 
@@ -87,9 +90,9 @@ export default function EmergencyIndexScreen() {
           <View style={{ alignItems: 'center', flex: 1 }}>
             <View style={styles.badgeRow}>
               <View style={styles.sosPulseDot} />
-              <ThemedText style={styles.categoryBadge}>URGE RESCUE COMMAND</ThemedText>
+              <ThemedText style={styles.categoryBadge}>URGE RESCUE PROTOCOL</ThemedText>
             </View>
-            <ThemedText style={styles.headerTitle}>Urge Rescue Hub</ThemedText>
+            <ThemedText style={styles.headerTitle}>Emergency Rescue Hub</ThemedText>
           </View>
 
           <View style={{ width: 36 }} />
@@ -115,19 +118,19 @@ export default function EmergencyIndexScreen() {
                     <Ionicons name="shield-half" size={24} color="#EF4444" />
                   </View>
                   <View style={styles.heroBadge}>
-                    <ThemedText style={styles.heroBadgeText} numberOfLines={1}>Best Urge De-escalation</ThemedText>
+                    <ThemedText style={styles.heroBadgeText} numberOfLines={1}>Full 4-Step Rescue Flow</ThemedText>
                   </View>
                 </View>
 
                 <View style={styles.heroTextSection}>
-                  <ThemedText style={styles.heroTitleText}>Interrupt Urge Loop</ThemedText>
+                  <ThemedText style={styles.heroTitleText}>Start Complete Rescue Flow</ThemedText>
                   <ThemedText style={styles.heroSubtitle}>
-                    5-Minute Sequence: Diaphragmatic + Bhramari + Nadi Shodhana + Sensory Grounding.
+                    1. Mind Shield (5m) → 2. Urge Surfing (90s) → 3. Sensory Grounding → 4. Victory Review
                   </ThemedText>
                 </View>
 
                 <View style={styles.heroStartBtn}>
-                  <ThemedText style={styles.heroStartText}>Start 5-Minute Emergency Protocol</ThemedText>
+                  <ThemedText style={styles.heroStartText}>Begin Step 1: Mind Shield</ThemedText>
                   <Ionicons name="arrow-forward" size={15} color="#000000" />
                 </View>
               </LinearGradient>

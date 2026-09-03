@@ -19,6 +19,7 @@ from app.models.recommendation_task import RecommendationTaskCompletion
 from app.models.relapse_autopsy import RelapseAutopsy
 from app.models.spartan_cell import SpartanCell
 from app.models.battle_session import BattleSession
+from app.models.meditation_session import MeditationSession
 
 DOCUMENT_MODELS = [
     User,
@@ -37,6 +38,7 @@ DOCUMENT_MODELS = [
     RelapseAutopsy,
     SpartanCell,
     BattleSession,
+    MeditationSession,
 ]
 
 motor_client: AsyncIOMotorClient = None

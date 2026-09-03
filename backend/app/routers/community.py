@@ -8,6 +8,7 @@ from app.models.direct_message import (
     DirectMessageSendRequest,
     DirectMessageResponse,
     ConversationSummary,
+    DirectMessageUnreadResponse,
 )
 from app.models.user import User
 from app.middleware.auth_middleware import get_current_user, get_optional_current_user
@@ -438,6 +439,43 @@ async def resolve_user_real_name(user_id_or_name: str, fallback: str = "Former M
         return uid.split(" ")[0]
 
     return "Former Member"
+
+
+@router.get("/dm/unread-count", response_model=DirectMessageUnreadResponse)
+async def get_dm_unread_count(current_user: Optional[User] = Depends(get_optional_current_user)):
+    """Fetch unread DM count and latest unread message summary in real time with zero lag."""
+    if not current_user:
+        return DirectMessageUnreadResponse(unread_count=0)
+
+    user_id_str = str(current_user.id)
+    user_email_str = (current_user.email or "").strip().lower()
+    my_ids = [user_id_str]
+    if user_email_str:
+        my_ids.append(user_email_str)
+
+    try:
+        unreads = await DirectMessage.find({
+            "receiver_id": {"$in": my_ids},
+            "is_read": False,
+        }).sort("-created_at").to_list()
+
+        # Exclude any self-sent messages
+        filtered = [u for u in unreads if u.sender_id not in my_ids]
+
+        if not filtered:
+            return DirectMessageUnreadResponse(unread_count=0)
+
+        latest = filtered[0]
+        return DirectMessageUnreadResponse(
+            unread_count=len(filtered),
+            latest_sender_name=latest.sender_name or "Brother",
+            latest_sender_id=latest.sender_id,
+            latest_message=latest.content,
+            latest_created_at=format_ist_time(latest.created_at),
+        )
+    except Exception as e:
+        print(f"[ZenWill DM API Warning] get_dm_unread_count error ({e})")
+        return DirectMessageUnreadResponse(unread_count=0)
 
 
 @router.get("/dm/conversations", response_model=List[ConversationSummary])

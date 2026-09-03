@@ -7,15 +7,19 @@ import {
   Platform,
   ActivityIndicator,
   Text,
+  Image,
+  Alert,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 import { useHabitStore } from '@/store/habit-store';
+import { useAuthStore } from '@/store/auth-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
 import { useSpartanStore } from '@/store/spartan-store';
 import { communityApi, CommunityRanking } from '@/services/community-api';
@@ -26,15 +30,15 @@ const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(style);
     }
-  } catch (error) {}
+  } catch (error) { }
 };
 
-// Clean, Vector Crest Icon for Cohorts & Rank Badges
-const CohortCrestVector = ({ size = 28, color = '#00E5FF', rank = 0 }: { size?: number; color?: string; rank?: number }) => (
+// Clean, Vector Crest Icon for Squads & Rank Badges
+const SquadCrestVector = ({ size = 28, color = '#00E5FF', rank = 0 }: { size?: number; color?: string; rank?: number }) => (
   <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
     <Defs>
       <SvgLinearGradient id={`crestGrad-${rank}`} x1="0" y1="0" x2="0" y2="1">
-        <Stop offset="0%" stopColor={color} stopOpacity="0.3" />
+        <Stop offset="0%" stopColor={color} stopOpacity="0.35" />
         <Stop offset="100%" stopColor={color} stopOpacity="0.05" />
       </SvgLinearGradient>
     </Defs>
@@ -106,12 +110,22 @@ export interface LeaderboardUser {
 
 export default function CommunityLeaderboardScreen() {
   const router = useRouter();
-  const { streak } = useHabitStore();
-  const firstName = useOnboardingStore((state) => state.firstName) || 'Operative';
-  const { cellLeaderboard, fetchCellLeaderboard } = useSpartanStore();
+  const currentUser = useAuthStore((state) => state.user);
+  const habitStreak = useHabitStore((state) => state.streak);
 
-  const [viewMode, setViewMode] = useState<'individual' | 'cohorts'>('individual');
+  const streak = useMemo(() => {
+    if (typeof currentUser?.streak === 'number' && !isNaN(currentUser.streak) && currentUser.streak >= 0) {
+      return currentUser.streak;
+    }
+    return habitStreak || 0;
+  }, [currentUser?.streak, habitStreak]);
+
+  const firstName = currentUser?.name || useOnboardingStore((state) => state.firstName) || 'Operative';
+  const { myCell, cellLeaderboard, fetchCellLeaderboard, joinCell, fetchMyCell } = useSpartanStore();
+
+  const [viewMode, setViewMode] = useState<'individual' | 'squads'>('individual');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [joiningCellId, setJoiningCellId] = useState<string | null>(null);
   const [dbRankings, setDbRankings] = useState<CommunityRanking[]>([]);
 
   useEffect(() => {
@@ -122,6 +136,7 @@ export default function CommunityLeaderboardScreen() {
     React.useCallback(() => {
       fetchRealRankings();
       fetchCellLeaderboard();
+      fetchMyCell();
       useHabitStore.getState().syncFromDatabase();
     }, [])
   );
@@ -132,10 +147,25 @@ export default function CommunityLeaderboardScreen() {
       const data = await communityApi.getRankings();
       if (data) setDbRankings(data);
       await fetchCellLeaderboard();
+      await fetchMyCell();
     } catch (e) {
       console.log('Error fetching rankings:', e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleJoinFromLeaderboard = async (cell: SpartanCellData) => {
+    if (joiningCellId) return;
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    setJoiningCellId(cell.id);
+    try {
+      await joinCell(cell.join_code);
+      router.push('/community/cell' as any);
+    } catch (err: any) {
+      Alert.alert('Unable to Join Squad', err?.message || 'Please verify member capacity or try again.');
+    } finally {
+      setJoiningCellId(null);
     }
   };
 
@@ -144,8 +174,8 @@ export default function CommunityLeaderboardScreen() {
     const map = new Map<string, LeaderboardUser>();
 
     dbRankings.forEach((r) => {
-      const isSelf = r.author_name.toLowerCase() === firstName.toLowerCase();
-      const sDays = typeof r.streak_days === 'number' ? r.streak_days : 0;
+      const isSelf = (r.author_name || '').toLowerCase() === firstName.toLowerCase();
+      const sDays = isSelf ? streak : (typeof r.streak_days === 'number' ? r.streak_days : 0);
       const rInfo = getGamifiedRank(sDays);
 
       map.set(r.author_name.toLowerCase(), {
@@ -200,6 +230,21 @@ export default function CommunityLeaderboardScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* Fixed Spartan Cosmic Background */}
+      <Image
+        source={require('@/assets/images/leaderboard_bg.png')}
+        style={styles.fixedBgImage}
+        resizeMode="cover"
+      />
+
+      {/* Dark Ambient Gradient Mask */}
+      <LinearGradient
+        colors={['rgba(0, 0, 0, 0.40)', 'rgba(0, 0, 0, 0.70)', 'rgba(0, 0, 0, 0.95)']}
+        style={styles.darkMask}
+      />
+
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {/* Header */}
         <View style={styles.headerRow}>
@@ -208,10 +253,14 @@ export default function CommunityLeaderboardScreen() {
             activeOpacity={0.7}
             onPress={() => {
               triggerHaptic();
-              router.back();
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/community' as any);
+              }
             }}
           >
-            <Ionicons name="chevron-back" size={22} color="#00E5FF" />
+            <Ionicons name="chevron-back" size={24} color="#00E5FF" />
           </TouchableOpacity>
 
           <View style={styles.headerTitleGroup}>
@@ -219,7 +268,7 @@ export default function CommunityLeaderboardScreen() {
             <ThemedText style={styles.headerTitle}>Honor Leaderboard</ThemedText>
           </View>
 
-          <View style={{ width: 38 }} />
+          <View style={{ width: 40 }} />
         </View>
 
         {/* View Mode Segment Switcher */}
@@ -244,21 +293,21 @@ export default function CommunityLeaderboardScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.segmentBtn, viewMode === 'cohorts' && styles.segmentBtnActive]}
+            style={[styles.segmentBtn, viewMode === 'squads' && styles.segmentBtnActive]}
             activeOpacity={0.8}
             onPress={() => {
               triggerHaptic();
-              setViewMode('cohorts');
+              setViewMode('squads');
             }}
           >
             <Ionicons
               name="shield-checkmark-outline"
               size={15}
-              color={viewMode === 'cohorts' ? '#000000' : '#94A3B8'}
+              color={viewMode === 'squads' ? '#000000' : '#94A3B8'}
               style={{ marginRight: 6 }}
             />
-            <ThemedText style={[styles.segmentText, viewMode === 'cohorts' && styles.segmentTextActive]}>
-              Accountability Cells
+            <ThemedText style={[styles.segmentText, viewMode === 'squads' && styles.segmentTextActive]}>
+              Accountability Squads
             </ThemedText>
           </TouchableOpacity>
         </View>
@@ -275,20 +324,22 @@ export default function CommunityLeaderboardScreen() {
             contentContainerStyle={styles.scrollInner}
             showsVerticalScrollIndicator={false}
           >
-            {/* Top 3 Podium */}
+            {/* Top 3 Podium Card */}
             {podiumWinners.length > 0 && (
               <View style={styles.podiumSection}>
+                <View style={styles.podiumHeaderPill}>
+                  <Ionicons name="trophy" size={13} color="#F59E0B" style={{ marginRight: 5 }} />
+                  <ThemedText style={styles.podiumHeaderPillText}>TOP DISCIPLINE CHAMPIONS</ThemedText>
+                </View>
+
                 <View style={styles.podiumRow}>
                   {/* Rank 2 (Silver) */}
                   {podiumWinners[1] && (
-                    <View style={[styles.podiumColumn, { marginTop: 24 }]}>
+                    <View style={styles.podiumColumn}>
                       <View style={[styles.avatarCircle, { borderColor: '#CBD5E1' }]}>
                         <ThemedText style={styles.avatarInitial}>
                           {podiumWinners[1].name.charAt(0).toUpperCase()}
                         </ThemedText>
-                        <View style={[styles.podiumRankBadge, { backgroundColor: '#CBD5E1' }]}>
-                          <Text style={styles.podiumRankBadgeText}>2</Text>
-                        </View>
                       </View>
                       <ThemedText style={styles.podiumName} numberOfLines={1}>
                         {podiumWinners[1].name}
@@ -297,22 +348,24 @@ export default function CommunityLeaderboardScreen() {
                         <ThemedText style={styles.podiumStreakText}>🔥 {podiumWinners[1].streakDays}d</ThemedText>
                       </View>
                       <ThemedText style={styles.podiumTierText}>{podiumWinners[1].rankTierName}</ThemedText>
+
+                      {/* Pedestal Base 2 */}
+                      <View style={styles.pedestalSilver}>
+                        <ThemedText style={styles.pedestalRankTextSilver}>2ND</ThemedText>
+                      </View>
                     </View>
                   )}
 
-                  {/* Rank 1 (Gold - Center) */}
+                  {/* Rank 1 (Gold - Center Elevated) */}
                   {podiumWinners[0] && (
                     <View style={styles.podiumColumn}>
                       <View style={styles.crownContainer}>
-                        <Ionicons name="trophy" size={20} color="#F59E0B" />
+                        <Ionicons name="ribbon" size={20} color="#F59E0B" />
                       </View>
                       <View style={[styles.avatarCircle, styles.avatarCircleGold]}>
-                        <ThemedText style={[styles.avatarInitial, { color: '#F59E0B' }]}>
+                        <ThemedText style={[styles.avatarInitial, { color: '#F59E0B', fontSize: 24 }]}>
                           {podiumWinners[0].name.charAt(0).toUpperCase()}
                         </ThemedText>
-                        <View style={[styles.podiumRankBadge, { backgroundColor: '#F59E0B' }]}>
-                          <Text style={[styles.podiumRankBadgeText, { color: '#000000' }]}>1</Text>
-                        </View>
                       </View>
                       <ThemedText style={[styles.podiumName, { fontWeight: '900', color: '#FFFFFF' }]} numberOfLines={1}>
                         {podiumWinners[0].name}
@@ -322,22 +375,24 @@ export default function CommunityLeaderboardScreen() {
                           🔥 {podiumWinners[0].streakDays}d
                         </ThemedText>
                       </View>
-                      <ThemedText style={[styles.podiumTierText, { color: '#F59E0B' }]}>
+                      <ThemedText style={[styles.podiumTierText, { color: '#F59E0B', fontWeight: '800' }]}>
                         {podiumWinners[0].rankTierName}
                       </ThemedText>
+
+                      {/* Pedestal Base 1 */}
+                      <View style={styles.pedestalGold}>
+                        <ThemedText style={styles.pedestalRankTextGold}>1ST</ThemedText>
+                      </View>
                     </View>
                   )}
 
                   {/* Rank 3 (Bronze) */}
                   {podiumWinners[2] && (
-                    <View style={[styles.podiumColumn, { marginTop: 32 }]}>
+                    <View style={styles.podiumColumn}>
                       <View style={[styles.avatarCircle, { borderColor: '#D97706' }]}>
                         <ThemedText style={styles.avatarInitial}>
                           {podiumWinners[2].name.charAt(0).toUpperCase()}
                         </ThemedText>
-                        <View style={[styles.podiumRankBadge, { backgroundColor: '#D97706' }]}>
-                          <Text style={styles.podiumRankBadgeText}>3</Text>
-                        </View>
                       </View>
                       <ThemedText style={styles.podiumName} numberOfLines={1}>
                         {podiumWinners[2].name}
@@ -346,6 +401,11 @@ export default function CommunityLeaderboardScreen() {
                         <ThemedText style={styles.podiumStreakText}>🔥 {podiumWinners[2].streakDays}d</ThemedText>
                       </View>
                       <ThemedText style={styles.podiumTierText}>{podiumWinners[2].rankTierName}</ThemedText>
+
+                      {/* Pedestal Base 3 */}
+                      <View style={styles.pedestalBronze}>
+                        <ThemedText style={styles.pedestalRankTextBronze}>3RD</ThemedText>
+                      </View>
                     </View>
                   )}
                 </View>
@@ -360,7 +420,7 @@ export default function CommunityLeaderboardScreen() {
                 </View>
                 <View>
                   <ThemedText style={styles.selfNameText}>Your Current Standing</ThemedText>
-                  <ThemedText style={styles.selfTierText}>{currentUserRank.rankTierName} Cohort</ThemedText>
+                  <ThemedText style={styles.selfTierText}>{currentUserRank.rankTierName} Division</ThemedText>
                 </View>
               </View>
 
@@ -371,7 +431,7 @@ export default function CommunityLeaderboardScreen() {
 
             {/* Roster List (Rank 4+) */}
             <View style={styles.listSection}>
-              <ThemedText style={styles.sectionHeaderTitle}>HONOR ROLL</ThemedText>
+              <ThemedText style={styles.sectionHeaderTitle}>GLOBAL WARRIOR RANKINGS</ThemedText>
               <View style={styles.rosterCardList}>
                 {remainingUsers.map((item) => (
                   <View
@@ -408,7 +468,7 @@ export default function CommunityLeaderboardScreen() {
             <View style={{ height: 40 }} />
           </ScrollView>
         ) : (
-          /* ── ACCOUNTABILITY CELLS / COHORTS LEADERBOARD ── */
+          /* ── ACCOUNTABILITY SQUADS / CELLS LEADERBOARD ── */
           <ScrollView
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollInner}
@@ -416,10 +476,10 @@ export default function CommunityLeaderboardScreen() {
           >
             {cellLeaderboard.length === 0 ? (
               <View style={styles.emptyCellsCard}>
-                <CohortCrestVector size={48} color="#334155" />
-                <ThemedText style={styles.emptyCellsTitle}>No Active Cohorts Yet</ThemedText>
+                <SquadCrestVector size={48} color="#334155" />
+                <ThemedText style={styles.emptyCellsTitle}>No Active Squads Yet</ThemedText>
                 <ThemedText style={styles.emptyCellsSub}>
-                  Be the first Commander to establish a 5–20 member Accountability Cell and climb the global ranks!
+                  Be the first Commander to establish a 5–20 member Accountability Squad and climb the global ranks!
                 </ThemedText>
                 <TouchableOpacity
                   style={styles.createCellCTA}
@@ -429,26 +489,29 @@ export default function CommunityLeaderboardScreen() {
                     router.push('/community/cell' as any);
                   }}
                 >
-                  <ThemedText style={styles.createCellCTAText}>Establish Accountability Cell</ThemedText>
+                  <ThemedText style={styles.createCellCTAText}>Establish Accountability Squad</ThemedText>
                 </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.cellsList}>
-                <ThemedText style={styles.sectionHeaderTitle}>TOP ACCOUNTABILITY COHORTS</ThemedText>
+                <ThemedText style={styles.sectionHeaderTitle}>TOP ACCOUNTABILITY SQUADS</ThemedText>
                 {cellLeaderboard.map((cell, idx) => {
                   const isTop1 = idx === 0;
                   const isTop2 = idx === 1;
                   const isTop3 = idx === 2;
                   const rankColor = isTop1 ? '#F59E0B' : isTop2 ? '#CBD5E1' : isTop3 ? '#D97706' : '#00E5FF';
 
+                  const isMyCohort = myCell?.id === cell.id;
+                  const isJoining = joiningCellId === cell.id;
+
                   return (
-                    <View key={cell.id} style={[styles.cellRankingCard, isTop1 && styles.cellRankingCardTop1]}>
+                    <View key={cell.id} style={[styles.cellRankingCard, isTop1 && styles.cellRankingCardTop1, isMyCohort && styles.cellRankingCardMine]}>
                       <View style={styles.cellRankHeader}>
                         <View style={styles.cellRankLeft}>
                           <View style={[styles.cellRankBadge, { borderColor: rankColor, backgroundColor: rankColor + '18' }]}>
                             <ThemedText style={[styles.cellRankBadgeText, { color: rankColor }]}>#{idx + 1}</ThemedText>
                           </View>
-                          <CohortCrestVector size={26} color={rankColor} rank={idx + 1} />
+                          <SquadCrestVector size={26} color={rankColor} rank={idx + 1} />
                           <View style={{ flexShrink: 1 }}>
                             <ThemedText style={styles.cellRankTitle} numberOfLines={1}>{cell.name}</ThemedText>
                             <ThemedText style={styles.cellRankMotto} numberOfLines={1}>{cell.motto}</ThemedText>
@@ -461,26 +524,56 @@ export default function CommunityLeaderboardScreen() {
                       </View>
 
                       <View style={styles.cellRankFooter}>
-                        <View style={styles.cellMetaItem}>
-                          <Ionicons name="people-outline" size={13} color="#94A3B8" />
-                          <ThemedText style={styles.cellMetaText}>
-                            {cell.member_count}/{cell.max_members} Members
-                          </ThemedText>
+                        <View style={styles.cellMetaGroup}>
+                          <View style={styles.cellMetaItem}>
+                            <Ionicons name="people-outline" size={12} color="#94A3B8" />
+                            <ThemedText style={styles.cellMetaText}>
+                              {cell.member_count}/{cell.max_members}
+                            </ThemedText>
+                          </View>
+
+                          <View style={styles.cellMetaItem}>
+                            <Ionicons name="shield-checkmark" size={12} color="#F59E0B" />
+                            <ThemedText style={[styles.cellMetaText, { color: '#F59E0B', fontWeight: '800' }]}>
+                              {cell.collective_xp} XP
+                            </ThemedText>
+                          </View>
                         </View>
 
-                        <View style={styles.cellMetaItem}>
-                          <Ionicons name="shield-checkmark" size={13} color="#F59E0B" />
-                          <ThemedText style={[styles.cellMetaText, { color: '#F59E0B', fontWeight: '800' }]}>
-                            {cell.collective_xp} XP
-                          </ThemedText>
-                        </View>
-
-                        <View style={styles.cellMetaItem}>
-                          <Ionicons name="person-circle-outline" size={13} color="#00E5FF" />
-                          <ThemedText style={styles.cellMetaText}>
-                            Leader: {cell.leader_name}
-                          </ThemedText>
-                        </View>
+                        {/* Direct Join / Status CTA */}
+                        {isMyCohort ? (
+                          <View style={styles.myCohortBadge}>
+                            <Ionicons name="checkmark-circle" size={13} color="#10B981" style={{ marginRight: 4 }} />
+                            <ThemedText style={styles.myCohortBadgeText}>Your Squad</ThemedText>
+                          </View>
+                        ) : !myCell ? (
+                          <TouchableOpacity
+                            style={styles.joinCohortBtn}
+                            activeOpacity={0.8}
+                            disabled={isJoining}
+                            onPress={() => handleJoinFromLeaderboard(cell)}
+                          >
+                            {isJoining ? (
+                              <ActivityIndicator size="small" color="#000000" />
+                            ) : (
+                              <>
+                                <Ionicons name="enter-outline" size={13} color="#000000" style={{ marginRight: 4 }} />
+                                <ThemedText style={styles.joinCohortBtnText}>Join Squad</ThemedText>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            style={styles.viewCohortBtn}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                              triggerHaptic();
+                              router.push('/community/cell' as any);
+                            }}
+                          >
+                            <ThemedText style={styles.viewCohortBtnText}>View Hub</ThemedText>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
                   );
@@ -501,6 +594,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
+  fixedBgImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 0.65,
+  },
+  darkMask: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   safeArea: {
     flex: 1,
   },
@@ -514,14 +624,12 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   headerTitleGroup: {
     alignItems: 'center',
@@ -541,11 +649,11 @@ const styles = StyleSheet.create({
   },
   segmentContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderRadius: 14,
-    padding: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: 10,
+    padding: 3,
     marginHorizontal: 16,
-    marginVertical: 12,
+    marginVertical: 10,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
@@ -554,8 +662,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 9,
-    borderRadius: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   segmentBtnActive: {
     backgroundColor: '#00E5FF',
@@ -588,146 +696,207 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   podiumSection: {
-    marginBottom: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 20,
-    paddingVertical: 16,
+    marginBottom: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    borderRadius: 14,
+    paddingTop: 14,
+    paddingBottom: 16,
     paddingHorizontal: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.09)',
+    borderTopColor: 'rgba(245, 158, 11, 0.4)',
+  },
+  podiumHeaderPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    marginBottom: 12,
+  },
+  podiumHeaderPillText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#F59E0B',
+    letterSpacing: 0.8,
   },
   podiumRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   podiumColumn: {
     alignItems: 'center',
     flex: 1,
   },
   crownContainer: {
-    marginBottom: 4,
+    marginBottom: 3,
   },
   avatarCircle: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    backgroundColor: '#0F172A',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
     borderWidth: 2,
     borderColor: '#94A3B8',
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   avatarCircleGold: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     borderColor: '#F59E0B',
     borderWidth: 2.5,
     shadowColor: '#F59E0B',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.6,
     shadowRadius: 10,
-    elevation: 6,
+    elevation: 8,
   },
   avatarInitial: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     color: '#FFFFFF',
   },
-  podiumRankBadge: {
-    position: 'absolute',
-    bottom: -4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: '#000000',
-  },
-  podiumRankBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '900',
-    color: '#000000',
-  },
   podiumName: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#E2E8F0',
     maxWidth: 90,
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   podiumStreakBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
     marginBottom: 3,
   },
   podiumStreakBadgeGold: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
   },
   podiumStreakText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   podiumTierText: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#94A3B8',
     fontWeight: '600',
+  },
+  pedestalGold: {
+    width: '100%',
+    height: 44,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  pedestalRankTextGold: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#F59E0B',
+    letterSpacing: 0.8,
+  },
+  pedestalSilver: {
+    width: '100%',
+    height: 34,
+    backgroundColor: 'rgba(203, 213, 225, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(203, 213, 225, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  pedestalRankTextSilver: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#CBD5E1',
+    letterSpacing: 0.8,
+  },
+  pedestalBronze: {
+    width: '100%',
+    height: 26,
+    backgroundColor: 'rgba(217, 119, 6, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  pedestalRankTextBronze: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#D97706',
+    letterSpacing: 0.8,
   },
   selfStandingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 229, 255, 0.06)',
-    borderRadius: 16,
-    padding: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    marginBottom: 16,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    marginBottom: 14,
   },
   selfStandingLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   selfRankNumBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 229, 255, 0.16)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
   },
   selfRankNumText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '900',
     color: '#00E5FF',
   },
   selfNameText: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   selfTierText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#94A3B8',
     marginTop: 1,
   },
   selfStreakBox: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    backgroundColor: 'rgba(0, 229, 255, 0.16)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
   },
   selfStreakText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '900',
     color: '#00E5FF',
   },
@@ -735,48 +904,48 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionHeaderTitle: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '900',
     color: 'rgba(255, 255, 255, 0.5)',
     letterSpacing: 0.8,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   rosterCardList: {
-    gap: 8,
+    gap: 6,
   },
   memberRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderRadius: 14,
-    padding: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: 10,
+    padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.07)',
   },
   memberRowCardSelf: {
     borderColor: 'rgba(0, 229, 255, 0.35)',
-    backgroundColor: 'rgba(0, 229, 255, 0.04)',
+    backgroundColor: 'rgba(0, 229, 255, 0.06)',
   },
   rankNumBadge: {
-    width: 32,
-    marginRight: 8,
+    width: 28,
+    marginRight: 6,
   },
   rankNumBadgeText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#64748B',
   },
   memberAvatarCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   memberAvatarLetter: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
@@ -784,117 +953,117 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   memberName: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginBottom: 2,
+    marginBottom: 1,
   },
   memberTier: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
   },
   streakBadgePill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   streakBadgePillText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   emptyCellsCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderRadius: 20,
-    padding: 28,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    borderRadius: 14,
+    padding: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    marginTop: 20,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginTop: 16,
   },
   emptyCellsTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
     color: '#FFFFFF',
-    marginTop: 14,
-    marginBottom: 6,
+    marginTop: 12,
+    marginBottom: 5,
   },
   emptyCellsSub: {
-    fontSize: 12.5,
+    fontSize: 12,
     color: '#94A3B8',
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
+    lineHeight: 17,
+    marginBottom: 16,
     maxWidth: '85%',
   },
   createCellCTA: {
     backgroundColor: '#00E5FF',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
   },
   createCellCTAText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '900',
     color: '#000000',
   },
   cellsList: {
-    gap: 10,
+    gap: 8,
   },
   cellRankingCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderRadius: 16,
-    padding: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.68)',
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   cellRankingCardTop1: {
     borderColor: 'rgba(245, 158, 11, 0.35)',
-    backgroundColor: 'rgba(245, 158, 11, 0.03)',
+    backgroundColor: 'rgba(245, 158, 11, 0.05)',
   },
   cellRankHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   cellRankLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     flex: 1,
-    marginRight: 10,
+    marginRight: 8,
   },
   cellRankBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    borderRadius: 6,
     borderWidth: 1,
   },
   cellRankBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '900',
   },
   cellRankTitle: {
-    fontSize: 14.5,
+    fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   cellRankMotto: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#94A3B8',
     marginTop: 1,
   },
   cellStreakPill: {
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   cellStreakNumber: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '900',
     color: '#FFFFFF',
   },
@@ -904,16 +1073,66 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.05)',
-    paddingTop: 10,
+    paddingTop: 8,
+  },
+  cellRankingCardMine: {
+    borderColor: 'rgba(16, 185, 129, 0.45)',
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+  },
+  cellMetaGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   cellMetaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   cellMetaText: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#94A3B8',
     fontWeight: '600',
+  },
+  myCohortBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+  },
+  myCohortBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#10B981',
+  },
+  joinCohortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00E5FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4.5,
+    borderRadius: 6,
+  },
+  joinCohortBtnText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  viewCohortBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  viewCohortBtnText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#E2E8F0',
   },
 });

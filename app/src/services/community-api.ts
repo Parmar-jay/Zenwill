@@ -260,6 +260,26 @@ export const communityApi = {
     }
   },
 
+  async getDmUnreadCount(): Promise<DirectMessageUnreadInfo> {
+    try {
+      return await api.get<DirectMessageUnreadInfo>('/community/dm/unread-count');
+    } catch {
+      try {
+        const convs = await this.getDmConversations();
+        const unreadSum = convs.reduce((acc, c) => acc + (c.unread_count || 0), 0);
+        const latestWithUnread = convs.find((c) => (c.unread_count || 0) > 0);
+        return {
+          unread_count: unreadSum,
+          latest_sender_name: latestWithUnread?.other_user_name || null,
+          latest_sender_id: latestWithUnread?.other_user_id || null,
+          latest_message: latestWithUnread?.last_message || null,
+        };
+      } catch {
+        return { unread_count: 0 };
+      }
+    }
+  },
+
   async deleteDmConversation(targetIdentifier: string): Promise<{ status: string; message: string }> {
     try {
       return await api.delete(`/community/dm/${encodeURIComponent(targetIdentifier)}`);
@@ -269,3 +289,11 @@ export const communityApi = {
     }
   },
 };
+
+export interface DirectMessageUnreadInfo {
+  unread_count: number;
+  latest_sender_name?: string | null;
+  latest_sender_id?: string | null;
+  latest_message?: string | null;
+  latest_created_at?: string | null;
+}

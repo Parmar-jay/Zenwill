@@ -50,11 +50,11 @@ export default function EmergencyGroundingScreen() {
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const steps = [
-    { num: '5', sense: 'SEE', title: '5 Objects You Can See', instruction: 'Look around your physical space and name 5 distinct objects out loud or in your mind.', icon: 'eye-outline' as const, color: '#10B981' },
-    { num: '4', sense: 'TOUCH', title: '4 Textures You Can Feel', instruction: 'Touch 4 physical items (your shirt fabric, table surface, cold glass, or chair).', icon: 'hand-left-outline' as const, color: '#00E5FF' },
-    { num: '3', sense: 'HEAR', title: '3 Sounds You Can Hear', instruction: 'Listen closely for 3 background sounds (AC hum, distant traffic, your breath).', icon: 'ear-outline' as const, color: '#8B5CF6' },
-    { num: '2', sense: 'SMELL', title: '2 Scents You Can Smell', instruction: 'Inhale deeply and identify 2 scents or focus on fresh ambient air.', icon: 'flower-outline' as const, color: '#F59E0B' },
-    { num: '1', sense: 'TASTE', title: '1 Taste You Can Sense', instruction: 'Notice 1 taste or sip a glass of cold water to anchor physical presence.', icon: 'restaurant-outline' as const, color: '#EF4444' },
+    { num: '5', sense: 'SEE', title: '5 Things You Can See', instruction: 'Look around your room and spot 5 things (e.g. fan, table, water bottle, window, wall).', icon: 'eye-outline' as const, color: '#10B981' },
+    { num: '4', sense: 'TOUCH', title: '4 Things You Can Touch', instruction: 'Feel 4 physical textures right now (e.g. your shirt, chair, phone cover, table surface).', icon: 'hand-left-outline' as const, color: '#00E5FF' },
+    { num: '3', sense: 'HEAR', title: '3 Sounds You Can Hear', instruction: 'Listen closely for 3 sounds around you (e.g. fan hum, distant vehicles, your breathing).', icon: 'ear-outline' as const, color: '#8B5CF6' },
+    { num: '2', sense: 'SMELL', title: '2 Scents You Can Smell', instruction: 'Inhale deeply through your nose and notice 2 smells or the fresh ambient air.', icon: 'flower-outline' as const, color: '#F59E0B' },
+    { num: '1', sense: 'TASTE', title: '1 Taste You Can Sense', instruction: 'Notice the taste inside your mouth, or take a refreshing sip of water.', icon: 'restaurant-outline' as const, color: '#EF4444' },
   ];
 
   const current = steps[activeStepIndex];
@@ -79,16 +79,16 @@ export default function EmergencyGroundingScreen() {
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
-            <ThemedText style={styles.stepIndicator}>DE-ESCALATION PROTOCOL 2</ThemedText>
+            <ThemedText style={styles.stepIndicator}>STEP 3 OF 4 • 5-4-3-2-1 RESET</ThemedText>
             <ThemedText style={styles.headerTitle}>Sensory Grounding</ThemedText>
           </View>
           <View style={{ width: 38 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <ThemedText style={styles.title}>5-4-3-2-1 Sensory Reset</ThemedText>
+          <ThemedText style={styles.title}>5-4-3-2-1 Physical Reset</ThemedText>
           <ThemedText style={styles.sub}>
-            Re-engage your physical senses to force brain activity out of craving loops and back into present awareness.
+            Pull your attention out of your racing craving thoughts and anchor back into your physical surroundings.
           </ThemedText>
 
           {/* Active Step Hero Card with Animated Transition */}
@@ -163,7 +163,6 @@ export default function EmergencyGroundingScreen() {
                 animateStepChange(activeStepIndex + 1);
               } else {
                 triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-                useDailyMissionStore.getState().completeTask('rescue');
                 analyticsApi.logEvent({
                   event_type: 'emergency_exercise',
                   screen_name: 'emergency_grounding',
@@ -173,16 +172,14 @@ export default function EmergencyGroundingScreen() {
                   emotional_state: 'grounded',
                   metadata: { inputs_provided: sensoryInputs },
                 }).catch(() => {});
-                useHabitStore.getState().syncFromDatabase().catch(() => {});
-                router.push('/emergency/urge-surfing' as any);
+                router.push('/emergency/reflection' as any);
               }
             }}
-
           >
             <ThemedText style={styles.nextBtnText}>
-              {activeStepIndex < steps.length - 1 ? `Next: ${steps[activeStepIndex + 1].sense}` : 'Continue to Urge Surfing'}
+              {activeStepIndex < steps.length - 1 ? `Next: Step ${steps[activeStepIndex + 1].num} (${steps[activeStepIndex + 1].sense})` : 'Next: Victory Feedback & Save'}
             </ThemedText>
-            <Ionicons name="arrow-forward" size={16} color="#000000" />
+            <Ionicons name="arrow-forward" size={17} color="#000000" />
           </TouchableOpacity>
         </View>
       </SafeAreaView>

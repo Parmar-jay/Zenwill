@@ -8,20 +8,24 @@ from pydantic import Field
 
 class BattleSession(Document):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_number: int = 1
     # pyrefly: ignore [invalid-annotation]
     initiator_id: Indexed(str)
     initiator_name: str = "Brother Warrior"
     initiator_streak: int = 0
     initiator_location: str = "Global Sanctum"
     
-    # 90-Second Countdown & Room State
-    duration_seconds: int = 90
+    # 15-Minute Countdown (900 seconds) & Room State
+    duration_seconds: int = 900
     status: str = "active"  # "active" | "completed" | "expired"
     
-    # Participants (Brothers who answered the battle horn)
+    # Active Participants (Warriors currently active in this 15-minute session)
     participant_ids: List[str] = Field(default_factory=list)
     participants: List[Dict[str, Any]] = Field(default_factory=list)
     
+    # Live Chat Messages within this session
+    messages: List[Dict[str, Any]] = Field(default_factory=list)
+
     # Real-Time Runes / Reactions
     reactions: List[Dict[str, Any]] = Field(default_factory=list)
     

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
+import uuid
 
 from app.models.user import User
 from app.models.battle_session import BattleSession
@@ -21,21 +22,182 @@ class ReactBattleRequest(BaseModel):
     rune: str = Field(..., min_length=1, max_length=100)
 
 
+class SendBattleMessageRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=1000)
+
+
 class BattleSessionResponse(BaseModel):
     id: str
+    session_number: int = 1
     initiator_id: str
     initiator_name: str
     initiator_streak: int
     initiator_location: str
-    duration_seconds: int
+    duration_seconds: int = 900
     status: str
     participant_count: int
     participants: List[Dict[str, Any]]
-    reactions: List[Dict[str, Any]]
+    messages: List[Dict[str, Any]] = []
+    reactions: List[Dict[str, Any]] = []
     started_at: datetime
     expires_at: datetime
     time_remaining_seconds: int
     is_joined: bool = False
+
+
+EPOCH_SECONDS = 900  # 15 minutes
+
+
+def get_current_epoch_info():
+    """
+    Computes global wall-clock 15-minute epoch cycle (runs continuously in background).
+    Users entering or sending messages never alter the timer.
+    """
+    now = datetime.utcnow()
+    now_ts = int(now.timestamp())
+    epoch_number = now_ts // EPOCH_SECONDS
+    seconds_into_epoch = now_ts % EPOCH_SECONDS
+    time_remaining = EPOCH_SECONDS - seconds_into_epoch
+    epoch_start = datetime.utcfromtimestamp(epoch_number * EPOCH_SECONDS)
+    epoch_expires = datetime.utcfromtimestamp((epoch_number + 1) * EPOCH_SECONDS)
+    return epoch_number, time_remaining, epoch_start, epoch_expires
+
+
+async def purge_old_battlefield_epochs(current_epoch_number: int):
+    """
+    Purges any expired battle sessions and old messages from previous 15-minute epochs.
+    Ensures that every 15 minutes the old chat is wiped cleanly from the database.
+    """
+    try:
+        await BattleSession.find({
+            "$or": [
+                {"session_number": {"$ne": current_epoch_number}},
+                {"expires_at": {"$lte": datetime.utcnow()}},
+            ]
+        }).delete()
+    except Exception as e:
+        print(f"[Battlefield Purge Error]: {e}")
+
+
+async def get_or_create_battle_session(current_user: User) -> BattleSession:
+    """
+    Finds or provisions the active 15-minute session anchored to the global wall-clock epoch.
+    Wipes old chat history when an epoch expires.
+    """
+    now = datetime.utcnow()
+    user_id_str = str(current_user.id)
+    user_name = current_user.name or "Brother Warrior"
+    user_streak = current_user.streak or 0
+
+    epoch_number, time_remaining, epoch_start, epoch_expires = get_current_epoch_info()
+
+    # 1. Purge previous 15-minute epoch sessions & messages from DB
+    await purge_old_battlefield_epochs(epoch_number)
+
+    # 2. Find active session for current epoch
+    session = await BattleSession.find_one(
+        BattleSession.session_number == epoch_number,
+        BattleSession.status == "active",
+    )
+
+    initiator_participant = {
+        "user_id": user_id_str,
+        "name": user_name,
+        "streak": user_streak,
+        "badge": "🛡️",
+        "joined_at": now.isoformat(),
+        "last_active_at": now.isoformat(),
+    }
+
+    if not session:
+        # Create fresh session for this 15-minute epoch (Clean, zero dummy messages)
+        session = BattleSession(
+            id=str(uuid.uuid4()),
+            session_number=epoch_number,
+            initiator_id=user_id_str,
+            initiator_name=user_name,
+            initiator_streak=user_streak,
+            initiator_location="Global Sanctum",
+            duration_seconds=EPOCH_SECONDS,
+            status="active",
+            participant_ids=[user_id_str],
+            participants=[initiator_participant],
+            messages=[],
+            reactions=[],
+            honor_points_awarded=25,
+            started_at=epoch_start,
+            expires_at=epoch_expires,
+        )
+        await session.insert()
+        return session
+
+    # Session already active: add or refresh user presence
+    participant_found = False
+    updated_participants = []
+    for p in (session.participants or []):
+        if p.get("user_id") == user_id_str or p.get("name") == user_name:
+            participant_found = True
+            p["last_active_at"] = now.isoformat()
+            p["streak"] = user_streak
+            p["name"] = user_name
+        updated_participants.append(p)
+
+    if not participant_found:
+        updated_participants.append(initiator_participant)
+        if user_id_str not in (session.participant_ids or []):
+            session.participant_ids = (session.participant_ids or []) + [user_id_str]
+
+    session.participants = updated_participants
+    await session.save()
+    return session
+
+
+def format_battle_response(session: BattleSession, current_user_id: str) -> BattleSessionResponse:
+    now = datetime.utcnow()
+    time_left = max(0, int((session.expires_at - now).total_seconds()))
+
+    # Filter active participants who checked in within last 5 minutes
+    recent_threshold = (now - timedelta(minutes=5)).isoformat()
+    active_members = []
+    for p in (session.participants or []):
+        # Keep if joined recently or sent heartbeat
+        last_act = p.get("last_active_at") or p.get("joined_at") or ""
+        if last_act >= recent_threshold:
+            active_members.append(p)
+        elif p.get("user_id") == current_user_id:
+            active_members.append(p)
+
+    return BattleSessionResponse(
+        id=str(session.id),
+        session_number=getattr(session, 'session_number', 1),
+        initiator_id=session.initiator_id,
+        initiator_name=session.initiator_name,
+        initiator_streak=session.initiator_streak,
+        initiator_location=session.initiator_location,
+        duration_seconds=session.duration_seconds or 900,
+        status=session.status,
+        participant_count=len(active_members),
+        participants=active_members,
+        messages=session.messages[-100:] if hasattr(session, 'messages') and session.messages else [],
+        reactions=session.reactions[-20:] if session.reactions else [],
+        started_at=session.started_at,
+        expires_at=session.expires_at,
+        time_remaining_seconds=time_left,
+        is_joined=True,
+    )
+
+
+@router.get("/active", response_model=BattleSessionResponse)
+async def get_active_battle_session(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retrieves the current 15-minute live Spartan Battlefield urge room.
+    Automatically registers the entering user as an active member.
+    If the previous 15-minute session expired, purges it with all chat and initializes a fresh session.
+    """
+    session = await get_or_create_battle_session(current_user)
+    return format_battle_response(session, str(current_user.id))
 
 
 @router.post("/sos", response_model=BattleSessionResponse)
@@ -44,136 +206,10 @@ async def trigger_battle_horn_sos(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Triggers the Spartan Battle Horn and initiates a live 90-second sync room.
-    Posts a live battle alert to community channels so online brothers can join.
+    Enters or triggers the live 15-minute Battlefield session.
     """
-    user_id_str = str(current_user.id)
-    user_name = current_user.name or "Brother Warrior"
-    user_streak = current_user.streak or 0
-    location = payload.location or "Global Sanctum"
-
-    # Close any expired active sessions first
-    now = datetime.utcnow()
-    expired_sessions = await BattleSession.find(
-        BattleSession.status == "active",
-        BattleSession.expires_at < now,
-    ).to_list()
-    for exp in expired_sessions:
-        exp.status = "completed"
-        exp.completed_at = now
-        await exp.save()
-
-    # Check if there's already an active session initiated by this user within last 90 seconds
-    existing = await BattleSession.find_one(
-        BattleSession.initiator_id == user_id_str,
-        BattleSession.status == "active",
-        BattleSession.expires_at > now,
-    )
-    if existing:
-        time_left = max(0, int((existing.expires_at - now).total_seconds()))
-        return BattleSessionResponse(
-            id=str(existing.id),
-            initiator_id=existing.initiator_id,
-            initiator_name=existing.initiator_name,
-            initiator_streak=existing.initiator_streak,
-            initiator_location=existing.initiator_location,
-            duration_seconds=existing.duration_seconds,
-            status=existing.status,
-            participant_count=len(existing.participant_ids),
-            participants=existing.participants,
-            reactions=existing.reactions[-20:],
-            started_at=existing.started_at,
-            expires_at=existing.expires_at,
-            time_remaining_seconds=time_left,
-            is_joined=True,
-        )
-
-    duration = 90
-    expires_at = now + timedelta(seconds=duration)
-
-    initiator_participant = {
-        "user_id": user_id_str,
-        "name": user_name,
-        "badge": "🛡️",
-        "joined_at": now.isoformat(),
-    }
-
-    session = BattleSession(
-        initiator_id=user_id_str,
-        initiator_name=user_name,
-        initiator_streak=user_streak,
-        initiator_location=location,
-        duration_seconds=duration,
-        status="active",
-        participant_ids=[user_id_str],
-        participants=[initiator_participant],
-        reactions=[
-            {
-                "user_id": "system",
-                "user_name": "⚔️ Battle Horn",
-                "rune": "🚨 BATTLE HORN SOUNDED: 90-Second Shield Room Active!",
-                "created_at": now.isoformat(),
-            }
-        ],
-        honor_points_awarded=25,
-        started_at=now,
-        expires_at=expires_at,
-    )
-    await session.insert()
-
-    return BattleSessionResponse(
-        id=str(session.id),
-        initiator_id=session.initiator_id,
-        initiator_name=session.initiator_name,
-        initiator_streak=session.initiator_streak,
-        initiator_location=session.initiator_location,
-        duration_seconds=session.duration_seconds,
-        status=session.status,
-        participant_count=len(session.participant_ids),
-        participants=session.participants,
-        reactions=session.reactions,
-        started_at=session.started_at,
-        expires_at=session.expires_at,
-        time_remaining_seconds=duration,
-        is_joined=True,
-    )
-
-
-@router.get("/active", response_model=Optional[BattleSessionResponse])
-async def get_active_battle_session(
-    current_user: User = Depends(get_current_user),
-):
-    """Retrieves the currently active live Spartan Battlefield urge rescue room."""
-    now = datetime.utcnow()
-    user_id_str = str(current_user.id)
-
-    # Find most recent active session that hasn't expired
-    session = await BattleSession.find_one(
-        BattleSession.status == "active",
-        BattleSession.expires_at > now,
-    )
-    if not session:
-        return None
-
-    time_left = max(0, int((session.expires_at - now).total_seconds()))
-    is_joined = user_id_str in session.participant_ids
-
-    return BattleSessionResponse(
-        id=str(session.id),
-        initiator_id=session.initiator_id,
-        initiator_name=session.initiator_name,
-        initiator_streak=session.initiator_streak,
-        initiator_location=session.initiator_location,
-        duration_seconds=session.duration_seconds,
-        status=session.status,
-        participant_count=len(session.participant_ids),
-        participants=session.participants,
-        reactions=session.reactions[-20:],
-        started_at=session.started_at,
-        expires_at=session.expires_at,
-        time_remaining_seconds=time_left,
-        is_joined=is_joined,
-    )
+    session = await get_or_create_battle_session(current_user)
+    return format_battle_response(session, str(current_user.id))
 
 
 @router.post("/join/{session_id}", response_model=BattleSessionResponse)
@@ -181,67 +217,63 @@ async def join_battle_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
 ):
+    """Join an active battle session and register as an active warrior."""
+    session = await get_or_create_battle_session(current_user)
+    return format_battle_response(session, str(current_user.id))
+
+
+@router.post("/message", response_model=BattleSessionResponse)
+async def send_battle_message(
+    payload: SendBattleMessageRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
-    Join an active 90-second rescue room.
-    Awards +25 Brotherhood Honor Points to the joining warrior.
+    Send a real-time message to all active brothers in the current 15-minute battlefield session.
     """
     now = datetime.utcnow()
     user_id_str = str(current_user.id)
     user_name = current_user.name or "Brother Warrior"
+    user_streak = current_user.streak or 0
 
-    session = await BattleSession.find_one(
-        {"$or": [{"id": session_id}, {"_id": session_id}]},
-    )
-    if not session or session.status != "active" or session.expires_at <= now:
-        raise HTTPException(status_code=404, detail="This Battle Room has already concluded. Another battle will sound soon!")
+    session = await get_or_create_battle_session(current_user)
 
-    if user_id_str not in session.participant_ids:
-        session.participant_ids.append(user_id_str)
-        session.participants.append({
-            "user_id": user_id_str,
-            "name": user_name,
-            "badge": "⚔️",
-            "joined_at": now.isoformat(),
-        })
+    msg = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id_str,
+        "user_name": user_name,
+        "user_streak": user_streak,
+        "text": payload.text.strip(),
+        "is_system": False,
+        "created_at": now.isoformat(),
+    }
 
-        # Add join reaction
-        session.reactions.append({
-            "user_id": user_id_str,
-            "user_name": user_name,
-            "rune": f"⚔️ {user_name} entered the shield wall!",
-            "created_at": now.isoformat(),
-        })
+    if not hasattr(session, 'messages') or session.messages is None:
+        session.messages = []
 
-        # Award +25 Honor Points to User
-        current_user.total_points = (current_user.total_points or 0) + 25
-        await current_user.save()
+    session.messages.append(msg)
+    # Keep last 150 messages in current session
+    session.messages = session.messages[-150:]
 
-        # Award +25 XP to Spartan Cell if user is in one
-        cell = await SpartanCell.find_one({"member_ids": user_id_str})
-        if cell:
-            cell.collective_xp = (cell.collective_xp or 0) + 25
-            await cell.save()
+    # Update warrior's last_active_at in participants
+    for p in (session.participants or []):
+        if p.get("user_id") == user_id_str:
+            p["last_active_at"] = now.isoformat()
+            p["streak"] = user_streak
 
-        await session.save()
+    await session.save()
+    return format_battle_response(session, user_id_str)
 
-    time_left = max(0, int((session.expires_at - now).total_seconds()))
 
-    return BattleSessionResponse(
-        id=str(session.id),
-        initiator_id=session.initiator_id,
-        initiator_name=session.initiator_name,
-        initiator_streak=session.initiator_streak,
-        initiator_location=session.initiator_location,
-        duration_seconds=session.duration_seconds,
-        status=session.status,
-        participant_count=len(session.participant_ids),
-        participants=session.participants,
-        reactions=session.reactions[-20:],
-        started_at=session.started_at,
-        expires_at=session.expires_at,
-        time_remaining_seconds=time_left,
-        is_joined=True,
-    )
+@router.post("/heartbeat", response_model=BattleSessionResponse)
+async def battle_heartbeat(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Lightweight heartbeat endpoint called every few seconds to refresh active warriors presence,
+    retrieve incoming messages, and sync the countdown timer.
+    """
+    session = await get_or_create_battle_session(current_user)
+    return format_battle_response(session, str(current_user.id))
 
 
 @router.post("/react/{session_id}", response_model=BattleSessionResponse)
@@ -250,46 +282,98 @@ async def send_battle_reaction_rune(
     payload: ReactBattleRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Send a live 1-tap reaction rune to support the fighting brother."""
+    """Send a live 1-tap reaction rune / quick transmission."""
     now = datetime.utcnow()
     user_id_str = str(current_user.id)
     user_name = current_user.name or "Brother Warrior"
+    user_streak = current_user.streak or 0
 
-    session = await BattleSession.find_one(
-        {"$or": [{"id": session_id}, {"_id": session_id}]},
-    )
-    if not session or session.status != "active":
-        raise HTTPException(status_code=404, detail="Battle Room not active.")
+    session = await get_or_create_battle_session(current_user)
 
+    # Add as both reaction and chat transmission
     session.reactions.append({
         "user_id": user_id_str,
         "user_name": user_name,
         "rune": payload.rune,
         "created_at": now.isoformat(),
     })
-    # Keep only last 50 reactions in memory
     session.reactions = session.reactions[-50:]
+
+    msg = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id_str,
+        "user_name": user_name,
+        "user_streak": user_streak,
+        "text": payload.rune,
+        "is_system": False,
+        "created_at": now.isoformat(),
+    }
+    session.messages.append(msg)
+    session.messages = session.messages[-150:]
+
     await session.save()
+    return format_battle_response(session, user_id_str)
 
-    time_left = max(0, int((session.expires_at - now).total_seconds()))
-    is_joined = user_id_str in session.participant_ids
 
-    return BattleSessionResponse(
-        id=str(session.id),
-        initiator_id=session.initiator_id,
-        initiator_name=session.initiator_name,
-        initiator_streak=session.initiator_streak,
-        initiator_location=session.initiator_location,
-        duration_seconds=session.duration_seconds,
-        status=session.status,
-        participant_count=len(session.participant_ids),
-        participants=session.participants,
-        reactions=session.reactions[-20:],
-        started_at=session.started_at,
-        expires_at=session.expires_at,
-        time_remaining_seconds=time_left,
-        is_joined=is_joined,
+@router.post("/new-session", response_model=BattleSessionResponse)
+async def start_new_battlefield_session(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Explicitly wipes the current expired session along with its chat and initializes a fresh 15-minute session.
+    """
+    now = datetime.utcnow()
+    # Delete all previous sessions and their chat
+    all_sessions = await BattleSession.find().to_list()
+    max_num = 0
+    for s in all_sessions:
+        if hasattr(s, 'session_number') and s.session_number and s.session_number > max_num:
+            max_num = s.session_number
+        try:
+            await s.delete()
+        except Exception:
+            pass
+
+    next_num = max_num + 1
+    duration = 900
+    user_id_str = str(current_user.id)
+    user_name = current_user.name or "Brother Warrior"
+    user_streak = current_user.streak or 0
+
+    session = BattleSession(
+        id=str(uuid.uuid4()),
+        session_number=next_num,
+        initiator_id=user_id_str,
+        initiator_name=user_name,
+        initiator_streak=user_streak,
+        initiator_location="Global Sanctum",
+        duration_seconds=duration,
+        status="active",
+        participant_ids=[user_id_str],
+        participants=[{
+            "user_id": user_id_str,
+            "name": user_name,
+            "streak": user_streak,
+            "badge": "🛡️",
+            "joined_at": now.isoformat(),
+            "last_active_at": now.isoformat(),
+        }],
+        messages=[{
+            "id": str(uuid.uuid4()),
+            "user_id": "system",
+            "user_name": "⚔️ Spartan Commander",
+            "user_streak": 0,
+            "text": f"🛡️ TACTICAL BATTLEFIELD SESSION #{next_num} INITIATED: Fresh 15-Minute Transmission Window Active!",
+            "is_system": True,
+            "created_at": now.isoformat(),
+        }],
+        reactions=[],
+        honor_points_awarded=25,
+        started_at=now,
+        expires_at=now + timedelta(seconds=duration),
     )
+    await session.insert()
+    return format_battle_response(session, user_id_str)
 
 
 @router.post("/complete/{session_id}")
@@ -297,7 +381,7 @@ async def complete_battle_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Concludes the 90-second rescue room with victory."""
+    """Concludes the battlefield rescue room with victory and awards honor."""
     now = datetime.utcnow()
     session = await BattleSession.find_one(
         {"$or": [{"id": session_id}, {"_id": session_id}]},
@@ -309,9 +393,38 @@ async def complete_battle_session(
     session.completed_at = now
     await session.save()
 
+    # Award honor points
+    current_user.total_points = (current_user.total_points or 0) + 25
+    await current_user.save()
+
     return {
         "status": "success",
-        "message": "Shield room completed with victory. The line holds!",
+        "message": "Battlefield session completed with victory. The line holds!",
         "participants_count": len(session.participant_ids),
         "honor_awarded": 25,
     }
+
+
+@router.post("/leave")
+async def leave_battle_session(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Removes the user from active participants list when they leave the battlefield
+    (either by pressing Back or tapping Done).
+    """
+    now = datetime.utcnow()
+    user_id_str = str(current_user.id)
+    session = await BattleSession.find_one(
+        BattleSession.status == "active",
+        BattleSession.expires_at > now,
+    )
+    if session:
+        session.participant_ids = [pid for pid in (session.participant_ids or []) if pid != user_id_str]
+        session.participants = [
+            p for p in (session.participants or [])
+            if p.get("user_id") != user_id_str and p.get("name") != current_user.name
+        ]
+        await session.save()
+    return {"status": "success", "message": "Left battlefield"}
+

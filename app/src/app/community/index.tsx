@@ -27,6 +27,7 @@ import * as Haptics from 'expo-haptics';
 import { useHabitStore } from '@/store/habit-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
 import { useAuthStore } from '@/store/auth-store';
+import { useUnreadStore } from '@/store/unread-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   communityApi,
@@ -182,6 +183,7 @@ export default function CommunityWorldChatScreen() {
 
   // Tab View Mode: 'world' or 'dms'
   const [activeTab, setActiveTab] = useState<'world' | 'dms'>('world');
+  const unreadCount = useUnreadStore((s) => s.unreadCount);
 
   // Messages State hydrated instantly from cache (zero reload flicker)
   const [messages, setMessages] = useState<WorldChatMessage[]>(() => getCachedMessages());
@@ -567,6 +569,7 @@ export default function CommunityWorldChatScreen() {
             }}
           >
             <Ionicons name="chevron-back" size={24} color="#00E5FF" />
+            {unreadCount > 0 && <View style={styles.unreadTopLeftBadge} />}
           </TouchableOpacity>
 
           {/* Centered Pill Tab Switcher */}
@@ -1001,6 +1004,23 @@ const styles = StyleSheet.create({
     padding: 4,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  unreadTopLeftBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#030712',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    elevation: 4,
   },
   tabSwitcher: {
     flexDirection: 'row',

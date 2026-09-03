@@ -7,6 +7,9 @@ import {
   Platform,
   Animated,
   Easing,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
@@ -18,6 +21,8 @@ import { EMERGENCY_SOS_SEQUENCE } from '@/constants/practices';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { useHabitStore } from '@/store/habit-store';
 import { analyticsApi } from '@/services/analytics-api';
+import { omSoundManager } from '@/utils/audio-player';
+import { BreathingParticles } from '@/components/BreathingParticles';
 
 
 const triggerHaptic = (style = Haptics.ImpactFeedbackStyle.Light) => {
@@ -39,6 +44,7 @@ export default function EmergencyBreathingScreen() {
 
   const handleGoBack = () => {
     triggerHaptic();
+    omSoundManager.stopAndUnload();
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -56,12 +62,94 @@ export default function EmergencyBreathingScreen() {
   // Breathing Stage Text State ('Inhale' | 'Hold' | 'Exhale' | 'Paused')
   const [breathStage, setBreathStage] = useState<'Inhale' | 'Hold' | 'Exhale' | 'Paused'>('Inhale');
 
+  // Effectiveness Review Modal State
+  const [isFeedbackModalVisible, setIsFeedbackModalVisible] = useState<boolean>(false);
+  const [selectedTrigger, setSelectedTrigger] = useState<string>('Screen / Late Night Phone');
+  const [effectivenessRating, setEffectivenessRating] = useState<number>(5);
+  const [urgeOutcome, setUrgeOutcome] = useState<'vanished' | 'weakened' | 'holding_strong'>('vanished');
+  const [userNote, setUserNote] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
   // Animation values
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0.4)).current;
 
   const currentSosPhase = EMERGENCY_SOS_SEQUENCE.phases[sosPhaseIndex] || EMERGENCY_SOS_SEQUENCE.phases[0];
   const themeColor = currentSosPhase.color || '#10B981';
+
+  // 396 Hz Emergency Audio Trigger
+  useEffect(() => {
+    const tune = omSoundManager.getTuneForTechnique('emergency-sos');
+    omSoundManager.setTune(tune).then(() => {
+      if (isSosRunning) {
+        omSoundManager.play();
+      }
+    });
+
+    return () => {
+      omSoundManager.stopAndUnload();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isSosRunning) {
+      omSoundManager.play();
+    } else {
+      omSoundManager.pause();
+    }
+  }, [isSosRunning]);
+
+  // Open Feedback Form and Stop Audio Immediately
+  const handleOpenFeedback = () => {
+    setIsSosRunning(false);
+    omSoundManager.stopAndUnload();
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    setIsFeedbackModalVisible(true);
+  };
+
+  // Complete Rescue Task and Log Feedback to Database
+  const handleCompleteRescue = async () => {
+    setIsSubmitting(true);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    omSoundManager.stopAndUnload();
+
+    // 1. Complete Daily Mission Task
+    useDailyMissionStore.getState().completeTask('rescue');
+
+    // 2. Fire backend logging in background
+    try {
+      await Promise.all([
+        analyticsApi.completeEmergency({
+          session_id: 'sos_' + Date.now(),
+          techniques_used: ['396Hz Box Breathing', 'Pranayama De-escalation'],
+          outcome: 'resisted',
+          trigger_reason: selectedTrigger,
+          most_helpful_technique: '396Hz Box Breathing',
+          user_feedback: userNote || `Effectiveness: ${effectivenessRating}/5 stars. Outcome: ${urgeOutcome}.`,
+          was_effective: effectivenessRating >= 3,
+        }),
+        analyticsApi.logEvent({
+          event_type: 'emergency_exercise',
+          screen_name: 'emergency_breathing',
+          feature_name: 'box_breathing',
+          duration_seconds: 180,
+          outcome: urgeOutcome === 'vanished' ? 'resisted' : 'managed',
+          emotional_state: 'grounded',
+          metadata: {
+            trigger: selectedTrigger,
+            rating: effectivenessRating,
+            outcome: urgeOutcome,
+            user_note: userNote,
+          },
+        }),
+      ]);
+      useHabitStore.getState().syncFromDatabase().catch(() => {});
+    } catch (_) {}
+
+    setIsSubmitting(false);
+    setIsFeedbackModalVisible(false);
+    router.replace('/(tabs)/home' as any);
+  };
 
   // SOS Timer Loop
   useEffect(() => {
@@ -76,22 +164,12 @@ export default function EmergencyBreathingScreen() {
               triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
               return EMERGENCY_SOS_SEQUENCE.phases[nextIdx].durationSec;
             } else {
+              // On 5-min breathing completion, seamlessly advance to Step 2: Urge Surfing
               setIsSosRunning(false);
               triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-              useDailyMissionStore.getState().completeTask('rescue');
-              analyticsApi.logEvent({
-                event_type: 'emergency_exercise',
-                screen_name: 'emergency_breathing',
-                feature_name: 'box_breathing',
-                duration_seconds: 180,
-                outcome: 'resisted',
-                emotional_state: 'grounded',
-                metadata: { phases_completed: EMERGENCY_SOS_SEQUENCE.phases.length },
-              }).catch(() => {});
-              useHabitStore.getState().syncFromDatabase().catch(() => {});
+              router.push('/emergency/urge-surfing' as any);
               return 0;
             }
-
           }
           return prev - 1;
         });
@@ -223,7 +301,7 @@ export default function EmergencyBreathingScreen() {
           <View style={{ alignItems: 'center' }}>
             <View style={styles.badgeRow}>
               <View style={[styles.sosPulseDot, { backgroundColor: themeColor }]} />
-              <ThemedText style={styles.stepIndicator}>DE-ESCALATION PROTOCOL 1</ThemedText>
+              <ThemedText style={styles.stepIndicator}>STEP 1 OF 4 • 5-MIN MIND SHIELD</ThemedText>
             </View>
             <ThemedText style={styles.headerTitle}>Mind Shield Breathing</ThemedText>
           </View>
@@ -308,28 +386,14 @@ export default function EmergencyBreathingScreen() {
               </View>
             </View>
 
-            {/* Breathing Animated Orb Container */}
+            {/* Native Particle Breathing Visualization */}
             <View style={styles.animationContainer}>
-              <Animated.View
-                style={[
-                  styles.breathGlowRing,
-                  {
-                    backgroundColor: `${themeColor}15`,
-                    borderColor: themeColor,
-                    transform: [{ scale: scaleAnim }],
-                    opacity: pulseOpacity,
-                  },
-                ]}
+              <BreathingParticles
+                phase={breathStage}
+                color={themeColor}
+                isRunning={isSosRunning}
+                size={260}
               />
-
-              <View style={[styles.breathCoreCircle, { borderColor: themeColor }]}>
-                <ThemedText style={[styles.breathStageText, { color: themeColor }]}>
-                  {breathStage}
-                </ThemedText>
-                <ThemedText style={styles.breathSubText}>
-                  {isSosRunning ? 'Rhythmic Breath' : 'Paused'}
-                </ThemedText>
-              </View>
             </View>
 
             {/* Playback Controls Row */}
@@ -383,28 +447,6 @@ export default function EmergencyBreathingScreen() {
               <ThemedText style={styles.instructionText}>{currentSosPhase.description}</ThemedText>
             </View>
           </View>
-
-          {/* Spiritual / Mantra Anchor Card */}
-          <View style={styles.mantraCard}>
-            <View style={styles.mantraHeaderRow}>
-              <View style={styles.mantraIconBox}>
-                <Ionicons name="sparkles" size={16} color="#00E5FF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.mantraSectionTitle}>Spiritual Focus Anchor</ThemedText>
-                <ThemedText style={styles.mantraSectionSub}>Hare Krishna Maha-Mantra</ThemedText>
-              </View>
-            </View>
-
-            <View style={styles.mantraDisplayCard}>
-              <ThemedText style={styles.mantraText}>
-                "Hare Krishna Hare Krishna, Krishna Krishna Hare Hare,{'\n'}Hare Rama Hare Rama, Rama Rama Hare Hare"
-              </ThemedText>
-            </View>
-            <ThemedText style={styles.mantraHint}>
-              Mentally synchronize this vibration with your breathing cycle to dissolve mental urge momentum.
-            </ThemedText>
-          </View>
         </ScrollView>
 
         {/* Bottom Navigation Dock */}
@@ -414,13 +456,208 @@ export default function EmergencyBreathingScreen() {
             activeOpacity={0.85}
             onPress={() => {
               triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-              router.push('/emergency/grounding' as any);
+              router.push('/emergency/urge-surfing' as any);
             }}
           >
-            <ThemedText style={styles.nextBtnText}>Continue to Sensory Grounding</ThemedText>
-            <Ionicons name="arrow-forward" size={18} color="#000000" />
+            <ThemedText style={styles.nextBtnText}>Next: 90s Urge Surfing</ThemedText>
+            <Ionicons name="arrow-forward" size={17} color="#000000" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.finishRescueBtn, { borderColor: `${themeColor}50` }]}
+            activeOpacity={0.8}
+            onPress={() => {
+              triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/emergency/reflection' as any);
+            }}
+          >
+            <Ionicons name="checkmark-circle-outline" size={16} color={themeColor} />
+            <ThemedText style={[styles.finishRescueText, { color: themeColor }]}>Skip to Victory Feedback</ThemedText>
           </TouchableOpacity>
         </View>
+
+        {/* Effectiveness & Trigger Review Modal */}
+        <Modal
+          visible={isFeedbackModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => {
+            if (!isSubmitting) setIsFeedbackModalVisible(false);
+          }}
+        >
+          <View style={styles.feedbackModalBackdrop}>
+            <View style={styles.feedbackModalCard}>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 16 }}>
+                {/* Modal Header */}
+                <View style={styles.feedbackHeaderRow}>
+                  <View style={styles.feedbackIconBadge}>
+                    <Ionicons name="shield-checkmark" size={20} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.feedbackTitle}>Rescue Effectiveness</ThemedText>
+                    <ThemedText style={styles.feedbackSub}>Help us learn what triggers your cravings</ThemedText>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.feedbackCloseBtn}
+                    onPress={() => setIsFeedbackModalVisible(false)}
+                  >
+                    <Ionicons name="close" size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Section 1: What triggered this urge? */}
+                <View style={styles.feedbackSection}>
+                  <ThemedText style={styles.feedbackSectionLabel}>1. WHAT TRIGGERED THIS URGE?</ThemedText>
+                  <View style={styles.triggerChipsWrap}>
+                    {[
+                      '📱 Screen / Late Night Phone',
+                      '💼 Work / Study Stress',
+                      '🥱 Boredom & Idleness',
+                      '🌪️ Loneliness & Isolation',
+                      '😡 Anger & Frustration',
+                      '💬 Social Media Temptation',
+                      '❓ Sudden / Spontaneous Craving',
+                    ].map((trigger) => {
+                      const isSelected = selectedTrigger === trigger;
+                      return (
+                        <TouchableOpacity
+                          key={trigger}
+                          style={[
+                            styles.triggerChip,
+                            isSelected && styles.triggerChipActive,
+                          ]}
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            triggerHaptic();
+                            setSelectedTrigger(trigger);
+                          }}
+                        >
+                          <ThemedText
+                            style={[
+                              styles.triggerChipText,
+                              isSelected && styles.triggerChipTextActive,
+                            ]}
+                          >
+                            {trigger}
+                          </ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Section 2: How helpful was this session? */}
+                <View style={styles.feedbackSection}>
+                  <ThemedText style={styles.feedbackSectionLabel}>2. HOW HELPFUL WAS THIS 396Hz RESCUE?</ThemedText>
+                  <View style={styles.ratingRow}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <TouchableOpacity
+                        key={star}
+                        style={[
+                          styles.ratingStarBtn,
+                          effectivenessRating >= star && styles.ratingStarBtnActive,
+                        ]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          triggerHaptic();
+                          setEffectivenessRating(star);
+                        }}
+                      >
+                        <Ionicons
+                          name={effectivenessRating >= star ? 'star' : 'star-outline'}
+                          size={22}
+                          color={effectivenessRating >= star ? '#F59E0B' : 'rgba(255, 255, 255, 0.3)'}
+                        />
+                        <ThemedText style={styles.starNumText}>{star}</ThemedText>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <ThemedText style={styles.ratingLabelText}>
+                    {effectivenessRating === 5 && '🌟 Extremely Effective • Urge Completely Dissolved'}
+                    {effectivenessRating === 4 && '✨ Strong Relief • Mind Fully Stabilized'}
+                    {effectivenessRating === 3 && '👍 Good Calm • Feeling in Control'}
+                    {effectivenessRating === 2 && '⏳ Calmed Down • Still Processing'}
+                    {effectivenessRating === 1 && '🛡️ Slight Relief • Need Extra Grounding'}
+                  </ThemedText>
+                </View>
+
+                {/* Section 3: Current Urge State */}
+                <View style={styles.feedbackSection}>
+                  <ThemedText style={styles.feedbackSectionLabel}>3. CURRENT URGE INTENSITY</ThemedText>
+                  <View style={{ gap: 8 }}>
+                    {[
+                      { id: 'vanished', label: '✅ Urge Vanished (0-2/10)', sub: 'Fully grounded and clear' },
+                      { id: 'weakened', label: '⚡ Significantly Weakened (3-4/10)', sub: 'Craving spike de-escalated' },
+                      { id: 'holding_strong', label: '🛡️ Managed & Holding Strong', sub: 'In control of my actions' },
+                    ].map((opt) => {
+                      const isSelected = urgeOutcome === opt.id;
+                      return (
+                        <TouchableOpacity
+                          key={opt.id}
+                          style={[
+                            styles.outcomeOptionCard,
+                            isSelected && styles.outcomeOptionCardActive,
+                          ]}
+                          activeOpacity={0.85}
+                          onPress={() => {
+                            triggerHaptic();
+                            setUrgeOutcome(opt.id as any);
+                          }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={[styles.outcomeOptionTitle, isSelected && styles.outcomeOptionTitleActive]}>
+                              {opt.label}
+                            </ThemedText>
+                            <ThemedText style={styles.outcomeOptionSub}>{opt.sub}</ThemedText>
+                          </View>
+                          {isSelected && (
+                            <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Section 4: Optional Reflection Note */}
+                <View style={styles.feedbackSection}>
+                  <ThemedText style={styles.feedbackSectionLabel}>4. PERSONAL NOTE (OPTIONAL)</ThemedText>
+                  <TextInput
+                    style={styles.noteInput}
+                    placeholder="What thought or cue helped you regain self-control?"
+                    placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                    multiline
+                    value={userNote}
+                    onChangeText={setUserNote}
+                  />
+                </View>
+
+                {/* Submit & Complete CTA */}
+                <TouchableOpacity
+                  style={[styles.submitRescueBtn, isSubmitting && { opacity: 0.7 }]}
+                  activeOpacity={0.88}
+                  disabled={isSubmitting}
+                  onPress={handleCompleteRescue}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color="#000000" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="shield-checkmark" size={18} color="#000000" />
+                      <ThemedText style={styles.submitRescueBtnText}>Complete Rescue & Log Victory 🛡️</ThemedText>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.rewardNoticeBox}>
+                  <Ionicons name="flame" size={14} color="#F59E0B" />
+                  <ThemedText style={styles.rewardNoticeText}>+50 Discipline XP • Daily Rescue Mission Completed</ThemedText>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
       </SafeAreaView>
     </View>
   );
@@ -579,45 +816,10 @@ const styles = StyleSheet.create({
 
   // Animation Visual
   animationContainer: {
-    width: 200,
-    height: 200,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 6,
-  },
-  breathGlowRing: {
-    position: 'absolute',
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    borderWidth: 2,
-  },
-  breathCoreCircle: {
-    width: 136,
-    height: 136,
-    borderRadius: 68,
-    backgroundColor: 'rgba(10, 15, 30, 0.85)',
-    borderWidth: 2.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-  },
-  breathStageText: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  breathSubText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94A3B8',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 2,
+    marginVertical: 4,
   },
 
   // Controls Row
@@ -625,7 +827,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 20,
+    gap: 24,
+    marginTop: 8,
+    marginBottom: 4,
+    width: '100%',
   },
   navControlBtn: {
     width: 40,
@@ -738,6 +943,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#060913',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 10,
+  },
+  finishRescueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    ...webNoOutline,
+  },
+  finishRescueText: {
+    fontSize: 13,
+    fontWeight: '800',
   },
   nextBtn: {
     flexDirection: 'row',
@@ -752,5 +973,187 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 14,
     fontWeight: '900',
+  },
+
+  // Feedback & Effectiveness Modal Styles
+  feedbackModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'flex-end',
+  },
+  feedbackModalCard: {
+    backgroundColor: '#0F172A',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    maxHeight: '88%',
+  },
+  feedbackHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
+  feedbackIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feedbackTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  feedbackSub: {
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.55)',
+  },
+  feedbackCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feedbackSection: {
+    gap: 8,
+  },
+  feedbackSectionLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+  },
+  triggerChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  triggerChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  triggerChipActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: '#10B981',
+  },
+  triggerChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  triggerChipTextActive: {
+    color: '#10B981',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  ratingStarBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 2,
+  },
+  ratingStarBtnActive: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: '#F59E0B',
+  },
+  starNumText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  ratingLabelText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#F59E0B',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  outcomeOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  outcomeOptionCardActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderColor: '#10B981',
+  },
+  outcomeOptionTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  outcomeOptionTitleActive: {
+    color: '#10B981',
+  },
+  outcomeOptionSub: {
+    fontSize: 10.5,
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  noteInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 12,
+    padding: 12,
+    color: '#FFFFFF',
+    fontSize: 12,
+    minHeight: 64,
+    textAlignVertical: 'top',
+  },
+  submitRescueBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginTop: 6,
+  },
+  submitRescueBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  rewardNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+  },
+  rewardNoticeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#F59E0B',
   },
 });

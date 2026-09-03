@@ -1,90 +1,75 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Animated,
-  Easing,
+  TextInput,
   Platform,
   ActivityIndicator,
   Dimensions,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Circle, Defs, Stop, LinearGradient as SvgLinearGradient } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
+import { BreathingParticles } from '../../components/BreathingParticles';
+import { OmSoundManager } from '../../utils/audio-player';
+import { BattleMessageItem, BattleParticipant, spartanApi } from '../../services/spartan-api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const TOTAL_SESSION_SECONDS = 90;
-const CIRCLE_SIZE = 190;
-const STROKE_WIDTH = 5;
-const RADIUS = (CIRCLE_SIZE - STROKE_WIDTH * 2) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-const REACTION_RUNES = [
-  { id: 'rune-1', text: 'Hold the line ⚔️', icon: 'shield-outline', color: '#00E5FF', bg: 'rgba(0, 229, 255, 0.12)' },
-  { id: 'rune-2', text: 'Transmute it 🔥', icon: 'flame-outline', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' },
-  { id: 'rune-3', text: 'You are sovereign 👑', icon: 'ribbon-outline', color: '#10B981', bg: 'rgba(16, 185, 129, 0.12)' },
-  { id: 'rune-4', text: 'Breathe with me 🛡️', icon: 'water-outline', color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)' },
-  { id: 'rune-5', text: 'Pure Ojas ⚡', icon: 'flash-outline', color: '#EAB308', bg: 'rgba(234, 179, 8, 0.12)' },
-  { id: 'rune-6', text: 'Unbreakable 💎', icon: 'diamond-outline', color: '#A855F7', bg: 'rgba(168, 85, 247, 0.12)' },
-  { id: 'rune-7', text: 'Stand firm 🛡️', icon: 'shield-checkmark-outline', color: '#06B6D4', bg: 'rgba(6, 182, 212, 0.12)' },
-  { id: 'rune-8', text: 'Iron will 🦾', icon: 'fitness-outline', color: '#EC4899', bg: 'rgba(236, 72, 153, 0.12)' },
-  { id: 'rune-9', text: 'Victory is ours 🏆', icon: 'trophy-outline', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' },
-  { id: 'rune-10', text: 'Channel the surge 🌊', icon: 'boat-outline', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.12)' },
-  { id: 'rune-11', text: 'Stay rooted 🌲', icon: 'leaf-outline', color: '#22C55E', bg: 'rgba(34, 197, 94, 0.12)' },
+const QUICK_TRANSMISSION_CHIPS = [
+  'Hold the line ⚔️',
+  'Breathe with me 🌊',
+  'Stay strong brother 🔥',
+  'You are sovereign 👑',
+  'Stillness over impulse 🛡️',
+  'Channel the surge ⚡',
+  'Pure Ojas 💎',
+  'Iron will 🦾',
 ];
-
-const BREATH_PHASES = [
-  { label: 'INHALE', sub: 'Draw strength inward', duration: 4000, color: '#00E5FF', tip: 'Slow, deep breath through the nose. Fill the diaphragm completely.' },
-  { label: 'HOLD', sub: 'Transmute into willpower', duration: 4000, color: '#F59E0B', tip: 'Stillness. Transmute raw urge energy into willpower and focus.' },
-  { label: 'EXHALE', sub: 'Release all tension', duration: 6000, color: '#10B981', tip: 'Controlled, smooth exhale through the mouth. Ground your energy.' },
-];
-
-interface FloatingRune {
-  id: string;
-  text: string;
-  color: string;
-  animY: Animated.Value;
-  animOpacity: Animated.Value;
-  animScale: Animated.Value;
-  xOffset: number;
-}
 
 export default function SpartanBattlefieldScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const {
     activeBattle,
-    fetchActiveBattle,
+    myCell,
+    fetchMyCell,
     triggerBattleHorn,
-    joinActiveBattle,
-    sendReactionRune,
+    sendBattleMessage,
+    battleHeartbeat,
+    startNewBattleSession,
     completeBattle,
   } = useSpartanStore();
 
-  const [secondsLeft, setSecondsLeft] = useState<number>(90);
-  const [phaseIndex, setPhaseIndex] = useState<number>(0);
-  const [phaseSecondsRemaining, setPhaseSecondsRemaining] = useState<number>(4);
-  const [isCompleted, setIsCompleted] = useState<boolean>(false);
-  const [isInitiating, setIsInitiating] = useState<boolean>(false);
-  const [floatingRunes, setFloatingRunes] = useState<FloatingRune[]>([]);
-  const [nowMs, setNowMs] = useState<number>(Date.now());
+  const currentUserId = user?.id ? String(user.id).trim().toLowerCase() : (user?.email || '').trim().toLowerCase();
+  const currentUserName = user?.name || 'Brother Warrior';
+  const currentUserStreak = user?.streak || 0;
 
-  // Smooth Animations
-  const victoryScale = useRef(new Animated.Value(0.8)).current;
-  const breathScaleAnim = useRef(new Animated.Value(1)).current;
-  const timerRef = useRef<any>(null);
-  const phaseTimerRef = useRef<any>(null);
-  const pollRef = useRef<any>(null);
-  const clockRef = useRef<any>(null);
+  // Local Chat and Presence State
+  const [inputText, setInputText] = useState<string>('');
+  const [localMessages, setLocalMessages] = useState<BattleMessageItem[]>([]);
+  const [isSending, setIsSending] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isResettingSession, setIsResettingSession] = useState<boolean>(false);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(900);
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+  const [isInputFocused, setIsInputFocused] = useState<boolean>(false);
+
+  const scrollViewRef = useRef<ScrollView>(null);
+  const pollTimerRef = useRef<any>(null);
+  const countdownTimerRef = useRef<any>(null);
+  const soundManagerRef = useRef<OmSoundManager | null>(null);
 
   const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
     try {
@@ -96,974 +81,1119 @@ export default function SpartanBattlefieldScreen() {
     } catch {}
   }, []);
 
-  // Update wall clock every second for individual participant timeline calculation
+  // ── 1. Background Emergency Audio Auto-Play & Continuous Loop ────────────
   useEffect(() => {
-    clockRef.current = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
+    const soundMgr = OmSoundManager.getInstance();
+    soundManagerRef.current = soundMgr;
+
+    const startAudio = async () => {
+      try {
+        const emergencyTune = soundMgr.getTuneForTechnique('emergency-sos');
+        await soundMgr.setTune(emergencyTune);
+        await soundMgr.play();
+        setIsMuted(soundMgr.getIsMuted());
+      } catch (e) {
+        // Audio fallback
+      }
+    };
+
+    startAudio();
+
+    // Loop keeper: ensures the background urge reset music continuously loops without cutting out
+    const loopInterval = setInterval(() => {
+      if (soundManagerRef.current && !soundManagerRef.current.getIsMuted() && !soundManagerRef.current.getIsPlaying()) {
+        soundManagerRef.current.play().catch(() => {});
+      }
+    }, 2500);
+
     return () => {
-      if (clockRef.current) clearInterval(clockRef.current);
+      clearInterval(loopInterval);
+      if (soundManagerRef.current) {
+        soundManagerRef.current.stopAndUnload().catch(() => {});
+      }
     };
   }, []);
 
-  // Initialize or Join Battle Session
+  const handleToggleMute = useCallback(() => {
+    triggerHaptic('light');
+    if (soundManagerRef.current) {
+      const nextMute = soundManagerRef.current.toggleMute();
+      setIsMuted(nextMute);
+    }
+  }, [triggerHaptic]);
+
+  // ── 2. Keyboard Listeners ────────────────────────────────────────────────
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0)
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // ── 3. Clean Exit Handler (Back Button, Done Button, Screen Exit) ─────────
+  const handleExitBattlefield = useCallback(async () => {
+    triggerHaptic('medium');
+    try {
+      await spartanApi.leaveBattleSession();
+      if (activeBattle?.id) {
+        completeBattle(activeBattle.id).catch(() => {});
+      }
+    } catch (_) {}
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/home' as any);
+    }
+  }, [router, triggerHaptic, activeBattle?.id, completeBattle]);
+
+  useEffect(() => {
+    return () => {
+      spartanApi.leaveBattleSession().catch(() => {});
+    };
+  }, []);
+
+  // ── 4. Global 15-Minute Background Countdown Synchronization ─────────────
+  // Runs based on absolute wall-clock 15-minute epoch (:00, :15, :30, :45)
+  // Individual user presence never resets or affects the timer!
+  const calculateGlobalRemaining = useCallback(() => {
+    const nowTs = Math.floor(Date.now() / 1000);
+    const secondsIntoEpoch = nowTs % 900;
+    return 900 - secondsIntoEpoch;
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
-    async function initSession() {
-      setIsInitiating(true);
+    const initBattlefield = async () => {
       try {
-        let session = await fetchActiveBattle();
-        if (!session) {
-          session = await triggerBattleHorn(user?.name ? `${user.name}'s Sanctum` : 'Global Sanctum');
-        } else if (!session.is_joined) {
-          session = await joinActiveBattle(session.id);
+        fetchMyCell().catch(() => {});
+        let battle = await spartanApi.getActiveBattleSession();
+        if (!battle || battle.status !== 'active') {
+          battle = await triggerBattleHorn('Global Sanctum');
         }
-
-        if (isMounted && session) {
-          setSecondsLeft(session.time_remaining_seconds || 90);
+        if (isMounted && battle) {
+          useSpartanStore.setState({ activeBattle: battle });
+          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 250);
         }
       } catch (err) {
-        console.log('Battlefield init error:', err);
-      } finally {
-        if (isMounted) setIsInitiating(false);
+        try {
+          const fallbackBattle = await triggerBattleHorn('Global Sanctum');
+          if (isMounted && fallbackBattle) {
+            useSpartanStore.setState({ activeBattle: fallbackBattle });
+          }
+        } catch (_) {}
       }
-    }
+    };
 
-    initSession();
+    initBattlefield();
 
-    // Fast 1.5s real-time poll for live feeds and user timelines
-    pollRef.current = setInterval(() => {
-      fetchActiveBattle().catch(() => {});
-    }, 1500);
+    // Heartbeat every 3 seconds to sync active warriors roster and real messages
+    pollTimerRef.current = setInterval(async () => {
+      if (!isMounted) return;
+      try {
+        await battleHeartbeat();
+      } catch (e) {
+        // Silent catch
+      }
+    }, 3000);
 
     return () => {
       isMounted = false;
-      if (pollRef.current) clearInterval(pollRef.current);
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, []);
+  }, [triggerBattleHorn, battleHeartbeat, fetchMyCell]);
 
-  // Simple, Rock-Solid 90s Countdown Timer
+  // Global 15-Minute Wall-Clock Countdown Timer
   useEffect(() => {
-    timerRef.current = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          setIsCompleted(true);
-          triggerHaptic('heavy');
-          Animated.spring(victoryScale, {
-            toValue: 1,
-            friction: 5,
-            tension: 40,
-            useNativeDriver: true,
-          }).start();
-          if (activeBattle?.id) {
-            completeBattle(activeBattle.id).catch(() => {});
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
+    setSecondsRemaining(calculateGlobalRemaining());
+
+    countdownTimerRef.current = setInterval(() => {
+      const rem = calculateGlobalRemaining();
+      setSecondsRemaining(rem);
+
+      // When reaching 900 (the exact boundary of a 15-min epoch), wipe old chat and refresh room
+      if (rem >= 899) {
+        setLocalMessages([]);
+        battleHeartbeat().catch(() => {});
+      }
     }, 1000);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
-  }, [activeBattle?.id, victoryScale, completeBattle, triggerHaptic]);
+  }, [calculateGlobalRemaining, battleHeartbeat]);
 
-  // Synchronized Diaphragmatic Breath Phase Loop with Smooth Breathing Scale
-  useEffect(() => {
-    let isCancelled = false;
+  // Format MM:SS
+  const formattedCountdown = useMemo(() => {
+    const mins = Math.floor(Math.max(0, secondsRemaining) / 60);
+    const secs = Math.max(0, secondsRemaining) % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }, [secondsRemaining]);
 
-    function runBreathPhase(idx: number) {
-      if (isCancelled || isCompleted) return;
-      const phase = BREATH_PHASES[idx];
-      setPhaseIndex(idx);
-      const phaseDurationSec = Math.round(phase.duration / 1000);
-      setPhaseSecondsRemaining(phaseDurationSec);
-      triggerHaptic('light');
+  const timerProgress = useMemo(() => {
+    const total = (activeBattle?.duration_seconds && activeBattle.duration_seconds > 100) ? activeBattle.duration_seconds : 900;
+    return Math.max(0, Math.min(1, secondsRemaining / total));
+  }, [secondsRemaining, activeBattle?.duration_seconds]);
 
-      // Smooth Scale Transition
-      if (idx === 0) {
-        // Inhale: expand
-        Animated.timing(breathScaleAnim, {
-          toValue: 1.06,
-          duration: phase.duration,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }).start();
-      } else if (idx === 2) {
-        // Exhale: contract
-        Animated.timing(breathScaleAnim, {
-          toValue: 0.98,
-          duration: phase.duration,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }).start();
-      }
+  const timerColor = useMemo(() => {
+    if (secondsRemaining <= 120) return '#EF4444'; // Red under 2m
+    if (secondsRemaining <= 300) return '#F59E0B'; // Amber under 5m
+    return '#00E5FF'; // Cyan default
+  }, [secondsRemaining]);
 
-      let currentSec = phaseDurationSec;
-      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
-      phaseTimerRef.current = setInterval(() => {
-        currentSec -= 1;
-        if (currentSec >= 0) {
-          setPhaseSecondsRemaining(currentSec);
-        }
-      }, 1000);
+  // ── 5. Send Message (Instant Optimistic + Resilient Backend Sync) ─────────
+  const handleSendMessage = useCallback(async (customText?: string) => {
+    const textToSend = (customText || inputText).trim();
+    if (!textToSend || isSending) return;
 
-      setTimeout(() => {
-        if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
-        if (!isCancelled && !isCompleted) {
-          runBreathPhase((idx + 1) % BREATH_PHASES.length);
-        }
-      }, phase.duration);
-    }
-
-    runBreathPhase(0);
-
-    return () => {
-      isCancelled = true;
-      if (phaseTimerRef.current) clearInterval(phaseTimerRef.current);
-    };
-  }, [isCompleted, breathScaleAnim, triggerHaptic]);
-
-  // Spawn Twitch/Live-Stream Floating Reaction Rune
-  const handleSendRune = async (runeText: string, color: string) => {
     triggerHaptic('medium');
+    if (!customText) {
+      setInputText('');
+    }
+    setIsSending(true);
 
-    const runeId = `${Date.now()}-${Math.random()}`;
-    const animY = new Animated.Value(0);
-    const animOpacity = new Animated.Value(1);
-    const animScale = new Animated.Value(0.7);
-    const xOffset = Math.floor(Math.random() * 180) - 90;
-
-    const newFloatingRune: FloatingRune = {
-      id: runeId,
-      text: runeText,
-      color,
-      animY,
-      animOpacity,
-      animScale,
-      xOffset,
+    // 1. Optimistic instant local append: 0ms delay!
+    const optimisticMsg: BattleMessageItem = {
+      id: `local-${Date.now()}-${Math.random()}`,
+      user_id: currentUserId,
+      user_name: currentUserName,
+      user_streak: currentUserStreak,
+      text: textToSend,
+      is_system: false,
+      created_at: new Date().toISOString(),
     };
 
-    setFloatingRunes((prev) => [...prev, newFloatingRune]);
+    setLocalMessages((prev) => [...prev, optimisticMsg]);
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
 
-    Animated.parallel([
-      Animated.timing(animY, {
-        toValue: -260,
-        duration: 1700,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.spring(animScale, {
-        toValue: 1.15,
-        friction: 4,
-        useNativeDriver: true,
-      }),
-      Animated.sequence([
-        Animated.delay(1000),
-        Animated.timing(animOpacity, {
-          toValue: 0,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start(() => {
-      setFloatingRunes((prev) => prev.filter((r) => r.id !== runeId));
+    // 2. Dispatch to backend API
+    try {
+      await sendBattleMessage(textToSend);
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+    } catch (err) {
+      // Message already visible locally
+    } finally {
+      setIsSending(false);
+    }
+  }, [inputText, isSending, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, triggerHaptic]);
+
+  // ── 6. Real Active Warriors Roster ───────────────────────────────────────
+  const activeParticipants: BattleParticipant[] = useMemo(() => {
+    const map = new Map<string, BattleParticipant>();
+
+    // 1. Current user
+    map.set(currentUserId || 'me', {
+      user_id: currentUserId || 'me',
+      name: currentUserName,
+      streak: currentUserStreak,
+      badge: '🛡️',
+      joined_at: new Date().toISOString(),
     });
 
-    if (activeBattle?.id) {
-      await sendReactionRune(activeBattle.id, runeText);
+    // 2. Real server participants currently in the room
+    const serverList = activeBattle?.participants || [];
+    serverList.forEach((p) => {
+      const key = (p.user_id || p.name || '').trim().toLowerCase();
+      if (key) {
+        map.set(key, p);
+      }
+    });
+
+    return Array.from(map.values());
+  }, [activeBattle?.participants, currentUserId, currentUserName, currentUserStreak]);
+
+  // ── 7. Merged Clean Messages Stream (No Dummy Messages) ───────────────────
+  const allMessages: BattleMessageItem[] = useMemo(() => {
+    const list: BattleMessageItem[] = [];
+    const seen = new Set<string>();
+
+    // Server messages
+    if (activeBattle?.messages && Array.isArray(activeBattle.messages)) {
+      activeBattle.messages.forEach((m) => {
+        // Filter out fake or duplicate dummy banners
+        if (m.text && !m.text.includes('🚨 SESSION #')) {
+          const key = `${m.user_name}-${m.text}-${m.created_at}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            list.push(m);
+          }
+        }
+      });
     }
-  };
 
-  const currentPhase = BREATH_PHASES[phaseIndex];
-  const participantCount = activeBattle?.participant_count || 1;
-  const initiatorName = activeBattle?.initiator_name || 'Brother Warrior';
+    // Local optimistic messages
+    localMessages.forEach((lm) => {
+      const key = `${lm.user_name}-${lm.text}`;
+      const duplicateOnServer = list.some(
+        (m) => m.text === lm.text && m.user_name === lm.user_name
+      );
+      if (!duplicateOnServer && !seen.has(key)) {
+        seen.add(key);
+        list.push(lm);
+      }
+    });
 
-  // SVG Progress calculation
-  const progressRatio = Math.max(0, Math.min(1, secondsLeft / TOTAL_SESSION_SECONDS));
-  const strokeDashoffset = CIRCUMFERENCE * (1 - progressRatio);
+    // Sort chronologically
+    return list.sort((a, b) => {
+      const tA = new Date(a.created_at || 0).getTime();
+      const tB = new Date(b.created_at || 0).getTime();
+      return tA - tB;
+    });
+  }, [activeBattle?.messages, localMessages]);
 
-  // Parse real-time reactions feed in chronological order
-  const liveReactions = useMemo(() => {
-    return (activeBattle?.reactions || []).slice(-15).reverse();
-  }, [activeBattle?.reactions]);
+  const sessionNumber = activeBattle?.session_number || 1;
+
+  // Auto-scroll when messages update
+  useEffect(() => {
+    if (allMessages.length > 0) {
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
+    }
+  }, [allMessages.length]);
 
   return (
     <View style={styles.container}>
+      {/* ── BACKGROUND: Breathing Particles Hypnotic Diaphragmatic Visual ── */}
+      <View style={styles.particlesLayer} pointerEvents="none">
+        <BreathingParticles
+          isRunning={true}
+          color="#00E5FF"
+          size={Math.min(SCREEN_WIDTH * 1.15, 420)}
+          showText={false}
+        />
+        <LinearGradient
+          colors={['rgba(5, 7, 14, 0.75)', 'rgba(5, 7, 14, 0.4)', 'rgba(5, 7, 14, 0.88)']}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Top Header */}
-        <View style={styles.headerRow}>
+        {/* ── 1. TACTICAL HUD HEADER ── */}
+        <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
-            activeOpacity={0.7}
-            onPress={() => {
-              triggerHaptic('light');
-              router.back();
-            }}
+            activeOpacity={0.75}
+            onPress={handleExitBattlefield}
           >
             <Ionicons name="chevron-back" size={22} color="#00E5FF" />
           </TouchableOpacity>
 
-          <View style={styles.headerTitleGroup}>
-            <View style={styles.liveBadgeRow}>
-              <View style={styles.liveDot} />
-              <ThemedText style={styles.liveBadgeText}>90s SHIELD WALL ACTIVE</ThemedText>
+          <View style={styles.headerCenter}>
+            <View style={styles.headerLiveRow}>
+              <View style={styles.livePulseBeacon} />
+              <ThemedText style={styles.headerTitle}>SPARTAN BATTLEFIELD</ThemedText>
             </View>
-            <ThemedText style={styles.headerTitle}>Spartan Battlefield</ThemedText>
+            <View style={styles.sessionPill}>
+              <Ionicons name="shield-half" size={10} color="#00E5FF" style={{ marginRight: 4 }} />
+              <ThemedText style={styles.sessionPillText}>
+                SESSION #{sessionNumber} • LIVE TAC-COMM
+              </ThemedText>
+            </View>
           </View>
 
-          <View style={{ width: 38 }} />
+          {/* Right Controls: Audio Mute & Conclude Room */}
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity
+              style={[styles.muteBtn, isMuted && styles.muteBtnActive]}
+              activeOpacity={0.8}
+              onPress={handleToggleMute}
+            >
+              <Ionicons
+                name={isMuted ? 'volume-mute' : 'volume-high'}
+                size={16}
+                color={isMuted ? '#94A3B8' : '#00E5FF'}
+              />
+              <ThemedText style={[styles.muteLabelText, isMuted && styles.muteLabelTextMuted]}>
+                {isMuted ? 'MUTED' : '396Hz'}
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.concludeBtn}
+              activeOpacity={0.8}
+              onPress={handleExitBattlefield}
+            >
+              <Ionicons name="checkmark-done" size={16} color="#10B981" />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {isInitiating ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#00E5FF" />
-            <ThemedText style={styles.loadingText}>Blowing the Spartan Battle Horn...</ThemedText>
+        {/* ── 2. 15-MINUTE TELEMETRY COUNTDOWN BAR ── */}
+        <View style={styles.timerHudStrip}>
+          <View style={styles.timerHudContent}>
+            <View style={styles.timerHudLeft}>
+              <View style={[styles.timerIconCircle, { borderColor: timerColor + '50' }]}>
+                <Ionicons name="timer-outline" size={13} color={timerColor} />
+              </View>
+              <View>
+                <ThemedText style={styles.timerHudLabel}>15-MIN SESSION PURGE IN:</ThemedText>
+                <ThemedText style={styles.timerHudSub}>Auto-wipes chat & renews tactical session</ThemedText>
+              </View>
+            </View>
+
+            <View style={[styles.timerBadge, { borderColor: timerColor + '55', backgroundColor: timerColor + '15' }]}>
+              <ThemedText style={[styles.timerText, { color: timerColor }]}>
+                {formattedCountdown}
+              </ThemedText>
+            </View>
           </View>
-        ) : (
+
+          {/* Glowing Animated Progress Line */}
+          <View style={styles.timerProgressBar}>
+            <View
+              style={[
+                styles.timerProgressFill,
+                { width: `${timerProgress * 100}%`, backgroundColor: timerColor },
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* ── 3. ACTIVE MEMBERS PRESENCE STRIP (TAP ANY BROTHER TO DM) ── */}
+        <View style={styles.activeMembersSection}>
+          <View style={styles.activeMembersHeader}>
+            <View style={styles.activeMemberDot} />
+            <ThemedText style={styles.activeMembersTitle}>
+              ACTIVE SHIELD WALL ({activeParticipants.length} WARRIORS)
+            </ThemedText>
+            <ThemedText style={{ fontSize: 9.5, color: '#64748B', marginLeft: 'auto' }}>
+              Tap user to DM
+            </ThemedText>
+          </View>
+
           <ScrollView
-            style={styles.scrollContent}
-            contentContainerStyle={styles.scrollInner}
-            showsVerticalScrollIndicator={false}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.activeMembersScroll}
           >
-            {/* Initiator Banner Alert */}
-            <View style={styles.initiatorCard}>
-              <View style={styles.initiatorLeftGlow}>
-                <ThemedText style={{ fontSize: 22 }}>⚔️</ThemedText>
-              </View>
-              <View style={styles.initiatorTextWrapper}>
-                <ThemedText style={styles.initiatorHeadline}>
-                  Brother {initiatorName} sounded the Horn
-                </ThemedText>
-                <ThemedText style={styles.initiatorSub}>
-                  {participantCount} {participantCount === 1 ? 'Spartan standing' : 'Spartans standing'} united against the urge wave in synchronous breath.
-                </ThemedText>
-              </View>
-            </View>
+            {activeParticipants.map((member, idx) => {
+              const isMe = (member.user_id || '').trim().toLowerCase() === currentUserId || member.name === currentUserName;
+              const displayName = isMe ? `${member.name} (You)` : member.name;
+              const initials = (member.name || 'W').substring(0, 2).toUpperCase();
 
-            {/* Simple, Clean, High-Contrast SVG Countdown Ring with Smooth Breath Scaling */}
-            <View style={styles.centerStage}>
-              <Animated.View style={[styles.svgWrapper, { transform: [{ scale: breathScaleAnim }] }]}>
-                <Svg width={CIRCLE_SIZE} height={CIRCLE_SIZE} viewBox={`0 0 ${CIRCLE_SIZE} ${CIRCLE_SIZE}`}>
-                  <Defs>
-                    <SvgLinearGradient id="timerGrad" x1="0" y1="0" x2="1" y2="1">
-                      <Stop offset="0%" stopColor="#00E5FF" />
-                      <Stop offset="50%" stopColor={currentPhase.color} />
-                      <Stop offset="100%" stopColor="#10B981" />
-                    </SvgLinearGradient>
-                  </Defs>
-
-                  {/* Track Circle */}
-                  <Circle
-                    cx={CIRCLE_SIZE / 2}
-                    cy={CIRCLE_SIZE / 2}
-                    r={RADIUS}
-                    stroke="rgba(255, 255, 255, 0.07)"
-                    strokeWidth={STROKE_WIDTH}
-                    fill="#070C16"
-                  />
-
-                  {/* Animated Progress Ring */}
-                  <Circle
-                    cx={CIRCLE_SIZE / 2}
-                    cy={CIRCLE_SIZE / 2}
-                    r={RADIUS}
-                    stroke="url(#timerGrad)"
-                    strokeWidth={STROKE_WIDTH}
-                    fill="transparent"
-                    strokeDasharray={`${CIRCUMFERENCE} ${CIRCUMFERENCE}`}
-                    strokeDashoffset={strokeDashoffset}
-                    strokeLinecap="round"
-                    transform={`rotate(-90 ${CIRCLE_SIZE / 2} ${CIRCLE_SIZE / 2})`}
-                  />
-                </Svg>
-
-                {/* Central Numbers Content */}
-                <View style={styles.timerCenterContent}>
-                  <View style={styles.timerNumberRow}>
-                    <Text style={styles.timerBigNumber}>{secondsLeft}</Text>
-                    <Text style={styles.timerUnitText}>s</Text>
-                  </View>
-
-                  {/* Phase Pill */}
-                  <View style={[styles.phasePill, { backgroundColor: currentPhase.color + '22', borderColor: currentPhase.color }]}>
-                    <Text style={[styles.phasePillText, { color: currentPhase.color }]}>
-                      {currentPhase.label} • {phaseSecondsRemaining}s
-                    </Text>
-                  </View>
-                </View>
-              </Animated.View>
-
-              {/* Floating Real-Time Reaction Runes */}
-              {floatingRunes.map((rune) => (
-                <Animated.View
-                  key={rune.id}
-                  style={[
-                    styles.floatingRuneContainer,
-                    {
-                      transform: [
-                        { translateX: rune.xOffset },
-                        { translateY: rune.animY },
-                        { scale: rune.animScale },
-                      ],
-                      opacity: rune.animOpacity,
-                    },
-                  ]}
-                  pointerEvents="none"
+              return (
+                <TouchableOpacity
+                  key={member.user_id || idx}
+                  style={[styles.memberChip, isMe && styles.memberChipMe]}
+                  activeOpacity={isMe ? 1 : 0.75}
+                  onPress={() => {
+                    if (isMe) return;
+                    triggerHaptic('light');
+                    router.push({
+                      pathname: '/community/dm',
+                      params: {
+                        user_id: member.user_id,
+                        user_name: member.name,
+                        username: (member.name || '').toLowerCase().replace(/\s+/g, '_'),
+                      },
+                    });
+                  }}
                 >
-                  <View style={[styles.floatingRuneBubble, { borderColor: rune.color }]}>
-                    <Text style={[styles.floatingRuneText, { color: rune.color }]}>
-                      {rune.text}
-                    </Text>
+                  <View style={[styles.memberAvatarCircle, isMe && styles.memberAvatarCircleMe]}>
+                    <ThemedText style={styles.memberAvatarText}>{initials}</ThemedText>
+                    <View style={styles.memberOnlineBeacon} />
                   </View>
-                </Animated.View>
-              ))}
-            </View>
+                  <View style={styles.memberInfoCol}>
+                    <ThemedText style={[styles.memberNameText, isMe && styles.memberNameTextMe]} numberOfLines={1}>
+                      {displayName}
+                    </ThemedText>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <ThemedText style={styles.memberStreakText}>🔥 {member.streak ?? 0}d</ThemedText>
+                      {!isMe && (
+                        <Ionicons name="chatbubble-ellipses" size={10} color="#00E5FF" />
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
-            {/* Dynamic Neuro-Reset Tip Banner */}
-            <View style={[styles.guidanceBox, { borderColor: currentPhase.color + '35' }]}>
-              <Ionicons name="sparkles" size={15} color={currentPhase.color} style={{ marginRight: 8 }} />
-              <ThemedText style={styles.guidanceTip}>{currentPhase.tip}</ThemedText>
-            </View>
-
-            {/* Shield Brothers Standing Live Strip with Individual Timelines */}
-            <View style={styles.warriorsSection}>
-              <View style={styles.sectionTitleRow}>
-                <Ionicons name="shield-checkmark-outline" size={14} color="#00E5FF" />
-                <ThemedText style={styles.sectionTitleText}>WARRIORS IN ROOM WITH INDIVIDUAL TIMELINES ({participantCount})</ThemedText>
+        {/* ── 4. CHAT STREAM & MESSAGES ── */}
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={0}
+        >
+          <View style={[styles.chatContainer, { paddingBottom: Platform.OS === 'android' ? keyboardHeight : 0 }]}>
+            <ScrollView
+              ref={scrollViewRef}
+              contentContainerStyle={styles.chatScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+            >
+              {/* Session Start Transmission Banner */}
+              <View style={styles.sessionBannerCard}>
+                <Ionicons name="radio" size={14} color="#00E5FF" style={{ marginRight: 6 }} />
+                <ThemedText style={styles.sessionBannerText}>
+                  BATTLEFIELD SESSION #{sessionNumber} ACTIVE • 15-MIN EPHEMERAL COMM
+                </ThemedText>
               </View>
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.warriorScroll}
-              >
-                {activeBattle?.participants?.map((p, idx) => {
-                  const isCurrent = p.user_id === String(user?.id || '');
-                  
-                  // Compute individual duration in the room
-                  let userElapsedSec = 90 - secondsLeft;
-                  if (p.joined_at) {
-                    const joinedMs = new Date(p.joined_at).getTime();
-                    if (!isNaN(joinedMs) && joinedMs > 0) {
-                      userElapsedSec = Math.max(1, Math.min(90, Math.floor((nowMs - joinedMs) / 1000)));
-                    }
+              {allMessages.length === 0 ? (
+                <View style={styles.emptyStateContainer}>
+                  <View style={styles.emptyIconCircle}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={32} color="#00E5FF" />
+                  </View>
+                  <ThemedText style={styles.emptyStateTitle}>Shield Wall Assembled</ThemedText>
+                  <ThemedText style={styles.emptyStateSub}>
+                    Brothers stand united. Send the first brotherhood transmission or tap a tactical rune below!
+                  </ThemedText>
+                </View>
+              ) : (
+                allMessages.map((msg, idx) => {
+                  const isUser =
+                    (msg.user_id || '').trim().toLowerCase() === currentUserId ||
+                    (msg.user_name || '').trim().toLowerCase() === currentUserName.trim().toLowerCase();
+
+                  if (msg.is_system) {
+                    return (
+                      <View key={msg.id || idx} style={styles.systemMsgPill}>
+                        <Ionicons name="sparkles" size={11} color="#00E5FF" style={{ marginRight: 6 }} />
+                        <ThemedText style={styles.systemMsgText}>{msg.text}</ThemedText>
+                      </View>
+                    );
                   }
-                  const userTimelinePct = Math.min(100, Math.round((userElapsedSec / 90) * 100));
 
                   return (
-                    <View key={`${p.user_id}-${idx}`} style={[styles.warriorPill, isCurrent && styles.warriorPillSelf]}>
-                      <View style={styles.warriorTopRow}>
-                        <View style={[styles.warriorAvatar, isCurrent && { backgroundColor: 'rgba(0, 229, 255, 0.3)' }]}>
-                          <ThemedText style={styles.warriorAvatarText}>
-                            {p.name ? p.name.charAt(0).toUpperCase() : 'W'}
-                          </ThemedText>
-                          <View style={styles.onlineDot} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <ThemedText style={[styles.warriorName, isCurrent && { color: '#00E5FF', fontWeight: '800' }]} numberOfLines={1}>
-                            {p.name || 'Spartan'} {isCurrent ? '(You)' : ''}
-                          </ThemedText>
-                          <ThemedText style={styles.warriorStatusSub}>
-                            {isCurrent ? '⚡ Active Shield' : '🛡️ Holding Line'}
-                          </ThemedText>
-                        </View>
-                      </View>
-
-                      {/* Individual Participant Timeline Progress Bar */}
-                      <View style={styles.memberTimelineContainer}>
-                        <View style={styles.memberTimelineTrack}>
-                          <View style={[styles.memberTimelineFill, { width: `${userTimelinePct}%` }]} />
-                        </View>
-                        <View style={styles.memberTimelineMeta}>
-                          <ThemedText style={styles.memberTimelineTimeText}>{userElapsedSec}s in sync</ThemedText>
-                          <ThemedText style={styles.memberTimelinePctText}>{userTimelinePct}%</ThemedText>
-                        </View>
+                    <View
+                      key={msg.id || idx}
+                      style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowOther]}
+                    >
+                      <View
+                        style={[
+                          styles.messageBubble,
+                          isUser ? styles.messageBubbleUser : styles.messageBubbleOther,
+                        ]}
+                      >
+                        {!isUser && (
+                          <TouchableOpacity
+                            style={styles.msgHeaderRow}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              triggerHaptic('light');
+                              router.push({
+                                pathname: '/community/dm',
+                                params: {
+                                  user_id: msg.user_id,
+                                  user_name: msg.user_name || 'Brother',
+                                  username: (msg.user_name || 'brother').toLowerCase().replace(/\s+/g, '_'),
+                                },
+                              });
+                            }}
+                          >
+                            <ThemedText style={styles.otherSenderName}>
+                              {msg.user_name || 'Brother'}
+                            </ThemedText>
+                            <View style={styles.otherStreakPill}>
+                              <ThemedText style={styles.otherStreakText}>
+                                🔥 {msg.user_streak ?? 0}d
+                              </ThemedText>
+                            </View>
+                            <Ionicons name="chatbubble-ellipses" size={11} color="#00E5FF" style={{ marginLeft: 4 }} />
+                          </TouchableOpacity>
+                        )}
+                        <ThemedText style={[styles.messageBodyText, isUser && styles.messageBodyTextUser]}>
+                          {msg.text}
+                        </ThemedText>
+                        <ThemedText style={[styles.msgTimeText, isUser && styles.msgTimeTextUser]}>
+                          {formatMsgTime(msg.created_at)}
+                        </ThemedText>
                       </View>
                     </View>
                   );
-                })}
+                })
+              )}
+            </ScrollView>
+
+            {/* ── 5. QUICK TACTICAL TRANSMISSION CHIPS ── */}
+            <View style={styles.quickChipsContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.quickChipsScroll}
+              >
+                {QUICK_TRANSMISSION_CHIPS.map((chip, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.quickChipBtn}
+                    activeOpacity={0.75}
+                    onPress={() => handleSendMessage(chip)}
+                  >
+                    <ThemedText style={styles.quickChipText}>{chip}</ThemedText>
+                  </TouchableOpacity>
+                ))}
               </ScrollView>
             </View>
 
-            {/* Brotherhood Reaction Runes Grid (11+ Reactions) */}
-            <View style={styles.runesSection}>
-              <View style={styles.runesHeaderRow}>
-                <Ionicons name="flash-outline" size={14} color="#F59E0B" />
-                <ThemedText style={styles.runesTitle}>BROTHERHOOD RUNES (1-TAP BURST)</ThemedText>
-              </View>
-              <View style={styles.runesGrid}>
-                {REACTION_RUNES.map((rune) => (
-                  <TouchableOpacity
-                    key={rune.id}
-                    style={[styles.runeButton, { backgroundColor: rune.bg, borderColor: rune.color }]}
-                    activeOpacity={0.65}
-                    onPress={() => handleSendRune(rune.text, rune.color)}
-                  >
-                    <Ionicons name={rune.icon as any} size={15} color={rune.color} />
-                    <Text style={[styles.runeButtonText, { color: rune.color }]}>
-                      {rune.text}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+            {/* ── 6. COMMUNITY-STYLE FLOATING MESSAGE INPUT BAR ── */}
+            <View
+              style={[
+                styles.inputBarWrapper,
+                {
+                  paddingBottom: keyboardHeight > 0 ? 8 : Math.max(8, insets.bottom),
+                },
+              ]}
+            >
+              <View style={[styles.inputInnerPill, isInputFocused && styles.inputInnerPillFocused]}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Transmit to your brothers..."
+                  placeholderTextColor="rgba(255, 255, 255, 0.42)"
+                  value={inputText}
+                  onChangeText={setInputText}
+                  onFocus={() => {
+                    setIsInputFocused(true);
+                    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+                  }}
+                  onBlur={() => setIsInputFocused(false)}
+                  multiline={true}
+                  maxLength={1000}
+                  cursorColor="#00E5FF"
+                  selectionColor="rgba(0, 229, 255, 0.35)"
+                  underlineColorAndroid="transparent"
+                />
+
+                <TouchableOpacity
+                  style={[styles.sendBtn, (!inputText.trim() || isSending) && styles.sendBtnDisabled]}
+                  activeOpacity={0.8}
+                  disabled={!inputText.trim() || isSending}
+                  onPress={() => handleSendMessage()}
+                >
+                  {isSending ? (
+                    <ActivityIndicator size="small" color="#000000" />
+                  ) : (
+                    <Ionicons name="arrow-up" size={19} color="#000000" />
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
-
-            {/* Live Real-Time Activity Feed of Every User */}
-            <View style={styles.feedSection}>
-              <View style={styles.feedHeaderRow}>
-                <Ionicons name="radio-outline" size={14} color="#10B981" />
-                <ThemedText style={styles.feedTitle}>LIVE ROOM TELEMETRY FEED</ThemedText>
-              </View>
-
-              <View style={styles.feedContainer}>
-                {liveReactions.length === 0 ? (
-                  <ThemedText style={styles.feedEmptyText}>
-                    Sync room active. Tap reaction runes above to broadcast live encouragement to the shield wall!
-                  </ThemedText>
-                ) : (
-                  liveReactions.map((rec, rIdx) => {
-                    const isSelf = rec.user_id === String(user?.id || '');
-                    return (
-                      <View key={`${rec.created_at}-${rIdx}`} style={[styles.feedItem, isSelf && styles.feedItemSelf]}>
-                        <View style={styles.feedDot} />
-                        <View style={{ flex: 1 }}>
-                          <View style={styles.feedMetaRow}>
-                            <ThemedText style={styles.feedAuthorName}>
-                              {rec.user_name || 'Warrior'} {isSelf ? '(You)' : ''}
-                            </ThemedText>
-                            <ThemedText style={styles.feedTime}>
-                              {rec.created_at ? new Date(rec.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Live'}
-                            </ThemedText>
-                          </View>
-                          <ThemedText style={styles.feedRuneContent}>{rec.rune}</ThemedText>
-                        </View>
-                      </View>
-                    );
-                  })
-                )}
-              </View>
-            </View>
-
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        )}
-
-        {/* Victory Completion Modal Overlay */}
-        {isCompleted && (
-          <View style={styles.victoryOverlay}>
-            <Animated.View style={[styles.victoryCard, { transform: [{ scale: victoryScale }] }]}>
-              <View style={styles.victoryIconCircle}>
-                <Ionicons name="shield-checkmark" size={38} color="#00E5FF" />
-              </View>
-              <ThemedText style={styles.victoryTitle}>URGE WAVE CONQUERED</ThemedText>
-              <ThemedText style={styles.victoryBody}>
-                The line held strong. You and your Spartan brothers stood united in synchronous breath.
-              </ThemedText>
-              <View style={styles.victoryRewardBadge}>
-                <Ionicons name="flash" size={16} color="#F59E0B" style={{ marginRight: 6 }} />
-                <ThemedText style={styles.victoryRewardText}>+25 Honor Points Added to Cohort Honor</ThemedText>
-              </View>
-
-              <TouchableOpacity
-                style={styles.victoryBtn}
-                activeOpacity={0.85}
-                onPress={() => {
-                  triggerHaptic('light');
-                  router.back();
-                }}
-              >
-                <ThemedText style={styles.victoryBtnText}>Return Victorious</ThemedText>
-              </TouchableOpacity>
-            </Animated.View>
           </View>
-        )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
   );
 }
 
+function formatMsgTime(isoStr?: string): string {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#04060B',
+  },
+  particlesLayer: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 0,
   },
   safeArea: {
     flex: 1,
+    zIndex: 1,
   },
-  headerRow: {
+
+  /* ── 1. Header ── */
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  headerTitleGroup: {
-    alignItems: 'center',
-  },
-  liveBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#EF4444',
-  },
-  liveBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '900',
-    color: '#00E5FF',
-    letterSpacing: 1.2,
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    fontSize: 13.5,
-    color: '#94A3B8',
-    marginTop: 12,
-    fontWeight: '600',
-  },
-  scrollContent: {
-    flex: 1,
-  },
-  scrollInner: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  initiatorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 229, 255, 0.05)',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    marginBottom: 12,
-    gap: 10,
-  },
-  initiatorLeftGlow: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0, 229, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.3)',
-  },
-  initiatorTextWrapper: {
-    flex: 1,
-  },
-  initiatorHeadline: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 2,
-  },
-  initiatorSub: {
-    fontSize: 11,
-    color: '#94A3B8',
-    lineHeight: 15,
-  },
-  centerStage: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    position: 'relative',
-  },
-  svgWrapper: {
-    width: CIRCLE_SIZE,
-    height: CIRCLE_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  timerCenterContent: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timerNumberRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  timerBigNumber: {
-    fontSize: 50,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -2,
-    lineHeight: 56,
-  },
-  timerUnitText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#00E5FF',
-    marginLeft: 2,
-  },
-  phasePill: {
-    marginTop: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  phasePillText: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  floatingRuneContainer: {
-    position: 'absolute',
-    bottom: 20,
-    alignSelf: 'center',
-  },
-  floatingRuneBubble: {
-    backgroundColor: 'rgba(7, 12, 22, 0.95)',
-    borderWidth: 1.5,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    shadowColor: '#00E5FF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  floatingRuneText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  guidanceBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(4, 6, 11, 0.85)',
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
     borderWidth: 1,
-    marginBottom: 14,
+    borderColor: 'rgba(0, 229, 255, 0.28)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  guidanceTip: {
-    fontSize: 11.5,
-    color: 'rgba(255, 255, 255, 0.8)',
-    flex: 1,
-    lineHeight: 16,
-    fontWeight: '500',
+  headerCenter: {
+    alignItems: 'center',
   },
-  warriorsSection: {
-    marginBottom: 14,
-  },
-  sectionTitleRow: {
+  headerLiveRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 8,
   },
-  sectionTitleText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: 'rgba(255, 255, 255, 0.5)',
-    letterSpacing: 0.8,
-  },
-  warriorScroll: {
-    gap: 8,
-  },
-  warriorPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderRadius: 14,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    width: 155,
-  },
-  warriorPillSelf: {
-    borderColor: 'rgba(0, 229, 255, 0.4)',
-    backgroundColor: 'rgba(0, 229, 255, 0.04)',
-  },
-  warriorTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  warriorAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  warriorAvatarText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#00E5FF',
-  },
-  onlineDot: {
-    position: 'absolute',
-    bottom: -1,
-    right: -1,
+  livePulseBeacon: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
     backgroundColor: '#10B981',
-    borderWidth: 1,
-    borderColor: '#000000',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
   },
-  warriorName: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  headerTitle: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: '#00E5FF',
+    letterSpacing: 1.1,
   },
-  warriorStatusSub: {
-    fontSize: 9.5,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  memberTimelineContainer: {
-    marginTop: 2,
-  },
-  memberTimelineTrack: {
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  memberTimelineFill: {
-    height: '100%',
-    backgroundColor: '#00E5FF',
-    borderRadius: 2,
-  },
-  memberTimelineMeta: {
+  sessionPill: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginTop: 3,
+    borderWidth: 0.5,
+    borderColor: 'rgba(0, 229, 255, 0.2)',
   },
-  memberTimelineTimeText: {
-    fontSize: 9,
-    fontWeight: '700',
+  sessionPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.7,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  muteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 34,
+    paddingHorizontal: 9,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.28)',
+    justifyContent: 'center',
+  },
+  muteBtnActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  muteLabelText: {
+    fontSize: 10,
+    fontWeight: '800',
     color: '#00E5FF',
   },
-  memberTimelinePctText: {
-    fontSize: 9,
-    fontWeight: '600',
-    color: '#64748B',
+  muteLabelTextMuted: {
+    color: '#94A3B8',
   },
-  runesSection: {
-    marginBottom: 14,
+  concludeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  runesHeaderRow: {
+
+  /* ── 2. Telemetry Timer HUD Strip ── */
+  timerHudStrip: {
+    backgroundColor: 'rgba(10, 15, 29, 0.75)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
+    paddingTop: 8,
+  },
+  timerHudContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  runesTitle: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: 'rgba(255, 255, 255, 0.5)',
-    letterSpacing: 0.8,
-  },
-  runesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  runeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 5,
-  },
-  runeButtonText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  feedSection: {
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    marginBottom: 14,
-  },
-  feedHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  feedTitle: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: 'rgba(255, 255, 255, 0.5)',
-    letterSpacing: 0.8,
-  },
-  feedContainer: {
-    gap: 6,
-  },
-  feedEmptyText: {
-    fontSize: 11,
-    color: '#64748B',
-    lineHeight: 16,
-    textAlign: 'center',
-    paddingVertical: 8,
-  },
-  feedItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderRadius: 10,
-    padding: 8,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  feedItemSelf: {
-    borderColor: 'rgba(0, 229, 255, 0.25)',
-    backgroundColor: 'rgba(0, 229, 255, 0.03)',
-  },
-  feedDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: '#00E5FF',
-    marginTop: 5,
-  },
-  feedMetaRow: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingBottom: 7,
+  },
+  timerHudLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 2,
+    gap: 8,
   },
-  feedAuthorName: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  timerIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
   },
-  feedTime: {
-    fontSize: 9.5,
+  timerHudLabel: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: '#E2E8F0',
+    letterSpacing: 0.6,
+  },
+  timerHudSub: {
+    fontSize: 9,
     color: '#64748B',
-    fontWeight: '600',
-  },
-  feedRuneContent: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '500',
   },
-  victoryOverlay: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.92)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
+  timerBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
   },
-  victoryCard: {
-    width: '100%',
-    backgroundColor: '#0B1120',
-    borderRadius: 22,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#00E5FF',
-    shadowColor: '#00E5FF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  victoryIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.4)',
-  },
-  victoryTitle: {
-    fontSize: 19,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  victoryBody: {
+  timerText: {
     fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    textAlign: 'center',
-    lineHeight: 19,
-    marginBottom: 16,
-    paddingHorizontal: 6,
+    fontWeight: '900',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: 1,
   },
-  victoryRewardBadge: {
+  timerProgressBar: {
+    height: 2.5,
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  timerProgressFill: {
+    height: 2.5,
+    borderRadius: 1.5,
+  },
+
+  /* ── 3. Active Members Presence Strip ── */
+  activeMembersSection: {
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(6, 10, 20, 0.65)',
+  },
+  activeMembersHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.4)',
-    marginBottom: 20,
+    paddingHorizontal: 14,
+    marginBottom: 5,
+    gap: 6,
   },
-  victoryRewardText: {
-    fontSize: 12,
+  activeMemberDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00E5FF',
+    shadowColor: '#00E5FF',
+    shadowOpacity: 0.8,
+    shadowRadius: 3,
+  },
+  activeMembersTitle: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#94A3B8',
+    letterSpacing: 0.9,
+  },
+  activeMembersScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  memberChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    gap: 7,
+  },
+  memberChipMe: {
+    borderColor: 'rgba(0, 229, 255, 0.45)',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+  },
+  memberAvatarCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#1E293B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  memberAvatarCircleMe: {
+    backgroundColor: '#00E5FF',
+  },
+  memberAvatarText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  memberOnlineBeacon: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    borderWidth: 1,
+    borderColor: '#04060B',
+  },
+  memberInfoCol: {
+    justifyContent: 'center',
+  },
+  memberNameText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#E2E8F0',
+    maxWidth: 90,
+  },
+  memberNameTextMe: {
+    color: '#00E5FF',
+    fontWeight: '900',
+  },
+  memberStreakText: {
+    fontSize: 9,
     fontWeight: '800',
     color: '#F59E0B',
   },
-  victoryBtn: {
-    width: '100%',
-    backgroundColor: '#00E5FF',
-    paddingVertical: 14,
+
+  /* ── 4. Chat Container ── */
+  keyboardAvoid: {
+    flex: 1,
+  },
+  chatContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  chatScrollContent: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 16,
+    gap: 8,
+  },
+  sessionBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginBottom: 6,
+  },
+  sessionBannerText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#00E5FF',
+    letterSpacing: 0.8,
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 45,
+    gap: 8,
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  emptyStateTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#F1F5F9',
+  },
+  emptyStateSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    paddingHorizontal: 28,
+    lineHeight: 18,
+  },
+
+  /* ── Message Bubbles ── */
+  messageRow: {
+    marginVertical: 2,
+    flexDirection: 'row',
+  },
+  messageRowUser: {
+    justifyContent: 'flex-end',
+  },
+  messageRowOther: {
+    justifyContent: 'flex-start',
+  },
+  messageBubble: {
+    maxWidth: '82%',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 15,
+  },
+  messageBubbleUser: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.4)',
+    borderBottomRightRadius: 3,
+  },
+  messageBubbleOther: {
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderBottomLeftRadius: 3,
+  },
+  msgHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 3,
+  },
+  otherSenderName: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#93C5FD',
+  },
+  otherStreakPill: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  otherStreakText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#F59E0B',
+  },
+  messageBodyText: {
+    fontSize: 13.5,
+    color: '#F1F5F9',
+    lineHeight: 19,
+    fontWeight: '400',
+  },
+  messageBodyTextUser: {
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  msgTimeText: {
+    fontSize: 9.5,
+    color: '#64748B',
+    marginTop: 3,
+    alignSelf: 'flex-end',
+  },
+  msgTimeTextUser: {
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+
+  /* ── System Messages ── */
+  systemMsgPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginVertical: 3,
+  },
+  systemMsgText: {
+    fontSize: 10,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+
+  /* ── 5. Quick Transmission Chips ── */
+  quickChipsContainer: {
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(4, 6, 11, 0.85)',
+  },
+  quickChipsScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  quickChipBtn: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 14,
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00E5FF',
+  },
+
+  /* ── 6. Community-Style Floating Message Input Bar ── */
+  inputBarWrapper: {
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    backgroundColor: 'rgba(4, 6, 11, 0.96)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  inputInnerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 24,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 6 : 2,
+  },
+  inputInnerPillFocused: {
+    borderColor: '#00E5FF',
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 13.5,
+    color: '#FFFFFF',
+    paddingVertical: 6,
+    paddingRight: 8,
+    maxHeight: 90,
+  },
+  sendBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#00E5FF',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  victoryBtnText: {
-    fontSize: 13.5,
-    fontWeight: '900',
-    color: '#000000',
-    letterSpacing: 0.3,
+  sendBtnDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
 });
