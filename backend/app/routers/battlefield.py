@@ -432,15 +432,23 @@ async def complete_battle_session(
     session.completed_at = now
     await session.save()
 
-    # Award honor points
+    # Award honor XP
     current_user.total_points = (current_user.total_points or 0) + 25
     await current_user.save()
+
+    # Recalculate Spartan Cell Cohort Honor in real time
+    try:
+        from app.services.spartan_cell_service import recalculate_user_cell_streak
+        await recalculate_user_cell_streak(str(current_user.id))
+    except Exception:
+        pass
 
     return {
         "status": "success",
         "message": "Battlefield session completed with victory. The line holds!",
         "participants_count": len(session.participant_ids),
         "honor_awarded": 25,
+        "xp_awarded": 25,
     }
 
 

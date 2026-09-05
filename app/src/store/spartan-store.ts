@@ -24,6 +24,7 @@ interface SpartanState {
   leaveCell: () => Promise<void>;
   deleteCell: () => Promise<void>;
   nudgeMember: (userId: string, userName: string) => Promise<string>;
+  sendStrength: (userId: string, userName: string, customMessage?: string) => Promise<string>;
   triggerBattleHorn: (location?: string) => Promise<BattleSessionData>;
   joinActiveBattle: (sessionId: string) => Promise<BattleSessionData>;
   sendReactionRune: (sessionId: string, rune: string) => Promise<void>;
@@ -47,6 +48,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       if (!state.myCell) return {};
       let streakDiff = 0;
       const today = new Date().toISOString().split('T')[0];
+      const isRelapse = newStreak === 0;
+
       const updatedMembers = state.myCell.members.map((m) => {
         if (m.user_id === userIdOrEmail || m.name === userIdOrEmail) {
           streakDiff = newStreak - (m.streak || 0);
@@ -54,16 +57,27 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
             ...m,
             streak: newStreak,
             today_checked_in: true,
+            status: isRelapse ? ('relapsed' as const) : ('retained' as const),
+            last_retain_status: isRelapse ? ('relapsed' as const) : ('retained' as const),
+            last_retain_date: today,
             last_checkin_date: today,
           };
         }
         return m;
       });
+
       const updatedTotalStreak = Math.max(0, (state.myCell.total_streak || 0) + streakDiff);
+      const hasRelapse = updatedMembers.some(
+        (m) => m.status === 'relapsed' || m.last_retain_status === 'relapsed' || m.streak === 0
+      );
+      const allRetained = !hasRelapse && updatedMembers.every((m) => m.today_checked_in && m.status === 'retained');
+      const shieldStatus = allRetained ? 'gold' : hasRelapse ? 'cracked' : 'active';
+
       const updatedCell: SpartanCellData = {
         ...state.myCell,
         members: updatedMembers,
         total_streak: updatedTotalStreak,
+        shield_status: shieldStatus,
       };
 
       const updatedLeaderboard = state.cellLeaderboard.map((c) =>
@@ -83,6 +97,15 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         set({ isLoadingCell: true });
       }
       const cell = await spartanApi.getMyCell();
+      if (cell && cell.members) {
+        // Enforce exact streak & retention consistency
+        const hasRelapse = cell.members.some(
+          (m) => m.status === 'relapsed' || m.last_retain_status === 'relapsed' || m.streak === 0
+        );
+        if (hasRelapse && cell.shield_status === 'gold') {
+          cell.shield_status = 'cracked';
+        }
+      }
       set({ myCell: cell, isLoadingCell: false });
       return cell;
     } catch {
@@ -173,6 +196,15 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       return res.message;
     } catch (err) {
       set({ isNudging: false });
+      throw err;
+    }
+  },
+
+  sendStrength: async (userId: string, userName: string, customMessage?: string) => {
+    try {
+      const res = await spartanApi.sendStrength(userId, userName, customMessage);
+      return res.message;
+    } catch (err) {
       throw err;
     }
   },

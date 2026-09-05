@@ -38,6 +38,7 @@ export interface MissionHistoryDay {
   completed_count: number;
   percent: number;
   points_earned: number;
+  xp_earned?: number;
   all_completed: boolean;
 }
 
@@ -45,6 +46,7 @@ export interface MissionHistoryResponse {
   days: MissionHistoryDay[];
   summary: {
     total_points_week: number;
+    total_xp_week?: number;
     average_percent: number;
     active_days: number;
     current_streak: number;
@@ -62,6 +64,8 @@ export interface DailyTasksStatusResponse {
   };
   completed_count: number;
   total_points: number;
+  total_xp?: number;
+  xp_earned?: number;
   all_completed: boolean;
 }
 

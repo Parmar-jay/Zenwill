@@ -30,6 +30,15 @@ class User(Document):
     total_points: int = 0
     mind_strength: Union[int, float] = 50.0
 
+    @property
+    def xp(self) -> int:
+        return self.total_points or 0
+
+    @xp.setter
+    def xp(self, val: int) -> None:
+        self.total_points = val or 0
+
+
     @field_validator("mind_strength", mode="before")
     @classmethod
     def validate_mind_strength(cls, v):

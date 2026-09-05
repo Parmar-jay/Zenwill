@@ -33,6 +33,12 @@ class NudgeMemberRequest(BaseModel):
     target_user_name: str
 
 
+class SendStrengthRequest(BaseModel):
+    target_user_id: str
+    target_user_name: str
+    custom_message: Optional[str] = None
+
+
 class SpartanCellSummary(BaseModel):
     id: str
     name: str
@@ -47,7 +53,28 @@ class SpartanCellSummary(BaseModel):
     shield_status: str  # "gold" | "active" | "cracked"
     is_public: bool
     created_at: datetime
+    broadcasts: List[Dict[str, Any]] = []
     members: List[Dict[str, Any]] = []
+
+
+def _cell_to_summary(c: SpartanCell) -> SpartanCellSummary:
+    return SpartanCellSummary(
+        id=str(c.id),
+        name=c.name,
+        motto=c.motto,
+        join_code=c.join_code,
+        leader_id=c.leader_id,
+        leader_name=c.leader_name,
+        member_count=len(c.member_ids),
+        max_members=c.max_members,
+        total_streak=c.total_streak,
+        collective_xp=c.collective_xp,
+        shield_status=c.shield_status,
+        is_public=c.is_public,
+        created_at=c.created_at,
+        broadcasts=getattr(c, "broadcasts", []) or [],
+        members=c.members or [],
+    )
 
 
 @router.post("/create", response_model=SpartanCellSummary)
@@ -86,9 +113,14 @@ async def create_spartan_cell(
         "user_id": user_id_str,
         "name": user_name,
         "streak": user_streak,
+        "xp": current_user.total_points or 100,
         "rank_tier": rank_info["rank_tier"],
         "badge": rank_info["badge"],
         "last_checkin_date": current_user.last_checkin_date,
+        "last_retain_date": getattr(current_user, "last_retain_date", None),
+        "last_retain_status": getattr(current_user, "last_retain_status", None),
+        "status": "retained" if has_checked_in else "pending",
+        "retain_status": "retained" if has_checked_in else "pending",
         "today_checked_in": has_checked_in,
         "is_leader": True,
         "is_online": True,
@@ -107,28 +139,14 @@ async def create_spartan_cell(
         collective_xp=current_user.total_points or 100,
         shield_status="gold" if has_checked_in else "active",
         is_public=payload.is_public if payload.is_public is not None else True,
+        broadcasts=[],
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
     await cell.insert()
     updated_cell = await recalculate_cell_stats(cell)
 
-    return SpartanCellSummary(
-        id=str(updated_cell.id),
-        name=updated_cell.name,
-        motto=updated_cell.motto,
-        join_code=updated_cell.join_code,
-        leader_id=updated_cell.leader_id,
-        leader_name=updated_cell.leader_name,
-        member_count=len(updated_cell.member_ids),
-        max_members=updated_cell.max_members,
-        total_streak=updated_cell.total_streak,
-        collective_xp=updated_cell.collective_xp,
-        shield_status=updated_cell.shield_status,
-        is_public=updated_cell.is_public,
-        created_at=updated_cell.created_at,
-        members=updated_cell.members,
-    )
+    return _cell_to_summary(updated_cell)
 
 
 @router.post("/join", response_model=SpartanCellSummary)
@@ -179,22 +197,7 @@ async def join_spartan_cell(
         cell.member_ids.append(user_id_str)
     updated_cell = await recalculate_cell_stats(cell)
 
-    return SpartanCellSummary(
-        id=str(updated_cell.id),
-        name=updated_cell.name,
-        motto=updated_cell.motto,
-        join_code=updated_cell.join_code,
-        leader_id=updated_cell.leader_id,
-        leader_name=updated_cell.leader_name,
-        member_count=len(updated_cell.member_ids),
-        max_members=updated_cell.max_members,
-        total_streak=updated_cell.total_streak,
-        collective_xp=updated_cell.collective_xp,
-        shield_status=updated_cell.shield_status,
-        is_public=updated_cell.is_public,
-        created_at=updated_cell.created_at,
-        members=updated_cell.members,
-    )
+    return _cell_to_summary(updated_cell)
 
 
 @router.get("/my-cell", response_model=Optional[SpartanCellSummary])
@@ -215,23 +218,7 @@ async def get_my_spartan_cell(
         return None
 
     updated_cell = await recalculate_cell_stats(cell)
-
-    return SpartanCellSummary(
-        id=str(updated_cell.id),
-        name=updated_cell.name,
-        motto=updated_cell.motto,
-        join_code=updated_cell.join_code,
-        leader_id=updated_cell.leader_id,
-        leader_name=updated_cell.leader_name,
-        member_count=len(updated_cell.member_ids),
-        max_members=updated_cell.max_members,
-        total_streak=updated_cell.total_streak,
-        collective_xp=updated_cell.collective_xp,
-        shield_status=updated_cell.shield_status,
-        is_public=updated_cell.is_public,
-        created_at=updated_cell.created_at,
-        members=updated_cell.members,
-    )
+    return _cell_to_summary(updated_cell)
 
 
 @router.post("/leave")
@@ -289,24 +276,7 @@ async def get_cell_leaderboard(
     results = []
     for c in cells:
         await recalculate_cell_stats(c)
-        results.append(
-            SpartanCellSummary(
-                id=str(c.id),
-                name=c.name,
-                motto=c.motto,
-                join_code=c.join_code,
-                leader_id=c.leader_id,
-                leader_name=c.leader_name,
-                member_count=len(c.member_ids),
-                max_members=c.max_members,
-                total_streak=c.total_streak,
-                collective_xp=c.collective_xp,
-                shield_status=c.shield_status,
-                is_public=c.is_public,
-                created_at=c.created_at,
-                members=c.members,
-            )
-        )
+        results.append(_cell_to_summary(c))
 
     # Re-sort after recalculating
     results.sort(key=lambda x: (-x.total_streak, -x.collective_xp))
@@ -351,26 +321,48 @@ async def nudge_cell_member(
     }
 
 
+@router.post("/send-strength")
+async def send_strength_to_member(
+    payload: SendStrengthRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Sends an empowering brotherhood recovery message directly to a relapsed or struggling cell member's DM."""
+    target_id = payload.target_user_id
+    target_name = payload.target_user_name
+    sender_id_str = str(current_user.id)
+    sender_name = current_user.name.split(" ")[0] if current_user.name else "Brother"
+    sender_username = (current_user.name or "brother").lower().replace(" ", "_")
+    target_username = target_name.lower().replace(" ", "_")
+
+    msg_content = payload.custom_message or (
+        f"⚡ Brother {sender_name} sends you mental strength! \"Stand strong, brother! A slip is just a moment—our squad is right behind you. Take a deep breath, reset your mind, and let's conquer this day together.\""
+    )
+    try:
+        new_dm = DirectMessage(
+            sender_id=sender_id_str,
+            sender_name=sender_name,
+            sender_username=sender_username,
+            receiver_id=target_id,
+            receiver_name=target_name,
+            receiver_username=target_username,
+            content=msg_content,
+            message_type="brotherhood_strength",
+            audio_duration=None,
+            is_read=False,
+            created_at=datetime.utcnow(),
+        )
+        await new_dm.insert()
+    except Exception as e:
+        print(f"[SpartanCell SendStrength Error]: {e}")
+
+    return {
+        "status": "success",
+        "message": f"Strength and brotherhood energy sent to {target_name}!",
+    }
+
+
 @router.get("/public-cells", response_model=List[SpartanCellSummary])
 async def get_public_cells(limit: int = 20):
     """Retrieve open public Spartan Cells looking for warriors."""
     cells = await SpartanCell.find(SpartanCell.is_public == True).sort("-total_streak").limit(limit).to_list()
-    return [
-        SpartanCellSummary(
-            id=str(c.id),
-            name=c.name,
-            motto=c.motto,
-            join_code=c.join_code,
-            leader_id=c.leader_id,
-            leader_name=c.leader_name,
-            member_count=len(c.member_ids),
-            max_members=c.max_members,
-            total_streak=c.total_streak,
-            collective_xp=c.collective_xp,
-            shield_status=c.shield_status,
-            is_public=c.is_public,
-            created_at=c.created_at,
-            members=c.members,
-        )
-        for c in cells
-    ]
+    return [_cell_to_summary(c) for c in cells]

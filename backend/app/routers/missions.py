@@ -144,6 +144,8 @@ async def get_today_tasks_status(
         tasks=tasks_dict,
         completed_count=completed_count,
         total_points=total_pts,
+        total_xp=total_pts,
+        xp_earned=total_pts,
         all_completed=completed_count == 5,
     )
 

@@ -64,6 +64,7 @@ class UserProfileResponse(BaseModel):
     streak: int = 0
     max_streak: int = 0
     total_points: int = 0
+    xp: int = 0
     mind_strength: Union[int, float] = 50
 
     @field_validator("mind_strength", mode="before")
@@ -114,6 +115,7 @@ class UpdateProfileRequest(BaseModel):
     max_streak: Optional[int] = None
     mind_strength: Optional[Union[int, float]] = None
     total_points: Optional[int] = None
+    xp: Optional[int] = None
     last_checkin_date: Optional[str] = None
     last_retain_date: Optional[str] = None
     last_retain_status: Optional[str] = None

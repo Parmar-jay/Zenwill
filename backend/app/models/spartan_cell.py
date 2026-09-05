@@ -3,16 +3,20 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 # pyrefly: ignore [missing-import]
 from beanie import Document, Indexed
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
-class CellMember(Document):
+class CellMember(BaseModel):
     user_id: str
     name: str
     streak: int = 0
+    xp: int = 0
     rank_tier: str = "Bronze I"
     badge: str = "🥉"
     last_checkin_date: Optional[str] = None
+    last_retain_date: Optional[str] = None
+    last_retain_status: Optional[str] = None
+    status: str = "pending"  # "retained" | "relapsed" | "pending"
     today_checked_in: bool = False
     is_leader: bool = False
     is_online: bool = False
@@ -41,6 +45,9 @@ class SpartanCell(Document):
     gold_shield_streak: int = 0
     max_members: int = 20
     is_public: bool = True
+
+    # Real-Time Brotherhood Support Broadcasts & Alerts
+    broadcasts: List[Dict[str, Any]] = Field(default_factory=list)
     
     # Activity Telemetry
     last_activity_at: datetime = Field(default_factory=datetime.utcnow)

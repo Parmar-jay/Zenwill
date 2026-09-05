@@ -159,6 +159,7 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         streak=streak_val,
         max_streak=max_streak_val,
         total_points=current_user.total_points or 0,
+        xp=current_user.total_points or 0,
         mind_strength=ai_mindset_score,
         last_checkin_date=current_user.last_checkin_date,
         last_retain_date=getattr(current_user, "last_retain_date", None),
@@ -211,6 +212,9 @@ async def update_my_profile(
         current_user.onboarding_step = payload.onboarding_step
     if payload.streak is not None:
         current_user.streak = payload.streak
+        if payload.streak == 0:
+            current_user.last_retain_status = "relapsed"
+            current_user.last_retain_date = date.today().isoformat()
         if payload.streak > (current_user.max_streak or 0):
             current_user.max_streak = payload.streak
     if payload.max_streak is not None:
@@ -219,6 +223,8 @@ async def update_my_profile(
         current_user.mind_strength = payload.mind_strength
     if payload.total_points is not None:
         current_user.total_points = payload.total_points
+    elif payload.xp is not None:
+        current_user.total_points = payload.xp
     if payload.last_checkin_date is not None:
         current_user.last_checkin_date = payload.last_checkin_date
     if payload.last_retain_date is not None:
@@ -228,16 +234,20 @@ async def update_my_profile(
 
     await current_user.save()
 
-    # Recalculate Spartan Cell total streak and Cohort Honor dynamically
+    # Recalculate Spartan Cell total streak, Honor, and broadcast relapse support if applicable
     if (payload.streak is not None or 
         payload.total_points is not None or 
+        payload.xp is not None or
         payload.name is not None or 
         payload.last_retain_status is not None or 
         payload.last_checkin_date is not None or 
         payload.last_retain_date is not None):
         try:
-            from app.services.spartan_cell_service import recalculate_user_cell_streak
-            await recalculate_user_cell_streak(user_id_str)
+            from app.services.spartan_cell_service import recalculate_user_cell_streak, broadcast_cell_relapse_support
+            if payload.last_retain_status == "relapsed" or (payload.streak == 0 and payload.last_retain_status == "relapsed"):
+                await broadcast_cell_relapse_support(user_id_str, current_user.name)
+            else:
+                await recalculate_user_cell_streak(user_id_str)
         except Exception:
             pass
 

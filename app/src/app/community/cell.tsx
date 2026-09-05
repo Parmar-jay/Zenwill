@@ -289,6 +289,29 @@ export default function SpartanCellScreen() {
     }
   };
 
+  const relapsedMembers = useMemo(() => {
+    return myCell?.members?.filter(
+      (m) => m.status === 'relapsed' || m.last_retain_status === 'relapsed' || (typeof m.streak === 'number' && m.streak === 0)
+    ) || [];
+  }, [myCell]);
+
+  const hasRelapsedMembers = relapsedMembers.length > 0;
+  const hasPendingMembers = useMemo(() => {
+    return (
+      myCell?.members?.some(
+        (m) =>
+          !m.today_checked_in &&
+          m.status !== 'relapsed' &&
+          m.last_retain_status !== 'relapsed' &&
+          typeof m.streak === 'number' &&
+          m.streak > 0
+      ) || false
+    );
+  }, [myCell]);
+
+  const isGoldShield = myCell?.shield_status === 'gold' && !hasRelapsedMembers && !hasPendingMembers;
+  const isCrackedShield = hasRelapsedMembers || myCell?.shield_status === 'cracked';
+
   const handleShareCode = async () => {
     if (!myCell?.join_code) return;
     triggerHaptic('light');
@@ -298,9 +321,6 @@ export default function SpartanCellScreen() {
       });
     } catch {}
   };
-
-  const isGoldShield = myCell?.shield_status === 'gold';
-  const isCrackedShield = myCell?.shield_status === 'cracked';
 
   return (
     <View style={styles.container}>
@@ -412,29 +432,62 @@ export default function SpartanCellScreen() {
               </View>
             </View>
 
-            {/* Gold Shield Status Banner */}
+            {/* Shield Status Banner */}
             <View style={[
               styles.shieldStatusCard,
               isGoldShield ? styles.shieldGold : isCrackedShield ? styles.shieldCracked : styles.shieldActive
             ]}>
               <View style={styles.shieldHeaderRow}>
                 <Ionicons
-                  name={isGoldShield ? 'shield-checkmark' : isCrackedShield ? 'warning-outline' : 'shield-outline'}
+                  name={
+                    isGoldShield
+                      ? 'shield-checkmark'
+                      : hasRelapsedMembers
+                      ? 'warning-outline'
+                      : hasPendingMembers
+                      ? 'time-outline'
+                      : 'shield-outline'
+                  }
                   size={24}
-                  color={isGoldShield ? '#F59E0B' : isCrackedShield ? '#EF4444' : '#00E5FF'}
+                  color={
+                    isGoldShield
+                      ? '#F59E0B'
+                      : hasRelapsedMembers
+                      ? '#EF4444'
+                      : hasPendingMembers
+                      ? '#F59E0B'
+                      : '#00E5FF'
+                  }
                 />
                 <View style={styles.shieldTitleWrapper}>
                   <ThemedText style={[
                     styles.shieldTitleText,
-                    { color: isGoldShield ? '#F59E0B' : isCrackedShield ? '#EF4444' : '#00E5FF' }
+                    {
+                      color:
+                        isGoldShield
+                          ? '#F59E0B'
+                          : hasRelapsedMembers
+                          ? '#EF4444'
+                          : hasPendingMembers
+                          ? '#F59E0B'
+                          : '#00E5FF'
+                    }
                   ]}>
-                    {isGoldShield ? 'GOLD SHIELD ACTIVE (+20% XP)' : isCrackedShield ? 'SHIELD PENDING (ACTION REQUIRED)' : 'DISCIPLINE SHIELD ACTIVE'}
+                    {isGoldShield
+                      ? 'GOLD SHIELD ACTIVE (+20% XP)'
+                      : hasRelapsedMembers
+                      ? 'SQUAD SHIELD CRACKED'
+                      : hasPendingMembers
+                      ? 'SHIELD PENDING (CHECK-IN AWAITED)'
+                      : 'DISCIPLINE SHIELD ACTIVE'}
                   </ThemedText>
                   <ThemedText style={styles.shieldSubText}>
                     {isGoldShield
                       ? '100% of squad members confirmed retention today! +20% XP boost active for the entire squad.'
-                      : isCrackedShield
-                      ? 'One or more members have pending daily check-ins. Send reminders to secure the squad Gold Shield.'
+                      : hasRelapsedMembers
+                      ? 'A squad member has relapsed today. In this squad, we hold the line together and rebuild retention.'
+                      : hasPendingMembers
+                      ? 'One or more members have pending daily check-ins. Remind them to complete check-in before midnight.'
                       : 'Maintain consistent daily check-ins across all members to unlock the Gold Shield before midnight.'}
                   </ThemedText>
                 </View>
@@ -465,12 +518,23 @@ export default function SpartanCellScreen() {
                     (member.user_id && user?.email && member.user_id.toLowerCase() === user.email.toLowerCase()) ||
                     (member.name && user?.name && member.name.trim().toLowerCase() === user.name.trim().toLowerCase());
                   const memberStreak = typeof member.streak === 'number' ? member.streak : 0;
+                  const memberXp = typeof member.xp === 'number' ? member.xp : 0;
                   const memberRank = getGamifiedRank(memberStreak);
+
+                  const isRelapsed =
+                    member.status === 'relapsed' ||
+                    member.last_retain_status === 'relapsed' ||
+                    memberStreak === 0;
+                  const isRetained = !isRelapsed && (member.status === 'retained' || member.today_checked_in);
 
                   return (
                     <TouchableOpacity
                       key={`${member.user_id}-${index}`}
-                      style={[styles.memberRow, isCurrentUser && styles.memberRowSelf]}
+                      style={[
+                        styles.memberRow,
+                        isCurrentUser && styles.memberRowSelf,
+                        isRelapsed && styles.memberRowRelapsed
+                      ]}
                       activeOpacity={isCurrentUser ? 1 : 0.7}
                       onPress={() => {
                         if (!isCurrentUser) {
@@ -504,62 +568,76 @@ export default function SpartanCellScreen() {
                         <View style={styles.memberInfoCol}>
                           <View style={styles.memberNameRow}>
                             <ThemedText style={styles.memberNameText} numberOfLines={1}>
-                              {member.name} {isCurrentUser && '(You)'}
+                              {member.name}
                             </ThemedText>
+                            {isCurrentUser && (
+                              <View style={styles.youBadge}>
+                                <ThemedText style={styles.youBadgeText}>You</ThemedText>
+                              </View>
+                            )}
                             {member.is_leader && (
-                              <ThemedText style={styles.leaderText}>Leader</ThemedText>
+                              <View style={styles.leaderBadge}>
+                                <ThemedText style={styles.leaderText}>Leader</ThemedText>
+                              </View>
                             )}
                           </View>
-                          <View style={[
-                            styles.memberRankPill,
-                            {
-                              backgroundColor: `${memberRank.color}15`,
-                              borderColor: `${memberRank.color}40`,
-                            }
-                          ]}>
-                            <Text style={[styles.memberRankNameText, { color: memberRank.color }]}>
-                              {memberRank.name}
-                            </Text>
+                          <View style={styles.memberBadgesRow}>
+                            <View style={[
+                              styles.memberRankPill,
+                              {
+                                backgroundColor: `${memberRank.color}15`,
+                                borderColor: `${memberRank.color}40`,
+                              }
+                            ]}>
+                              <Text style={[styles.memberRankNameText, { color: memberRank.color }]}>
+                                {memberRank.name}
+                              </Text>
+                            </View>
+                            <View style={styles.memberXpBadge}>
+                              <ThemedText style={styles.memberXpText}>⚡ {Number(memberXp).toLocaleString()} XP</ThemedText>
+                            </View>
                           </View>
                         </View>
                       </View>
 
                       <View style={styles.memberRightGroup}>
-                        <View style={styles.streakBadge}>
-                          <ThemedText style={styles.streakText}>🔥 {memberStreak}d</ThemedText>
+                        <View style={[styles.streakBadge, isRelapsed && styles.streakBadgeRelapsed]}>
+                          <ThemedText style={[styles.streakText, isRelapsed && styles.streakTextRelapsed]}>
+                            🔥 {memberStreak}d
+                          </ThemedText>
                         </View>
 
-                        {isCurrentUser ? (
-                          member.today_checked_in ? (
+                        <View style={styles.statusActionSlot}>
+                          {isRelapsed ? (
+                            <View style={styles.relapsedPill}>
+                              <Ionicons name="refresh-circle-outline" size={12} color="#EF4444" />
+                              <ThemedText style={styles.relapsedText}>Relapsed</ThemedText>
+                            </View>
+                          ) : isRetained ? (
                             <View style={styles.checkedInPill}>
-                              <Ionicons name="checkmark" size={12} color="#10B981" />
+                              <Ionicons name="shield-checkmark" size={11} color="#10B981" />
                               <ThemedText style={styles.checkedInText}>Retained</ThemedText>
                             </View>
-                          ) : (
+                          ) : isCurrentUser ? (
                             <View style={styles.pendingSelfPill}>
-                              <Ionicons name="time-outline" size={12} color="#F59E0B" />
+                              <Ionicons name="time-outline" size={11} color="#F59E0B" />
                               <ThemedText style={styles.pendingSelfText}>Pending</ThemedText>
                             </View>
-                          )
-                        ) : member.today_checked_in ? (
-                          <View style={styles.checkedInPill}>
-                            <Ionicons name="checkmark" size={12} color="#10B981" />
-                            <ThemedText style={styles.checkedInText}>Retained</ThemedText>
-                          </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={styles.nudgeBtn}
-                            activeOpacity={0.7}
-                            onPress={(e) => {
-                              e.stopPropagation?.();
-                              handleNudge(member);
-                            }}
-                            disabled={isNudging}
-                          >
-                            <Ionicons name="notifications-outline" size={12} color="#EF4444" />
-                            <ThemedText style={styles.nudgeBtnText}>Remind</ThemedText>
-                          </TouchableOpacity>
-                        )}
+                          ) : (
+                            <TouchableOpacity
+                              style={styles.nudgeBtn}
+                              activeOpacity={0.7}
+                              onPress={(e) => {
+                                e.stopPropagation?.();
+                                handleNudge(member);
+                              }}
+                              disabled={isNudging}
+                            >
+                              <Ionicons name="notifications-outline" size={11} color="#EF4444" />
+                              <ThemedText style={styles.nudgeBtnText}>Remind</ThemedText>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                     </TouchableOpacity>
                   );
@@ -1246,25 +1324,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderRadius: 14,
+    borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.07)',
   },
   memberRowSelf: {
     borderColor: 'rgba(0, 229, 255, 0.35)',
-    backgroundColor: 'rgba(0, 229, 255, 0.03)',
+    backgroundColor: 'rgba(0, 229, 255, 0.04)',
   },
   memberLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     flex: 1,
-    marginRight: 8,
+    marginRight: 10,
   },
   memberRankIndexBox: {
-    width: 20,
+    width: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1294,63 +1372,195 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   memberNameText: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
     flexShrink: 1,
   },
+  youBadge: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+    borderWidth: 0.5,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+  },
+  youBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#00E5FF',
+  },
+  leaderBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+    borderWidth: 0.5,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+  },
   leaderText: {
     fontSize: 9.5,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#F59E0B',
-    letterSpacing: 0.2,
-    marginLeft: 3,
+  },
+  memberBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
   },
   memberRankPill: {
-    alignSelf: 'flex-start',
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 5,
     borderWidth: 0.5,
-    marginTop: 3,
   },
   memberRankNameText: {
     fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.2,
   },
+  memberXpBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  memberXpText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#F59E0B',
+    letterSpacing: 0.2,
+  },
   memberRightGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 5,
     flexShrink: 0,
   },
   streakBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
     paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: 7,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  streakBadgeRelapsed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.25)',
   },
   streakText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  streakTextRelapsed: {
+    color: '#EF4444',
+  },
+  statusActionSlot: {
+    alignItems: 'flex-end',
+  },
+  brotherhoodAlertCard: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    marginBottom: 14,
+    gap: 10,
+  },
+  brotherhoodAlertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  brotherhoodAlertIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brotherhoodAlertTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#EF4444',
+    letterSpacing: 0.8,
+  },
+  brotherhoodAlertSub: {
+    fontSize: 11.5,
+    color: 'rgba(255, 255, 255, 0.8)',
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  sendStrengthBannerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00E5FF',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  sendStrengthBannerBtnText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.3,
+  },
+  memberRowRelapsed: {
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    backgroundColor: 'rgba(239, 68, 68, 0.04)',
+  },
+  relapsedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.14)',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    gap: 3,
+  },
+  relapsedText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+  sendStrengthBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00E5FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 7,
+    gap: 3,
+  },
+  sendStrengthBtnText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#000000',
+    letterSpacing: 0.2,
   },
   checkedInPill: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(16, 185, 129, 0.12)',
     paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 3.5,
+    borderRadius: 7,
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.3)',
     gap: 3,
   },
   checkedInText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     color: '#10B981',
   },
@@ -1359,14 +1569,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(245, 158, 11, 0.12)',
     paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
+    paddingVertical: 3.5,
+    borderRadius: 7,
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.3)',
-    gap: 4,
+    gap: 3,
   },
   pendingSelfText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     color: '#F59E0B',
   },
@@ -1374,15 +1584,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 7,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.3)',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
     gap: 3,
   },
   nudgeBtnText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
     color: '#EF4444',
   },

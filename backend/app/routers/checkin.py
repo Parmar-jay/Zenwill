@@ -98,14 +98,22 @@ async def submit_checkin(
     # Update User Streak & Gamification Stats
     if payload.relapse_occurred:
         current_user.streak = 0
+        current_user.last_retain_status = "relapsed"
+        current_user.last_retain_date = checkin_date.isoformat()
+    else:
+        current_user.last_retain_status = "retained"
+        current_user.last_retain_date = checkin_date.isoformat()
 
     current_user.last_checkin_date = checkin_date.isoformat()
     await current_user.save()
 
-    # Recalculate Spartan Cell total streak and Gold Shield status
+    # Recalculate Spartan Cell status & broadcast support if relapse occurred
     try:
-        from app.services.spartan_cell_service import recalculate_user_cell_streak
-        await recalculate_user_cell_streak(str(current_user.id))
+        from app.services.spartan_cell_service import recalculate_user_cell_streak, broadcast_cell_relapse_support
+        if payload.relapse_occurred:
+            await broadcast_cell_relapse_support(str(current_user.id), current_user.name)
+        else:
+            await recalculate_user_cell_streak(str(current_user.id))
     except Exception:
         pass
 

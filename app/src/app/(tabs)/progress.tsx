@@ -254,7 +254,7 @@ export default function ProgressTabScreen() {
                 <View style={styles.breakdownRow}>
                   <ThemedText style={styles.breakdownLabel}>Check-in Checklist</ThemedText>
                   <ThemedText style={styles.breakdownValue}>
-                    {progressIntel?.metrics_breakdown?.checkin_points ?? (latestCheckinSummary ? 25 : 10)}/25 PTS
+                    {progressIntel?.metrics_breakdown?.checkin_points ?? (latestCheckinSummary ? 25 : 10)}/25 XP
                   </ThemedText>
                 </View>
                 <View style={styles.breakdownTrack}>
@@ -272,7 +272,7 @@ export default function ProgressTabScreen() {
                 <View style={[styles.breakdownRow, { marginTop: 6 }]}>
                   <ThemedText style={styles.breakdownLabel}>Self-Reflection Journals</ThemedText>
                   <ThemedText style={styles.breakdownValue}>
-                    {progressIntel?.metrics_breakdown?.journal_points ?? (recentJournals?.length ? 20 : 5)}/20 PTS
+                    {progressIntel?.metrics_breakdown?.journal_points ?? (recentJournals?.length ? 20 : 5)}/20 XP
                   </ThemedText>
                 </View>
                 <View style={styles.breakdownTrack}>
@@ -290,7 +290,7 @@ export default function ProgressTabScreen() {
                 <View style={[styles.breakdownRow, { marginTop: 6 }]}>
                   <ThemedText style={styles.breakdownLabel}>Impulse & Urge Control</ThemedText>
                   <ThemedText style={styles.breakdownValue}>
-                    {progressIntel?.metrics_breakdown?.urge_control_points ?? 22}/25 PTS
+                    {progressIntel?.metrics_breakdown?.urge_control_points ?? 22}/25 XP
                   </ThemedText>
                 </View>
                 <View style={styles.breakdownTrack}>
@@ -765,7 +765,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>1. Daily Check-in Checklist</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.checkin_points ?? 25}/25 PTS
+                  {progressIntel?.metrics_breakdown?.checkin_points ?? 25}/25 XP
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Evaluates mood, energy, sleep quality, stress management, and daily accountability.</ThemedText>
@@ -775,7 +775,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>2. Self-Reflection Journals</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.journal_points ?? 20}/20 PTS
+                  {progressIntel?.metrics_breakdown?.journal_points ?? 20}/20 XP
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Evaluates depth of introspection, emotional honesty, and psychological awareness.</ThemedText>
@@ -785,7 +785,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>3. Impulse & Urge Transmutation</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.urge_control_points ?? 25}/25 PTS
+                  {progressIntel?.metrics_breakdown?.urge_control_points ?? 25}/25 XP
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Tracks urges neutralized, clean streak consistency, and vital energy transmutation.</ThemedText>
@@ -795,7 +795,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>4. Yogic Meditation Discipline</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.meditation_points ?? 25}/25 PTS
+                  {progressIntel?.metrics_breakdown?.meditation_points ?? 25}/25 XP
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Quantifies breathwork consistency, afternoon meditation discipline, and focus stamina.</ThemedText>

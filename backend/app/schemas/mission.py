@@ -46,6 +46,8 @@ class DailyTasksStatusResponse(BaseModel):
     date: str
     tasks: dict
     completed_count: int
-    total_points: int
+    total_points: int = 0
+    total_xp: int = 0
+    xp_earned: int = 0
     all_completed: bool
 

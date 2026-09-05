@@ -92,18 +92,18 @@ export default function DailyMissionsScreen() {
     return c;
   }, [todayTasks]);
 
-  const todayPoints = completedCount * 20; // 5 tasks * 20 PTS = 100 PTS max
+  const todayXp = completedCount * 20; // 5 tasks * 20 XP = 100 XP max
   const allCompleted = completedCount === 5;
   const progressPercent = Math.round((completedCount / 5) * 100);
 
   const weeklyStats = useMemo(() => getWeeklyStats(), [todayTasks]);
 
   const weeklyStatsSummary = useMemo(() => {
-    const totalPts = weeklyStats.reduce((acc, curr) => acc + curr.points, 0);
+    const totalXp = weeklyStats.reduce((acc, curr) => acc + curr.points, 0);
     const avgPct = Math.round(weeklyStats.reduce((acc, curr) => acc + curr.percent, 0) / 7);
     const activeDays = weeklyStats.filter((s) => s.points > 0).length;
     return {
-      totalPts,
+      totalXp,
       avgPct,
       activeDays,
     };
@@ -143,7 +143,7 @@ export default function DailyMissionsScreen() {
       id: 'checkin' as keyof DailyTasks,
       title: 'Daily Mind Check-in',
       subtitle: 'Log your mood, energy, stress, and urge level',
-      pts: 20,
+      xp: 20,
       icon: 'create-outline' as const,
       color: '#6366F1',
       route: '/daily-checkin',
@@ -154,7 +154,7 @@ export default function DailyMissionsScreen() {
       id: 'meditation' as keyof DailyTasks,
       title: 'Pranayama Breathwork',
       subtitle: '10 min deep breathwork & craving wave control',
-      pts: 20,
+      xp: 20,
       icon: 'flower-outline' as const,
       color: '#10B981',
       route: '/meditation',
@@ -165,7 +165,7 @@ export default function DailyMissionsScreen() {
       id: 'journal' as keyof DailyTasks,
       title: 'Self-Reflection Journal',
       subtitle: 'Write your thoughts & lock in daily wisdom',
-      pts: 20,
+      xp: 20,
       icon: 'book-outline' as const,
       color: '#F59E0B',
       route: '/journal',
@@ -176,7 +176,7 @@ export default function DailyMissionsScreen() {
       id: 'coach' as keyof DailyTasks,
       title: 'AI Coach Guidance',
       subtitle: 'Consult your AI mindset strategist for daily clarity',
-      pts: 20,
+      xp: 20,
       icon: 'chatbubble-ellipses-outline' as const,
       color: '#8B5CF6',
       route: '/(tabs)/chat',
@@ -187,7 +187,7 @@ export default function DailyMissionsScreen() {
       id: 'rescue' as keyof DailyTasks,
       title: 'Urge Control & Reset',
       subtitle: 'Practice urge surfing or 5-4-3-2-1 grounding protocol',
-      pts: 20,
+      xp: 20,
       icon: 'shield-outline' as const,
       color: '#EF4444',
       route: '/emergency',
@@ -257,7 +257,7 @@ export default function DailyMissionsScreen() {
             <View style={styles.heroHeaderRow}>
               <View style={styles.heroTitleGroup}>
                 <ThemedText style={styles.heroBadgeText}>DAILY SCORE TRACKER</ThemedText>
-                <ThemedText style={styles.heroMainTitle}>{todayPoints} / 100 PTS</ThemedText>
+                <ThemedText style={styles.heroMainTitle}>{todayXp} / 100 XP</ThemedText>
               </View>
 
               <View style={styles.streakBadge}>
@@ -282,7 +282,7 @@ export default function DailyMissionsScreen() {
               <View style={styles.completedBonusBanner}>
                 <Ionicons name="trophy-outline" size={16} color="#10B981" style={{ marginRight: 6 }} />
                 <ThemedText style={styles.completedBonusText}>
-                  PERFECT DAY ACHIEVED! 100/100 PTS UNLOCKED
+                  PERFECT DAY ACHIEVED! 100/100 XP UNLOCKED
                 </ThemedText>
               </View>
             )}
@@ -319,7 +319,7 @@ export default function DailyMissionsScreen() {
                       </ThemedText>
                       <View style={[styles.ptsBadge, item.done && styles.ptsBadgeDone]}>
                         <ThemedText style={[styles.ptsBadgeText, item.done && styles.ptsBadgeTextDone]}>
-                          +{item.pts} PTS
+                          +{item.xp} XP
                         </ThemedText>
                       </View>
                     </View>
@@ -426,7 +426,7 @@ export default function DailyMissionsScreen() {
                 <View style={styles.historyMetaItem}>
                   <View style={styles.metaIconRow}>
                     <Ionicons name="sparkles" size={12} color="#00E5FF" />
-                    <ThemedText style={styles.historyMetaVal}>{completedCount * 20} PTS</ThemedText>
+                    <ThemedText style={styles.historyMetaVal}>{completedCount * 20} XP</ThemedText>
                   </View>
                   <ThemedText style={styles.historyMetaLbl}>Today's Score</ThemedText>
                 </View>

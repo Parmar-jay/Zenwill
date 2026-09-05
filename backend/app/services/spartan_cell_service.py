@@ -81,10 +81,14 @@ def get_rank_badge_for_streak(days: int) -> Dict[str, str]:
     else: return {"rank_tier": "Master", "badge": "👑"}
 
 
+import uuid
+from app.models.direct_message import DirectMessage
+
+
 async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     """
-    Deeply recalculates collective streak, live member details, and Cohort Honor (cumulative XP)
-    directly from active MongoDB user documents.
+    Deeply recalculates collective streak, live member details, Cohort Honor (cumulative XP),
+    and exact daily retention status (Retained vs Relapsed vs Pending) directly from MongoDB.
     """
     today_str = date.today().isoformat()
     total_streak_accum = 0
@@ -124,13 +128,35 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
         total_xp_accum += user_points
         rank_info = get_rank_badge_for_streak(user_streak)
 
-        # Check if user confirmed daily retention today
-        has_checked_in_today = (
-            (user.last_checkin_date == today_str) or 
-            (getattr(user, "last_retain_date", None) == today_str)
+        last_status = getattr(user, "last_retain_status", None)
+        last_ret_date = getattr(user, "last_retain_date", None)
+        last_chk_date = user.last_checkin_date
+
+        # Determine retention status for the active cycle
+        is_relapsed = (
+            last_status == "relapsed"
+            or user_streak == 0
+            or (last_chk_date == today_str and last_status == "relapsed")
+            or (last_ret_date == today_str and last_status == "relapsed")
         )
-        if has_checked_in_today:
+
+        has_confirmed_retained_today = (
+            not is_relapsed and user_streak > 0 and (
+                (last_status == "retained" and (last_ret_date == today_str or last_chk_date == today_str))
+                or (last_chk_date == today_str or last_ret_date == today_str)
+            )
+        )
+
+        if is_relapsed:
+            status = "relapsed"
+            has_checked_in_today = True
+        elif has_confirmed_retained_today:
+            status = "retained"
+            has_checked_in_today = True
             checked_in_count += 1
+        else:
+            status = "pending"
+            has_checked_in_today = False
 
         is_leader = (
             str(user.id) == cell.leader_id or 
@@ -151,6 +177,10 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
             "rank_tier": rank_info["rank_tier"],
             "badge": rank_info["badge"],
             "last_checkin_date": user.last_checkin_date,
+            "last_retain_date": last_ret_date,
+            "last_retain_status": "relapsed" if is_relapsed else last_status,
+            "status": status,
+            "retain_status": status,
             "today_checked_in": has_checked_in_today,
             "is_leader": is_leader,
             "is_online": True,
@@ -166,9 +196,13 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
 
     # Shield Status Calculation:
     total_members_cnt = max(len(updated_members), 1)
-    if checked_in_count == total_members_cnt:
+    has_any_relapse = any(
+        m.get("status") == "relapsed" or m.get("last_retain_status") == "relapsed" or m.get("streak", 0) == 0
+        for m in updated_members
+    )
+    if checked_in_count == total_members_cnt and total_members_cnt > 0 and not has_any_relapse:
         cell.shield_status = "gold"
-    elif checked_in_count >= max(1, int(total_members_cnt * 0.7)):
+    elif checked_in_count >= max(1, int(total_members_cnt * 0.7)) and not has_any_relapse:
         cell.shield_status = "active"
     else:
         cell.shield_status = "cracked"
@@ -206,3 +240,106 @@ async def recalculate_user_cell_streak(user_id_str: str) -> None:
             await recalculate_cell_stats(cell)
     except Exception as e:
         print(f"[SpartanCellRecalculate Error] {e}")
+
+
+async def broadcast_cell_relapse_support(user_id_str: str, user_name: Optional[str] = None) -> None:
+    """
+    Broadcasts supportive alerts and direct messages to all members of a Spartan Cell
+    when one of their brothers relapses, encouraging them to rally around him, help him recover,
+    and stay mentally strong together.
+    """
+    try:
+        user = await get_user_safely(user_id_str)
+        clean_name = (user.name if user and user.name else user_name) or "Brother"
+        
+        query_clauses: List[Dict[str, Any]] = [
+            {"member_ids": user_id_str},
+            {"leader_id": user_id_str},
+        ]
+        if user:
+            if user.email:
+                query_clauses.extend([
+                    {"member_ids": user.email},
+                    {"leader_id": user.email},
+                ])
+            if str(user.id) != user_id_str:
+                query_clauses.extend([
+                    {"member_ids": str(user.id)},
+                    {"leader_id": str(user.id)},
+                ])
+
+        cells = await SpartanCell.find({"$or": query_clauses}).to_list()
+        now_dt = datetime.utcnow()
+        alert_msg = (
+            f"🛡️ Brotherhood Notice: Brother {clean_name} has relapsed today. "
+            f"Please reach out, stand by him, and help him recover to bounce back and stay mentally strong! We hold the line together."
+        )
+
+        for cell in cells:
+            # 1. Record broadcast in cell
+            if not hasattr(cell, "broadcasts") or cell.broadcasts is None:
+                cell.broadcasts = []
+            
+            # Avoid duplicate alert within the last 15 minutes
+            recent_same_user = any(
+                b.get("user_id") == user_id_str and 
+                (now_dt - datetime.fromisoformat(b.get("created_at", now_dt.isoformat()))).total_seconds() < 900
+                for b in cell.broadcasts[-3:]
+            ) if cell.broadcasts else False
+
+            if not recent_same_user:
+                cell.broadcasts.append({
+                    "id": str(uuid.uuid4()),
+                    "type": "relapse_support",
+                    "user_id": user_id_str,
+                    "user_name": clean_name,
+                    "message": alert_msg,
+                    "created_at": now_dt.isoformat(),
+                })
+                # Retain last 20 broadcasts
+                if len(cell.broadcasts) > 20:
+                    cell.broadcasts = cell.broadcasts[-20:]
+
+            await recalculate_cell_stats(cell)
+
+            # 2. Send supporting DirectMessage to every fellow squad member
+            for m_id in cell.member_ids:
+                if m_id == user_id_str or (user and (m_id == user.email or m_id == str(user.id))):
+                    continue
+                fellow_user = await get_user_safely(m_id)
+                if fellow_user:
+                    fellow_id = str(fellow_user.id)
+                    dm = DirectMessage(
+                        sender_id="system_spartan_cell",
+                        sender_name="🛡️ Spartan Cell Brotherhood",
+                        sender_username="spartan_brotherhood",
+                        receiver_id=fellow_id,
+                        receiver_name=fellow_user.name or "Brother",
+                        receiver_username=(fellow_user.name or "brother").lower().replace(" ", "_"),
+                        content=f"🛡️ Brotherhood Alert: Brother {clean_name} has relapsed today. Please reach out to him, stand by him, and help him recover to stay mentally strong! We hold the line together.",
+                        message_type="relapse_support_alert",
+                        audio_duration=None,
+                        is_read=False,
+                        created_at=now_dt,
+                    )
+                    await dm.insert()
+
+            # 3. Send encouraging recovery message to the relapsed user
+            if user:
+                user_dm = DirectMessage(
+                    sender_id="system_spartan_cell",
+                    sender_name="🛡️ Spartan Cell Brotherhood",
+                    sender_username="spartan_brotherhood",
+                    receiver_id=str(user.id),
+                    receiver_name=clean_name,
+                    receiver_username=(clean_name).lower().replace(" ", "_"),
+                    content="🛡️ You are not alone, brother. A setback is just a moment to rebuild—it does not define you. Your squad stands with you. Reset your focus, take a deep breath, and let's conquer today together.",
+                    message_type="relapse_recovery_support",
+                    audio_duration=None,
+                    is_read=False,
+                    created_at=now_dt,
+                )
+                await user_dm.insert()
+    except Exception as e:
+        print(f"[SpartanCellRelapseBroadcast Error]: {e}")
+

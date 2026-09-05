@@ -4,13 +4,26 @@ export interface CellMemberItem {
   user_id: string;
   name: string;
   streak: number;
+  xp?: number;
   rank_tier: string;
   badge: string;
   last_checkin_date: string | null;
+  last_retain_date?: string | null;
+  last_retain_status?: 'retained' | 'relapsed' | 'pending' | null;
+  status?: 'retained' | 'relapsed' | 'pending';
   today_checked_in: boolean;
   is_leader: boolean;
   is_online: boolean;
   joined_at: string;
+}
+
+export interface CellBroadcastItem {
+  id: string;
+  type: string;
+  user_id: string;
+  user_name: string;
+  message: string;
+  created_at: string;
 }
 
 export interface SpartanCellData {
@@ -27,6 +40,7 @@ export interface SpartanCellData {
   shield_status: 'gold' | 'active' | 'cracked';
   is_public: boolean;
   created_at: string;
+  broadcasts?: CellBroadcastItem[];
   members: CellMemberItem[];
 }
 
@@ -109,6 +123,14 @@ export const spartanApi = {
     return api.post<{ status: string; message: string }>('/spartan-cells/nudge', {
       target_user_id: targetUserId,
       target_user_name: targetUserName,
+    });
+  },
+
+  async sendStrength(targetUserId: string, targetUserName: string, customMessage?: string): Promise<{ status: string; message: string }> {
+    return api.post<{ status: string; message: string }>('/spartan-cells/send-strength', {
+      target_user_id: targetUserId,
+      target_user_name: targetUserName,
+      custom_message: customMessage,
     });
   },
 

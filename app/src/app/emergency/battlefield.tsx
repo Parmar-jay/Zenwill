@@ -725,7 +725,7 @@ export default function SpartanBattlefieldScreen() {
             {/* Honor points badge */}
             <View style={styles.honorAwardPill}>
               <Ionicons name="trophy" size={14} color="#F59E0B" />
-              <ThemedText style={styles.honorAwardText}>+25 Spartan Honor Points</ThemedText>
+              <ThemedText style={styles.honorAwardText}>+25 Spartan Honor XP</ThemedText>
             </View>
 
             {/* Action Buttons */}

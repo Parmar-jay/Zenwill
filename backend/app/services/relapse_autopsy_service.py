@@ -161,10 +161,10 @@ async def submit_and_analyze_relapse_autopsy(user: User, payload: Dict[str, Any]
         profile.updated_at = datetime.utcnow()
         await profile.save()
 
-    # 6. Recalculate Spartan Cell Total Streak dynamically
+    # 6. Recalculate Spartan Cell Total Streak and broadcast support dynamically
     try:
-        from app.services.spartan_cell_service import recalculate_user_cell_streak
-        await recalculate_user_cell_streak(user_id_str)
+        from app.services.spartan_cell_service import broadcast_cell_relapse_support
+        await broadcast_cell_relapse_support(user_id_str, user.name)
     except Exception:
         pass
 

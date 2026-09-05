@@ -27,6 +27,7 @@ class TokenResponse(BaseModel):
     streak: int = 0
     max_streak: int = 0
     total_points: int = 0
+    xp: int = 0
     mind_strength: int = 50
     email_verified: bool = True
     last_checkin_date: Optional[str] = None
