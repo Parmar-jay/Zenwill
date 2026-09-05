@@ -50,8 +50,19 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       const today = new Date().toISOString().split('T')[0];
       const isRelapse = newStreak === 0;
 
-      const updatedMembers = state.myCell.members.map((m) => {
-        if (m.user_id === userIdOrEmail || m.name === userIdOrEmail) {
+      const seen = new Set<string>();
+      const cleanMembers = state.myCell.members.filter((m) => {
+        const uid = (m.user_id || '').trim().toLowerCase();
+        const key = uid || (m.name || '').trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const updatedMembers = cleanMembers.map((m) => {
+        const targetClean = (userIdOrEmail || '').trim().toLowerCase();
+        const mUid = (m.user_id || '').trim().toLowerCase();
+        if (mUid && (mUid === targetClean || m.user_id === userIdOrEmail)) {
           streakDiff = newStreak - (m.streak || 0);
           return {
             ...m,
@@ -97,7 +108,15 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         set({ isLoadingCell: true });
       }
       const cell = await spartanApi.getMyCell();
-      if (cell && cell.members) {
+      if (cell && Array.isArray(cell.members)) {
+        const seen = new Set<string>();
+        cell.members = cell.members.filter((m) => {
+          const uid = (m.user_id || '').trim().toLowerCase();
+          const key = uid || (m.name || '').trim().toLowerCase();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
         // Enforce exact streak & retention consistency
         const hasRelapse = cell.members.some(
           (m) => m.status === 'relapsed' || m.last_retain_status === 'relapsed' || m.streak === 0

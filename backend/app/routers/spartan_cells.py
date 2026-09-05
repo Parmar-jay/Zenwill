@@ -58,6 +58,16 @@ class SpartanCellSummary(BaseModel):
 
 
 def _cell_to_summary(c: SpartanCell) -> SpartanCellSummary:
+    seen = set()
+    deduped_members = []
+    for m in (c.members or []):
+        uid = (m.get("user_id") or "").strip()
+        if uid and uid not in seen:
+            seen.add(uid)
+            deduped_members.append(m)
+        elif not uid:
+            deduped_members.append(m)
+
     return SpartanCellSummary(
         id=str(c.id),
         name=c.name,
@@ -65,7 +75,7 @@ def _cell_to_summary(c: SpartanCell) -> SpartanCellSummary:
         join_code=c.join_code,
         leader_id=c.leader_id,
         leader_name=c.leader_name,
-        member_count=len(c.member_ids),
+        member_count=len(deduped_members),
         max_members=c.max_members,
         total_streak=c.total_streak,
         collective_xp=c.collective_xp,
@@ -73,7 +83,7 @@ def _cell_to_summary(c: SpartanCell) -> SpartanCellSummary:
         is_public=c.is_public,
         created_at=c.created_at,
         broadcasts=getattr(c, "broadcasts", []) or [],
-        members=c.members or [],
+        members=deduped_members,
     )
 
 
@@ -172,9 +182,9 @@ async def join_spartan_cell(
     if not cell:
         raise HTTPException(status_code=404, detail="Invalid Cell Code. Please check the code and try again.")
 
-    if user_id_str in cell.member_ids:
+    if user_id_str in cell.member_ids or (current_user.email and current_user.email in cell.member_ids):
         # Already member
-        return await recalculate_cell_stats(cell)
+        return _cell_to_summary(await recalculate_cell_stats(cell))
 
     # Remove user from any prior cell (if not the target cell)
     prior_cells = await SpartanCell.find({

@@ -172,15 +172,32 @@ export default function CommunityLeaderboardScreen() {
   // Process and sort Individual Leaderboard Users
   const leaderboardUsers: LeaderboardUser[] = useMemo(() => {
     const map = new Map<string, LeaderboardUser>();
+    const currentUserId = String(currentUser?.id || '').trim().toLowerCase();
+    const currentUserEmail = (currentUser?.email || '').trim().toLowerCase();
+    let selfAssigned = false;
 
     dbRankings.forEach((r) => {
-      const isSelf = (r.author_name || '').toLowerCase() === firstName.toLowerCase();
+      const rId = (r.id || '').trim().toLowerCase();
+      const isIdMatch = Boolean(
+        (currentUserId && rId === currentUserId) ||
+        (currentUserEmail && rId === currentUserEmail) ||
+        r.is_user
+      );
+      // Fallback only if no ID match found anywhere yet
+      const isNameMatch = !currentUserId && (r.author_name || '').toLowerCase() === firstName.toLowerCase();
+      
+      const isSelf = !selfAssigned && (isIdMatch || isNameMatch);
+      if (isSelf) {
+        selfAssigned = true;
+      }
+
       const sDays = isSelf ? streak : (typeof r.streak_days === 'number' ? r.streak_days : 0);
       const rInfo = getGamifiedRank(sDays);
+      const uniqueKey = rId || (r.author_name || '').toLowerCase();
 
-      map.set(r.author_name.toLowerCase(), {
+      map.set(uniqueKey, {
         rank: 0,
-        name: isSelf ? `${firstName} (You)` : r.author_name,
+        name: isSelf ? `${firstName} (You)` : (r.author_name || 'Warrior'),
         streakDays: sDays,
         rankTierName: rInfo.name,
         rankColor: rInfo.color,
@@ -188,9 +205,10 @@ export default function CommunityLeaderboardScreen() {
       });
     });
 
-    if (!map.has(firstName.toLowerCase())) {
+    if (!selfAssigned) {
       const userRankInfo = getGamifiedRank(streak);
-      map.set(firstName.toLowerCase(), {
+      const selfKey = currentUserId || firstName.toLowerCase();
+      map.set(selfKey, {
         rank: 0,
         name: `${firstName} (You)`,
         streakDays: streak,
@@ -205,7 +223,7 @@ export default function CommunityLeaderboardScreen() {
       ...u,
       rank: index + 1,
     }));
-  }, [dbRankings, firstName, streak]);
+  }, [dbRankings, firstName, streak, currentUser?.id, currentUser?.email]);
 
   // Current User Standings
   const currentUserRank = useMemo(() => {

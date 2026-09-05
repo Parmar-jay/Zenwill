@@ -514,7 +514,12 @@ export default function SpartanBattlefieldScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {activeParticipants.map((member, idx) => {
-              const isMe = (member.user_id || '').trim().toLowerCase() === currentUserId || member.name === currentUserName;
+              const memberId = (member.user_id || '').trim().toLowerCase();
+              const isMe = Boolean(
+                (currentUserId && memberId === currentUserId) ||
+                (user?.email && memberId === user.email.toLowerCase()) ||
+                (!currentUserId && currentUserName && member.name === currentUserName)
+              );
               const displayName = isMe ? `${member.name} (You)` : member.name;
               const initials = (member.name || 'W').substring(0, 2).toUpperCase();
 

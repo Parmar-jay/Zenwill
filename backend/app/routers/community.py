@@ -349,7 +349,13 @@ async def get_community_rankings():
 
         results = []
         rank = 1
+        seen_user_ids = set()
         for u in users:
+            uid = str(u.id)
+            if uid in seen_user_ids:
+                continue
+            seen_user_ids.add(uid)
+
             name = (u.name or u.email.split("@")[0] or "Operative").split(" ")[0]
             # Strict filter: skip dummy test accounts or invalid IDs
             if is_invalid_user_identifier(name) or name in dummy_names:

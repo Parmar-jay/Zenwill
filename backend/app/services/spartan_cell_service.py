@@ -96,32 +96,44 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     updated_members = []
     checked_in_count = 0
 
-    # Ensure leader_id is in member_ids
-    if cell.leader_id and cell.leader_id not in cell.member_ids:
-        cell.member_ids.append(cell.leader_id)
+    # Ensure leader_id is resolved and present
+    if cell.leader_id:
+        leader_user = await get_user_safely(cell.leader_id)
+        if leader_user:
+            cell.leader_id = str(leader_user.id)
+            if leader_user.name:
+                cell.leader_name = leader_user.name
+        if cell.leader_id not in cell.member_ids:
+            cell.member_ids.append(cell.leader_id)
 
-    # Deduplicate member_ids while preserving order
-    seen_ids = set()
-    deduped_ids = []
-    for m in cell.member_ids:
-        if m and m not in seen_ids:
-            seen_ids.add(m)
-            deduped_ids.append(m)
-    cell.member_ids = deduped_ids
+    seen_user_ids = set()
+    canonical_member_ids = []
 
-    for m_id in cell.member_ids:
+    for m_id in (cell.member_ids or []):
+        if not m_id:
+            continue
         user = await get_user_safely(m_id)
         if not user:
             # Fallback to existing cached member item if user temporarily unresolvable
             prev = next((pm for pm in (cell.members or []) if pm.get("user_id") == m_id), None)
             if prev:
-                s_val = int(prev.get("streak", 0) or 0)
-                xp_val = int(prev.get("xp", 0) or 0)
-                total_streak_accum += s_val
-                total_xp_accum += xp_val
-                updated_members.append(prev)
+                prev_id = str(prev.get("user_id") or m_id).strip()
+                if prev_id and prev_id not in seen_user_ids:
+                    seen_user_ids.add(prev_id)
+                    canonical_member_ids.append(prev_id)
+                    s_val = int(prev.get("streak", 0) or 0)
+                    xp_val = int(prev.get("xp", 0) or 0)
+                    total_streak_accum += s_val
+                    total_xp_accum += xp_val
+                    updated_members.append(prev)
             continue
         
+        uid = str(user.id).strip()
+        if uid in seen_user_ids:
+            continue
+        seen_user_ids.add(uid)
+        canonical_member_ids.append(uid)
+
         user_streak = int(user.streak or 0)
         user_points = int(user.total_points or 0)
         total_streak_accum += user_streak
@@ -190,6 +202,7 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     # Sort members: Leader first, then highest streak descending
     updated_members.sort(key=lambda m: (not m["is_leader"], -m["streak"]))
 
+    cell.member_ids = canonical_member_ids
     cell.total_streak = total_streak_accum
     cell.collective_xp = total_xp_accum
     cell.members = updated_members

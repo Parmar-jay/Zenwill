@@ -289,25 +289,35 @@ export default function SpartanCellScreen() {
     }
   };
 
+  const dedupedMembers = useMemo(() => {
+    if (!myCell?.members) return [];
+    const seen = new Set<string>();
+    return myCell.members.filter((m) => {
+      const uid = (m.user_id || '').trim().toLowerCase();
+      const key = uid || (m.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [myCell?.members]);
+
   const relapsedMembers = useMemo(() => {
-    return myCell?.members?.filter(
+    return dedupedMembers.filter(
       (m) => m.status === 'relapsed' || m.last_retain_status === 'relapsed' || (typeof m.streak === 'number' && m.streak === 0)
-    ) || [];
-  }, [myCell]);
+    );
+  }, [dedupedMembers]);
 
   const hasRelapsedMembers = relapsedMembers.length > 0;
   const hasPendingMembers = useMemo(() => {
-    return (
-      myCell?.members?.some(
-        (m) =>
-          !m.today_checked_in &&
-          m.status !== 'relapsed' &&
-          m.last_retain_status !== 'relapsed' &&
-          typeof m.streak === 'number' &&
-          m.streak > 0
-      ) || false
+    return dedupedMembers.some(
+      (m) =>
+        !m.today_checked_in &&
+        m.status !== 'relapsed' &&
+        m.last_retain_status !== 'relapsed' &&
+        typeof m.streak === 'number' &&
+        m.streak > 0
     );
-  }, [myCell]);
+  }, [dedupedMembers]);
 
   const isGoldShield = myCell?.shield_status === 'gold' && !hasRelapsedMembers && !hasPendingMembers;
   const isCrackedShield = hasRelapsedMembers || myCell?.shield_status === 'cracked';
@@ -411,7 +421,7 @@ export default function SpartanCellScreen() {
                 </View>
                 <ThemedText style={styles.streakCardTitle}>COLLECTIVE SQUAD RETENTION</ThemedText>
                 <ThemedText style={styles.streakCardSub}>
-                  Combined clean days of all {myCell.members?.length || 1} members. Drops if any member relapses.
+                  Combined clean days of all {dedupedMembers.length || 1} members. Drops if any member relapses.
                 </ThemedText>
               </View>
 
@@ -419,7 +429,7 @@ export default function SpartanCellScreen() {
               <View style={styles.sideStatsCol}>
                 <View style={styles.smallStatCard}>
                   <ThemedText style={styles.smallStatValue}>
-                    {myCell.members?.length || 1}/{myCell.max_members || 20}
+                    {dedupedMembers.length || 1}/{myCell.max_members || 20}
                   </ThemedText>
                   <ThemedText style={styles.smallStatLabel}>ACTIVE MEMBERS</ThemedText>
                 </View>
@@ -506,17 +516,19 @@ export default function SpartanCellScreen() {
             <View style={styles.rosterSection}>
               <View style={styles.rosterHeaderRow}>
                 <ThemedText style={styles.rosterTitle}>
-                  SQUAD MEMBERS ({myCell.members?.length || 0}/{myCell.max_members || 20})
+                  SQUAD MEMBERS ({dedupedMembers.length}/{myCell.max_members || 20})
                 </ThemedText>
                 <ThemedText style={styles.rosterSortLabel}>Ordered by Retention</ThemedText>
               </View>
 
               <View style={styles.rosterList}>
-                {myCell.members?.map((member, index) => {
-                  const isCurrentUser =
-                    member.user_id === String(user?.id || '') ||
-                    (member.user_id && user?.email && member.user_id.toLowerCase() === user.email.toLowerCase()) ||
-                    (member.name && user?.name && member.name.trim().toLowerCase() === user.name.trim().toLowerCase());
+                {dedupedMembers.map((member, index) => {
+                  const currentUserId = String(user?.id || '').trim();
+                  const currentUserEmail = (user?.email || '').trim().toLowerCase();
+                  const isCurrentUser = Boolean(
+                    (currentUserId && member.user_id === currentUserId) ||
+                    (currentUserEmail && member.user_id && member.user_id.toLowerCase() === currentUserEmail)
+                  );
                   const memberStreak = typeof member.streak === 'number' ? member.streak : 0;
                   const memberXp = typeof member.xp === 'number' ? member.xp : 0;
                   const memberRank = getGamifiedRank(memberStreak);
