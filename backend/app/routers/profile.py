@@ -7,12 +7,13 @@ from app.services.mind_profile_service import get_or_create_mind_profile
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
 
+from datetime import datetime, date, timedelta
 from app.models.journal import JournalEntry
 from app.models.daily_checkin import DailyCheckin
 from app.models.behavioral_event import BehavioralEvent
 from app.models.emergency_session import EmergencySession
 from app.models.chat_message import ChatMessage
-from datetime import timedelta
+from app.models.onboarding import Onboarding
 
 
 @router.get("/me", response_model=UserProfileResponse)
@@ -308,11 +309,6 @@ async def update_my_profile(
     await onboarding_record.save()
 
     return await get_my_profile(current_user=current_user)
-
-
-
-from app.models.onboarding import Onboarding
-from datetime import datetime
 
 
 @router.post("/onboarding", status_code=201)
