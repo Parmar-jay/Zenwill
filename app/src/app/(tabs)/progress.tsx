@@ -686,7 +686,7 @@ export default function ProgressTabScreen() {
               </View>
             </View>
 
-            {/* 8. Top Journals (AI Analyzed) */}
+            {/* 8. Recent Self-Reflection Journals */}
             <View style={styles.sectionContainer}>
               <View style={styles.sectionHeaderRow}>
                 <ThemedText style={styles.sectionTitle}>Recent Self-Reflection Journals</ThemedText>
@@ -735,7 +735,7 @@ export default function ProgressTabScreen() {
                   <Ionicons name="book-outline" size={24} color="#00E5FF" />
                   <ThemedText style={styles.emptyTitle}>No Journal Entries Logged</ThemedText>
                   <ThemedText style={styles.emptySub}>
-                    Tap here to record your first reflection and boost your AI Mindset evaluation.
+                    Tap here to record your first reflection and build mindful self-awareness.
                   </ThemedText>
                 </TouchableOpacity>
               )}

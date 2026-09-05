@@ -134,22 +134,26 @@ export default function JournalIndexScreen() {
 
     const tempId = `temp-journal-${Date.now()}`;
     const nowIso = new Date().toISOString();
+    const savedTitle = newTitle.trim();
+    const savedMood = selectedMood;
+    const savedIsPublic = isPublic;
+
     const newEntry: JournalEntry = {
       id: tempId,
       user_id: 'user_me',
       author_name: 'Operative',
-      title: newTitle.trim() || 'Reflection',
+      title: savedTitle || 'Reflection',
       content: trimmedContent,
-      mood_tag: selectedMood,
-      emotional_tags: [selectedMood],
-      is_private: !isPublic,
+      mood_tag: savedMood,
+      emotional_tags: [savedMood],
+      is_private: !savedIsPublic,
       created_at: nowIso,
       updated_at: nowIso,
     };
 
     // 1. Optimistically update local entries & complete mission immediately
     setMyEntries((prev) => [newEntry, ...prev]);
-    if (isPublic) {
+    if (savedIsPublic) {
       setCommunityEntries((prev) => [newEntry, ...prev.slice(0, 4)]);
     }
     useDailyMissionStore.getState().completeTask('journal');
@@ -164,11 +168,11 @@ export default function JournalIndexScreen() {
 
     // 3. Fire backend API in background
     const payload = {
-      title: newTitle.trim() || undefined,
+      title: savedTitle || undefined,
       content: trimmedContent,
-      mood_tag: selectedMood,
-      emotional_tags: [selectedMood],
-      is_private: !isPublic,
+      mood_tag: savedMood,
+      emotional_tags: [savedMood],
+      is_private: !savedIsPublic,
     };
 
     journalApi.createEntry(payload)
@@ -564,8 +568,8 @@ export default function JournalIndexScreen() {
                   <ActivityIndicator color="#000000" />
                 ) : (
                   <>
-                    <Ionicons name="sparkles" size={17} color="#000000" />
-                    <ThemedText style={styles.submitBtnText}>Save & Analyze with AI</ThemedText>
+                    <Ionicons name="checkmark-circle" size={18} color="#000000" />
+                    <ThemedText style={styles.submitBtnText}>Save Reflection</ThemedText>
                   </>
                 )}
               </TouchableOpacity>
