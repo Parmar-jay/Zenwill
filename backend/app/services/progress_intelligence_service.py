@@ -61,7 +61,21 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
         {"$or": [{"user_id": user_id_str}, {"user_id": user_email}]}
     ).sort("-date").limit(30).to_list()
 
-    today_checkin = next((c for c in recent_checkins if str(c.date) == today_str), None)
+    def _is_today_checkin(c) -> bool:
+        if getattr(c, "date", None):
+            if str(c.date)[:10] == today_str:
+                return True
+        if getattr(c, "created_at", None):
+            if hasattr(c.created_at, "strftime") and c.created_at.strftime("%Y-%m-%d") == today_str:
+                return True
+            elif str(c.created_at)[:10] == today_str:
+                return True
+        return False
+
+    today_checkin = next((c for c in recent_checkins if _is_today_checkin(c)), None)
+    if not today_checkin and getattr(user, "last_checkin_date", None) == today_str and recent_checkins:
+        if _is_today_checkin(recent_checkins[0]):
+            today_checkin = recent_checkins[0]
     latest_checkin = today_checkin or (recent_checkins[0] if recent_checkins else None)
 
     # 3. Fetch Emergency Urge Sessions (Up to 100)
@@ -149,50 +163,48 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
 
     # ── C. 4-Pillar Algorithmic Scoring (0–100) ───────────────────────────────
 
-    # Pillar 1: Daily Checklist & Mind Discipline (0–30 PTS)
+    # Pillar 1: Daily Checklist & Mind Discipline (0–25 XP)
     checkin_pts = 0
     if today_checkin:
         checkin_pts += 15  # Baseline for executing daily accountability
         if energy_score >= 7:
-            checkin_pts += 4
+            checkin_pts += 3
         elif energy_score >= 5:
-            checkin_pts += 2
+            checkin_pts += 1
 
         if focus_score >= 7:
-            checkin_pts += 4
+            checkin_pts += 3
         elif focus_score >= 5:
-            checkin_pts += 2
+            checkin_pts += 1
 
         if stress_score <= 4:
-            checkin_pts += 4
-        elif stress_score <= 6:
             checkin_pts += 2
+        elif stress_score <= 6:
+            checkin_pts += 1
 
         if sleep_hours >= 7.0 and sleep_quality >= 7:
-            checkin_pts += 3
+            checkin_pts += 2
         elif sleep_hours >= 6.0:
             checkin_pts += 1
-    elif latest_checkin:
-        checkin_pts = 10
     else:
-        checkin_pts = 5
-    checkin_pts = max(0, min(30, checkin_pts))
+        checkin_pts = 0
+    checkin_pts = max(0, min(25, checkin_pts))
 
-    # Pillar 2: Reflection & Journaling (0–20 PTS)
+    # Pillar 2: Reflection & Journaling (0–20 XP)
     journal_pts = 0
     if has_journaled_today:
         journal_pts += 15
-        if getattr(today_checkin, "reflection_response", None):
+        if today_checkin and getattr(today_checkin, "reflection_response", None):
             journal_pts += 5
     elif total_journals_count >= 3:
         journal_pts = 10
     elif total_journals_count >= 1:
         journal_pts = 6
     else:
-        journal_pts = 2
+        journal_pts = 0
     journal_pts = max(0, min(20, journal_pts))
 
-    # Pillar 3: Mindfulness & Yogic Transmutation (0–25 PTS)
+    # Pillar 3: Mindfulness & Yogic Transmutation (0–25 XP)
     meditation_pts = 0
     if has_meditated_today:
         meditation_pts += 20
@@ -201,17 +213,17 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
     elif total_meditations_count >= 1:
         meditation_pts += 6
     else:
-        meditation_pts = 2
+        meditation_pts = 0
 
     if completed_missions_count > 0:
         meditation_pts += min(completed_missions_count * 2, 5)
     meditation_pts = max(0, min(25, meditation_pts))
 
-    # Pillar 4: Impulse Mastery & Urge Neutralization (0–25 PTS)
+    # Pillar 4: Impulse Mastery & Urge Neutralization (0–25 XP)
     urge_pts = 0
     if relapse_today:
         urge_pts = 0
-    else:
+    elif streak_val > 0:
         if streak_val >= 30:
             urge_pts = 25
         elif streak_val >= 14:
@@ -225,11 +237,15 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
 
         if today_urges_count > 0:
             urge_pts = min(25, urge_pts + (today_urges_count * 3))
+    elif today_urges_count > 0:
+        urge_pts = min(20, today_urges_count * 5)
+    else:
+        urge_pts = 0
     urge_pts = max(0, min(25, urge_pts))
 
     # Total Score Calculation (0–100)
     raw_total_score = checkin_pts + journal_pts + meditation_pts + urge_pts
-    final_score = max(10, min(100, raw_total_score))
+    final_score = max(0, min(100, raw_total_score))
 
     status_title, status_color = _get_status_tier(final_score)
 
@@ -242,8 +258,9 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
         summary_parts.append(f"Operating on a steady {streak_val}-day neural rewiring path.")
     elif latest_autopsy and getattr(latest_autopsy, "retained_percentage", None):
         headline = f"Recovery Active • {latest_autopsy.retained_percentage}% Neural Rewiring Preserved"
+        clean_days = getattr(latest_autopsy, "retained_clean_days", getattr(latest_autopsy, "streak_before_relapse", 0))
         summary_parts.append(
-            f"Preserved {latest_autopsy.retained_percentage}% neural pathways from your {latest_autopsy.clean_days_count}-day run."
+            f"Preserved {latest_autopsy.retained_percentage}% neural pathways from your {clean_days}-day run."
         )
     else:
         headline = "Day 1 Baseline • Establishing Mental Fortress"
@@ -381,20 +398,24 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
     ]
 
     # 4 Quick Metric Cards for instant human scanning
+    has_checkins_7d = len(recent_checkins[:7]) > 0
+    sleep_stress_val = f"{avg_sleep_7d:.1f}h / {avg_stress_7d:.0f}st" if has_checkins_7d else "N/A"
+    sleep_stress_sub = "Cortisol Index" if has_checkins_7d else "No Check-ins Logged"
+
     core_metrics = [
         {
             "id": "clean_consistency",
             "label": "7-Day Consistency",
-            "value": f"{clean_rate_7d}%",
-            "sub": f"{7 - relapse_count_7d}/7 Days Clean",
+            "value": f"{clean_rate_7d}%" if (recent_checkins or streak_val > 0) else "N/A",
+            "sub": f"{7 - relapse_count_7d}/7 Days Clean" if (recent_checkins or streak_val > 0) else "0/7 Days Clean",
             "color": "#10B981",
             "icon": "shield-checkmark",
         },
         {
             "id": "urges_neutralized",
             "label": "Urges Neutralized",
-            "value": str(len(effective_sessions) if emergency_sessions else max(today_urges_count, streak_val)),
-            "sub": "Zero Relapse Yield",
+            "value": str(len(effective_sessions)) if emergency_sessions else (str(today_urges_count) if today_urges_count > 0 else "0"),
+            "sub": "Zero Relapse Yield" if streak_val > 0 else "Urge Defense Count",
             "color": "#00E5FF",
             "icon": "flame",
         },
@@ -409,8 +430,8 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
         {
             "id": "recovery_balance",
             "label": "Sleep & Stress",
-            "value": f"{avg_sleep_7d:.1f}h / {avg_stress_7d:.0f}st",
-            "sub": "Cortisol Index",
+            "value": sleep_stress_val,
+            "sub": sleep_stress_sub,
             "color": "#38BDF8",
             "icon": "moon",
         },
@@ -426,11 +447,12 @@ async def compute_deep_progress_intelligence(user: User) -> Dict[str, Any]:
         "checkin_score": checkin_pts,
         "journal_score": journal_pts,
         "meditation_urge_score": meditation_pts + urge_pts,
+        "today_checkin_completed": today_checkin is not None,
         "metrics_breakdown": {
-            "checkin_points": checkin_pts,
-            "journal_points": journal_pts,
-            "meditation_points": meditation_pts,
-            "urge_control_points": urge_pts,
+            "checkin_points": checkin_pts if today_checkin else None,
+            "journal_points": journal_pts if (total_journals_count > 0 or has_journaled_today) else None,
+            "meditation_points": meditation_pts if (total_meditations_count > 0 or has_meditated_today or completed_missions_count > 0) else None,
+            "urge_control_points": urge_pts if (streak_val > 0 or today_urges_count > 0 or emergency_sessions) else None,
         },
         "core_metrics": core_metrics,
         "weekly_stats": {

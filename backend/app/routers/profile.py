@@ -52,9 +52,42 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         for c in checkins
     ]
 
+    now_dt = datetime.utcnow()
+    today_str = now_dt.strftime("%Y-%m-%d")
+
+    def _is_checkin_today(c) -> bool:
+        if getattr(c, "date", None):
+            if str(c.date)[:10] == today_str:
+                return True
+        if getattr(c, "created_at", None):
+            if hasattr(c.created_at, "strftime") and c.created_at.strftime("%Y-%m-%d") == today_str:
+                return True
+            elif str(c.created_at)[:10] == today_str:
+                return True
+        return False
+
+    today_checkin = next((c for c in checkins if _is_checkin_today(c)), None)
+    user_last_checkin_today = (getattr(current_user, "last_checkin_date", None) == today_str)
+    today_checkin_done = (today_checkin is not None) or user_last_checkin_today
+
+    today_checkin_summary = None
+    if today_checkin:
+        c_date_str = str(today_checkin.date)[:10] if today_checkin.date else today_str
+        today_checkin_summary = {
+            "mood": today_checkin.mood,
+            "mood_intensity": today_checkin.mood_intensity,
+            "energy_score": today_checkin.energy_score,
+            "stress_score": today_checkin.stress_score,
+            "sleep_quality": today_checkin.sleep_quality,
+            "focus_score": today_checkin.focus_score,
+            "date": c_date_str,
+            "is_today": True,
+        }
+
     latest_checkin = checkins[0] if checkins else None
     latest_checkin_summary = None
     if latest_checkin:
+        c_date_str = str(latest_checkin.date)[:10] if latest_checkin.date else (latest_checkin.created_at.strftime("%Y-%m-%d") if getattr(latest_checkin, "created_at", None) else None)
         latest_checkin_summary = {
             "mood": latest_checkin.mood,
             "mood_intensity": latest_checkin.mood_intensity,
@@ -62,17 +95,14 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
             "stress_score": latest_checkin.stress_score,
             "sleep_quality": latest_checkin.sleep_quality,
             "focus_score": latest_checkin.focus_score,
-            "date": str(latest_checkin.date),
+            "date": c_date_str,
+            "is_today": (c_date_str == today_str),
         }
-
 
     # 3. Fetch emergency sessions & urge count stats
     emergency_sessions = await EmergencySession.find(
         {"$or": [{"user_id": user_id_str}, {"user_id": current_user.email}]}
     ).to_list()
-
-    now_dt = datetime.utcnow()
-    today_str = now_dt.strftime("%Y-%m-%d")
     total_urges_count = len(emergency_sessions)
 
     today_urges_count = sum(
@@ -170,6 +200,8 @@ async def get_my_profile(current_user: User = Depends(get_current_user)):
         recent_journals=recent_journals_list,
         meditations_count=meditations_count,
         afternoon_meditation_done=afternoon_meditation_done,
+        today_checkin_done=today_checkin_done,
+        today_checkin_summary=today_checkin_summary,
         latest_checkin_summary=latest_checkin_summary,
         total_urges_count=total_urges_count,
         today_urges_count=today_urges_count,

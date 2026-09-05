@@ -20,6 +20,17 @@ export interface UserProfile {
   recent_journals?: Array<{ id: string; title: string; content: string; mood_tag: string; created_at: string }>;
   meditations_count?: number;
   afternoon_meditation_done?: boolean;
+  today_checkin_done?: boolean;
+  today_checkin_summary?: {
+    mood: string;
+    mood_intensity: number;
+    energy_score: number;
+    stress_score: number;
+    sleep_quality: number;
+    focus_score: number;
+    date: string;
+    is_today?: boolean;
+  } | null;
   latest_checkin_summary?: {
     mood: string;
     mood_intensity: number;
@@ -28,7 +39,8 @@ export interface UserProfile {
     sleep_quality: number;
     focus_score: number;
     date: string;
-  };
+    is_today?: boolean;
+  } | null;
   total_urges_count?: number;
   today_urges_count?: number;
   daily_urge_counts?: Array<{ date: string; dayLabel: string; count: number; isToday?: boolean }>;

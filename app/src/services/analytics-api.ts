@@ -94,12 +94,13 @@ export interface ProgressIntelligence {
   checkin_score: number;
   journal_score: number;
   meditation_urge_score: number;
+  today_checkin_completed?: boolean;
   core_metrics?: CoreMetricCard[];
   metrics_breakdown?: {
-    checkin_points: number;
-    journal_points: number;
-    meditation_points: number;
-    urge_control_points: number;
+    checkin_points?: number | null;
+    journal_points?: number | null;
+    meditation_points?: number | null;
+    urge_control_points?: number | null;
   };
   weekly_stats?: {
     total_checkins: number;

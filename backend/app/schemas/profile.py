@@ -85,6 +85,8 @@ class UserProfileResponse(BaseModel):
     recent_journals: List[Dict[str, Any]] = []
     meditations_count: int = 0
     afternoon_meditation_done: bool = False
+    today_checkin_done: bool = False
+    today_checkin_summary: Optional[Dict[str, Any]] = None
     latest_checkin_summary: Optional[Dict[str, Any]] = None
     total_urges_count: int = 0
     today_urges_count: int = 0

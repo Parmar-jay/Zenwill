@@ -45,6 +45,8 @@ export default function ProgressTabScreen() {
     recentJournals,
     meditationsCount,
     afternoonMeditationDone,
+    todayCheckinDone,
+    todayCheckinSummary,
     latestCheckinSummary,
     totalUrgesCount,
     todayUrgesCount,
@@ -135,9 +137,51 @@ export default function ProgressTabScreen() {
     return days;
   }, [dailyUrgeCounts, todayUrgesCount]);
 
-  const scoreValue = progressIntel?.score ?? Math.min(100, Math.max(10, Math.round((mindStrength || 500) / 10)));
-  const statusTitle = progressIntel?.status_title ?? (streak > 7 ? 'Ojas Transmutation Sovereign' : 'Neural Rewiring Active');
-  const statusColor = progressIntel?.status_color ?? '#00E5FF';
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Strict check: has user actually submitted the checklist for TODAY?
+  const isCheckinSubmittedToday = useMemo(() => {
+    if (todayCheckinDone) return true;
+    if (todayCheckinSummary && (todayCheckinSummary.date === todayStr || todayCheckinSummary.is_today)) return true;
+    if (latestCheckinSummary && (latestCheckinSummary.date === todayStr || latestCheckinSummary.is_today)) return true;
+    if (progressIntel?.today_checkin_completed) return true;
+    return false;
+  }, [todayCheckinDone, todayCheckinSummary, latestCheckinSummary, todayStr, progressIntel?.today_checkin_completed]);
+
+  const activeCheckin = isCheckinSubmittedToday
+    ? (todayCheckinSummary || (latestCheckinSummary?.date === todayStr ? latestCheckinSummary : null))
+    : null;
+
+  // Breakdown points with zero dummy fallbacks
+  const checkinPoints = isCheckinSubmittedToday
+    ? (typeof progressIntel?.metrics_breakdown?.checkin_points === 'number'
+        ? progressIntel.metrics_breakdown.checkin_points
+        : 20)
+    : null;
+
+  const journalPoints = recentJournals && recentJournals.length > 0
+    ? (typeof progressIntel?.metrics_breakdown?.journal_points === 'number'
+        ? progressIntel.metrics_breakdown.journal_points
+        : 15)
+    : null;
+
+  const urgePoints = (streak > 0 || totalUrgesCount > 0)
+    ? (typeof progressIntel?.metrics_breakdown?.urge_control_points === 'number'
+        ? progressIntel.metrics_breakdown.urge_control_points
+        : (streak > 0 ? 15 : 10))
+    : null;
+
+  const medPoints = ((meditationsCount || 0) > 0 || afternoonMeditationDone)
+    ? (typeof progressIntel?.metrics_breakdown?.meditation_points === 'number'
+        ? progressIntel.metrics_breakdown.meditation_points
+        : 15)
+    : null;
+
+  const scoreValue = progressIntel?.score !== undefined
+    ? progressIntel.score
+    : (mindStrength > 0 ? Math.min(100, Math.round(mindStrength / 10)) : 'N/A');
+  const statusTitle = progressIntel?.status_title ?? (streak > 7 ? 'Ojas Transmutation Sovereign' : (streak > 0 ? 'Neural Rewiring Active' : 'Establishing Foundation'));
+  const statusColor = progressIntel?.status_color ?? (streak > 0 ? '#00E5FF' : '#94A3B8');
 
   // 4 Core Quick Metric Cards fallback
   const coreMetrics = useMemo(() => {
@@ -148,8 +192,8 @@ export default function ProgressTabScreen() {
       {
         id: 'clean_consistency',
         label: '7-Day Consistency',
-        value: `${successRate}%`,
-        sub: `${Math.min(7, streak)}/7 Clean Days`,
+        value: totalLogs > 0 || streak > 0 ? `${successRate}%` : 'N/A',
+        sub: totalLogs > 0 || streak > 0 ? `${Math.min(7, streak)}/7 Clean Days` : '0/7 Clean Days',
         color: '#10B981',
         icon: 'shield-checkmark',
       },
@@ -164,7 +208,7 @@ export default function ProgressTabScreen() {
       {
         id: 'mind_strength',
         label: 'Mind Strength',
-        value: `${mindStrength || 500}`,
+        value: mindStrength > 0 ? `${mindStrength}` : 'N/A',
         sub: statusTitle.split(' ')[0] || 'Warrior',
         color: '#A855F7',
         icon: 'flash',
@@ -172,8 +216,8 @@ export default function ProgressTabScreen() {
       {
         id: 'recovery_balance',
         label: 'Total Logged',
-        value: `${totalLogs}`,
-        sub: 'Check-in Records',
+        value: totalLogs > 0 ? `${totalLogs}` : 'N/A',
+        sub: totalLogs > 0 ? 'Check-in Records' : 'No Records',
         color: '#38BDF8',
         icon: 'calendar',
       },
@@ -254,7 +298,7 @@ export default function ProgressTabScreen() {
                 <View style={styles.breakdownRow}>
                   <ThemedText style={styles.breakdownLabel}>Check-in Checklist</ThemedText>
                   <ThemedText style={styles.breakdownValue}>
-                    {progressIntel?.metrics_breakdown?.checkin_points ?? (latestCheckinSummary ? 25 : 10)}/25 XP
+                    {checkinPoints !== null ? `${checkinPoints}/25 XP` : 'N/A'}
                   </ThemedText>
                 </View>
                 <View style={styles.breakdownTrack}>
@@ -262,7 +306,9 @@ export default function ProgressTabScreen() {
                     style={[
                       styles.breakdownFill,
                       {
-                        width: `${Math.min(100, (((progressIntel?.metrics_breakdown?.checkin_points ?? (latestCheckinSummary ? 25 : 10)) / 25) * 100))}%`,
+                        width: checkinPoints !== null
+                          ? `${Math.min(100, ((checkinPoints / 25) * 100))}%`
+                          : '0%',
                         backgroundColor: '#00E5FF',
                       },
                     ]}
@@ -272,7 +318,7 @@ export default function ProgressTabScreen() {
                 <View style={[styles.breakdownRow, { marginTop: 6 }]}>
                   <ThemedText style={styles.breakdownLabel}>Self-Reflection Journals</ThemedText>
                   <ThemedText style={styles.breakdownValue}>
-                    {progressIntel?.metrics_breakdown?.journal_points ?? (recentJournals?.length ? 20 : 5)}/20 XP
+                    {journalPoints !== null ? `${journalPoints}/20 XP` : 'N/A'}
                   </ThemedText>
                 </View>
                 <View style={styles.breakdownTrack}>
@@ -280,7 +326,9 @@ export default function ProgressTabScreen() {
                     style={[
                       styles.breakdownFill,
                       {
-                        width: `${Math.min(100, (((progressIntel?.metrics_breakdown?.journal_points ?? (recentJournals?.length ? 20 : 5)) / 20) * 100))}%`,
+                        width: journalPoints !== null
+                          ? `${Math.min(100, ((journalPoints / 20) * 100))}%`
+                          : '0%',
                         backgroundColor: '#A855F7',
                       },
                     ]}
@@ -290,7 +338,7 @@ export default function ProgressTabScreen() {
                 <View style={[styles.breakdownRow, { marginTop: 6 }]}>
                   <ThemedText style={styles.breakdownLabel}>Impulse & Urge Control</ThemedText>
                   <ThemedText style={styles.breakdownValue}>
-                    {progressIntel?.metrics_breakdown?.urge_control_points ?? 22}/25 XP
+                    {urgePoints !== null ? `${urgePoints}/25 XP` : 'N/A'}
                   </ThemedText>
                 </View>
                 <View style={styles.breakdownTrack}>
@@ -298,8 +346,30 @@ export default function ProgressTabScreen() {
                     style={[
                       styles.breakdownFill,
                       {
-                        width: `${Math.min(100, (((progressIntel?.metrics_breakdown?.urge_control_points ?? 22) / 25) * 100))}%`,
+                        width: urgePoints !== null
+                          ? `${Math.min(100, ((urgePoints / 25) * 100))}%`
+                          : '0%',
                         backgroundColor: '#10B981',
+                      },
+                    ]}
+                  />
+                </View>
+
+                <View style={[styles.breakdownRow, { marginTop: 6 }]}>
+                  <ThemedText style={styles.breakdownLabel}>Yogic Meditation</ThemedText>
+                  <ThemedText style={styles.breakdownValue}>
+                    {medPoints !== null ? `${medPoints}/25 XP` : 'N/A'}
+                  </ThemedText>
+                </View>
+                <View style={styles.breakdownTrack}>
+                  <View
+                    style={[
+                      styles.breakdownFill,
+                      {
+                        width: medPoints !== null
+                          ? `${Math.min(100, ((medPoints / 25) * 100))}%`
+                          : '0%',
+                        backgroundColor: '#38BDF8',
                       },
                     ]}
                   />
@@ -536,16 +606,20 @@ export default function ProgressTabScreen() {
                 }}
               >
                 <View style={styles.activityHeader}>
-                  <Ionicons name="checkbox-outline" size={15} color="#10B981" />
+                  <Ionicons
+                    name={isCheckinSubmittedToday ? 'checkbox' : 'clipboard-outline'}
+                    size={15}
+                    color={isCheckinSubmittedToday ? '#10B981' : '#64748B'}
+                  />
                   <ThemedText style={styles.activityTitle}>Daily Checklist</ThemedText>
                 </View>
-                <ThemedText style={styles.activityStatus}>
-                  {latestCheckinSummary ? `${latestCheckinSummary.mood} Mood` : 'No Check-in'}
+                <ThemedText style={[styles.activityStatus, !isCheckinSubmittedToday && { color: '#94A3B8' }]}>
+                  {isCheckinSubmittedToday && activeCheckin ? `${activeCheckin.mood} Mood` : 'N/A'}
                 </ThemedText>
                 <ThemedText style={styles.activitySub}>
-                  {latestCheckinSummary
-                    ? `Energy ${latestCheckinSummary.energy_score}/10 • Focus ${latestCheckinSummary.focus_score}/10`
-                    : 'Tap to check-in'}
+                  {isCheckinSubmittedToday && activeCheckin
+                    ? `Energy ${activeCheckin.energy_score}/10 • Focus ${activeCheckin.focus_score}/10`
+                    : 'Energy N/A • Focus N/A'}
                 </ThemedText>
               </TouchableOpacity>
             </View>
@@ -765,7 +839,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>1. Daily Check-in Checklist</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.checkin_points ?? 25}/25 XP
+                  {checkinPoints !== null ? `${checkinPoints}/25 XP` : 'N/A'}
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Evaluates mood, energy, sleep quality, stress management, and daily accountability.</ThemedText>
@@ -775,7 +849,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>2. Self-Reflection Journals</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.journal_points ?? 20}/20 XP
+                  {journalPoints !== null ? `${journalPoints}/20 XP` : 'N/A'}
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Evaluates depth of introspection, emotional honesty, and psychological awareness.</ThemedText>
@@ -785,7 +859,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>3. Impulse & Urge Transmutation</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.urge_control_points ?? 25}/25 XP
+                  {urgePoints !== null ? `${urgePoints}/25 XP` : 'N/A'}
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Tracks urges neutralized, clean streak consistency, and vital energy transmutation.</ThemedText>
@@ -795,7 +869,7 @@ export default function ProgressTabScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <ThemedText style={styles.stepName}>4. Yogic Meditation Discipline</ThemedText>
                 <ThemedText style={{ fontSize: 12, fontWeight: '800', color: '#00E5FF' }}>
-                  {progressIntel?.metrics_breakdown?.meditation_points ?? 25}/25 XP
+                  {medPoints !== null ? `${medPoints}/25 XP` : 'N/A'}
                 </ThemedText>
               </View>
               <ThemedText style={styles.stepDetail}>Quantifies breathwork consistency, afternoon meditation discipline, and focus stamina.</ThemedText>

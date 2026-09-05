@@ -14,6 +14,17 @@ export interface HabitState {
   recentJournals?: Array<{ id: string; title: string; content: string; mood_tag: string; created_at: string }>;
   meditationsCount?: number;
   afternoonMeditationDone?: boolean;
+  todayCheckinDone?: boolean;
+  todayCheckinSummary?: {
+    mood: string;
+    mood_intensity: number;
+    energy_score: number;
+    stress_score: number;
+    sleep_quality: number;
+    focus_score: number;
+    date: string;
+    is_today?: boolean;
+  } | null;
   latestCheckinSummary?: {
     mood: string;
     mood_intensity: number;
@@ -22,6 +33,7 @@ export interface HabitState {
     sleep_quality: number;
     focus_score: number;
     date: string;
+    is_today?: boolean;
   } | null;
   totalUrgesCount: number;
   todayUrgesCount: number;
@@ -53,7 +65,9 @@ export const useHabitStore = create<HabitState>()(
       recentJournals: [],
       meditationsCount: 0,
       afternoonMeditationDone: false,
-      latestCheckinSummary: undefined,
+      todayCheckinDone: false,
+      todayCheckinSummary: null,
+      latestCheckinSummary: null,
       totalUrgesCount: 0,
       todayUrgesCount: 0,
       dailyUrgeCounts: [],
@@ -258,6 +272,8 @@ export const useHabitStore = create<HabitState>()(
           recentJournals: [],
           meditationsCount: 0,
           afternoonMeditationDone: false,
+          todayCheckinDone: false,
+          todayCheckinSummary: null,
           latestCheckinSummary: null,
           totalUrgesCount: 0,
           todayUrgesCount: 0,
@@ -295,6 +311,14 @@ export const useHabitStore = create<HabitState>()(
 
               const resolvedMaxStreak = Math.max(dbMaxStreak, state.maxStreak || 0, liveStreak, resolvedStreak);
 
+              const isToday = profile.today_checkin_done === true 
+                || (profile.today_checkin_summary && profile.today_checkin_summary.date === today)
+                || (profile.latest_checkin_summary && profile.latest_checkin_summary.date === today && profile.latest_checkin_summary.is_today === true);
+
+              const activeTodaySummary = isToday
+                ? (profile.today_checkin_summary || (profile.latest_checkin_summary?.date === today ? profile.latest_checkin_summary : null))
+                : null;
+
               return {
                 streak: resolvedStreak,
                 maxStreak: resolvedMaxStreak,
@@ -305,7 +329,9 @@ export const useHabitStore = create<HabitState>()(
                 recentJournals: profile.recent_journals || [],
                 meditationsCount: profile.meditations_count || 0,
                 afternoonMeditationDone: profile.afternoon_meditation_done || false,
-                latestCheckinSummary: profile.latest_checkin_summary,
+                todayCheckinDone: Boolean(isToday),
+                todayCheckinSummary: activeTodaySummary,
+                latestCheckinSummary: profile.latest_checkin_summary || null,
                 totalUrgesCount: typeof profile.total_urges_count === 'number' ? profile.total_urges_count : state.totalUrgesCount,
                 todayUrgesCount: typeof profile.today_urges_count === 'number' ? profile.today_urges_count : state.todayUrgesCount,
                 dailyUrgeCounts: profile.daily_urge_counts && profile.daily_urge_counts.length > 0 ? profile.daily_urge_counts : state.dailyUrgeCounts,
