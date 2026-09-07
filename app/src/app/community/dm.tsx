@@ -117,10 +117,11 @@ export default function DirectMessageScreen() {
       }
     );
 
+    // Low-frequency fallback poll (15s) - realtimeClient handles instant push messages
     const interval = setInterval(() => {
       loadChatHistory(false);
       fetchUserOnlineStatus();
-    }, 3000);
+    }, 15000);
 
     return () => {
       clearInterval(interval);

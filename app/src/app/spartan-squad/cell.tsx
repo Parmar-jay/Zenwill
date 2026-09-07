@@ -154,6 +154,8 @@ export default function SpartanCellScreen() {
   const [selectedMember, setSelectedMember] = useState<CellMemberItem | null>(null);
   const [isMemberModalVisible, setIsMemberModalVisible] = useState<boolean>(false);
   const [memberActionLoading, setMemberActionLoading] = useState<boolean>(false);
+  const [memberActionPhase, setMemberActionPhase] = useState<'idle' | 'promoting' | 'promoted_success' | 'demoting' | 'demoted_success' | 'kicking' | 'kicked_success'>('idle');
+  const actionSuccessAnim = useRef(new Animated.Value(0)).current;
 
   const [customDialog, setCustomDialog] = useState<{
     visible: boolean;
@@ -170,11 +172,12 @@ export default function SpartanCellScreen() {
   const isLeavingRef = useRef(isLeaving);
   isLeavingRef.current = isLeaving;
 
-  const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
+  const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' | 'success' = 'light') => {
     try {
       if (Platform.OS !== 'web') {
         if (style === 'heavy') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         else if (style === 'medium') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        else if (style === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
     } catch { }
@@ -196,19 +199,17 @@ export default function SpartanCellScreen() {
     useCallback(() => {
       // Quiet background refresh on screen focus
       loadData(false);
-      // Fast adaptive poll (3.5s) while screen is actively focused without full reload
+      // Low-frequency fallback poll (45s) while screen is actively focused to conserve free-tier server
       const fastSyncTimer = setInterval(() => {
         if (!actionLoadingRef.current && !isLeavingRef.current) {
           fetchMyCell({ showLoading: false }).catch(() => { });
-          fetchPublicCells().catch(() => { });
-          fetchMyJoinRequests().catch(() => { });
         }
-      }, 3500);
+      }, 45000);
 
       return () => {
         clearInterval(fastSyncTimer);
       };
-    }, [loadData, fetchMyCell, fetchPublicCells, fetchMyJoinRequests])
+    }, [loadData, fetchMyCell])
   );
 
   const isLeader = useMemo(() => {
@@ -277,14 +278,36 @@ export default function SpartanCellScreen() {
   };
 
   const handlePromoteCoLeader = async (member: CellMemberItem) => {
-    triggerHaptic('heavy');
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    triggerHaptic('medium');
+    actionSuccessAnim.setValue(0);
+    setMemberActionPhase('promoting');
     setMemberActionLoading(true);
     try {
       await promoteCoLeader(member.user_id);
-      setIsMemberModalVisible(false);
-      setSelectedMember(null);
+      // Task completed successfully -> Trigger celebratory haptic & transition to completion animation
+      setMemberActionPhase('promoted_success');
+      triggerHaptic('success');
+      Animated.spring(actionSuccessAnim, {
+        toValue: 1,
+        friction: 5,
+        tension: 50,
+        useNativeDriver: true,
+      }).start();
+
+      // Keep success state on screen for 900ms so the user sees and feels the completed animation
+      setTimeout(() => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setIsMemberModalVisible(false);
+        setTimeout(() => {
+          setSelectedMember(null);
+          setMemberActionPhase('idle');
+          setMemberActionLoading(false);
+          actionSuccessAnim.setValue(0);
+        }, 300);
+      }, 900);
     } catch (err: any) {
+      setMemberActionPhase('idle');
+      setMemberActionLoading(false);
       setCustomDialog({
         visible: true,
         title: 'Promotion Failed',
@@ -292,20 +315,40 @@ export default function SpartanCellScreen() {
         type: 'danger',
         confirmText: 'OK',
       });
-    } finally {
-      setMemberActionLoading(false);
     }
   };
 
   const handleDemoteCoLeader = async (member: CellMemberItem) => {
     triggerHaptic('medium');
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    actionSuccessAnim.setValue(0);
+    setMemberActionPhase('demoting');
     setMemberActionLoading(true);
     try {
       await demoteCoLeader(member.user_id);
-      setIsMemberModalVisible(false);
-      setSelectedMember(null);
+      // Task completed successfully -> Transition to demoted success state
+      setMemberActionPhase('demoted_success');
+      triggerHaptic('success');
+      Animated.spring(actionSuccessAnim, {
+        toValue: 1,
+        friction: 5,
+        tension: 50,
+        useNativeDriver: true,
+      }).start();
+
+      // Display completion animation before modal dismiss
+      setTimeout(() => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setIsMemberModalVisible(false);
+        setTimeout(() => {
+          setSelectedMember(null);
+          setMemberActionPhase('idle');
+          setMemberActionLoading(false);
+          actionSuccessAnim.setValue(0);
+        }, 300);
+      }, 900);
     } catch (err: any) {
+      setMemberActionPhase('idle');
+      setMemberActionLoading(false);
       setCustomDialog({
         visible: true,
         title: 'Demotion Failed',
@@ -313,8 +356,6 @@ export default function SpartanCellScreen() {
         type: 'danger',
         confirmText: 'OK',
       });
-    } finally {
-      setMemberActionLoading(false);
     }
   };
 
@@ -327,15 +368,37 @@ export default function SpartanCellScreen() {
       confirmText: 'Exile Member',
       cancelText: 'Cancel',
       onConfirm: async () => {
-        triggerHaptic('heavy');
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        triggerHaptic('medium');
+        setCustomDialog(null);
+        actionSuccessAnim.setValue(0);
+        setMemberActionPhase('kicking');
         setMemberActionLoading(true);
         try {
           await kickMember(member.user_id);
-          setIsMemberModalVisible(false);
-          setSelectedMember(null);
-          setCustomDialog(null);
+          // Task completed successfully -> Transition to kicked success state
+          setMemberActionPhase('kicked_success');
+          triggerHaptic('success');
+          Animated.spring(actionSuccessAnim, {
+            toValue: 1,
+            friction: 5,
+            tension: 50,
+            useNativeDriver: true,
+          }).start();
+
+          // Display completion animation before modal dismiss
+          setTimeout(() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setIsMemberModalVisible(false);
+            setTimeout(() => {
+              setSelectedMember(null);
+              setMemberActionPhase('idle');
+              setMemberActionLoading(false);
+              actionSuccessAnim.setValue(0);
+            }, 300);
+          }, 900);
         } catch (err: any) {
+          setMemberActionPhase('idle');
+          setMemberActionLoading(false);
           setCustomDialog({
             visible: true,
             title: 'Exile Failed',
@@ -343,8 +406,6 @@ export default function SpartanCellScreen() {
             type: 'danger',
             confirmText: 'OK',
           });
-        } finally {
-          setMemberActionLoading(false);
         }
       },
     });
@@ -951,7 +1012,7 @@ export default function SpartanCellScreen() {
             transparent
             animationType="fade"
             onRequestClose={() => {
-              if (!memberActionLoading) setIsMemberModalVisible(false);
+              if (!memberActionLoading && memberActionPhase === 'idle') setIsMemberModalVisible(false);
             }}
           >
             <View style={styles.modalOverlay}>
@@ -973,7 +1034,7 @@ export default function SpartanCellScreen() {
                   <TouchableOpacity
                     onPress={() => setIsMemberModalVisible(false)}
                     style={styles.modalCloseBtn}
-                    disabled={memberActionLoading}
+                    disabled={memberActionLoading || memberActionPhase !== 'idle'}
                   >
                     <Ionicons name="close" size={20} color="#94A3B8" />
                   </TouchableOpacity>
@@ -981,87 +1042,173 @@ export default function SpartanCellScreen() {
 
                 <View style={styles.memberActionDivider} />
 
-                {/* Leader Actions */}
+                {/* Leader & Moderation Actions */}
                 {(() => {
                   const isSelectedMemberCoLeader = Boolean(
                     selectedMember.is_co_leader ||
-                    (myCell?.co_leader_ids && (myCell.co_leader_ids.includes(selectedMember.user_id) || (selectedMember.name && myCell.co_leader_ids.includes(selectedMember.name))))
+                    (myCell?.co_leader_ids && myCell.co_leader_ids.some((cid) => {
+                      const cStr = String(cid || '').trim().toLowerCase();
+                      return (
+                        cStr === String(selectedMember.user_id || '').trim().toLowerCase() ||
+                        (selectedMember.email && cStr === String(selectedMember.email).trim().toLowerCase()) ||
+                        (selectedMember.name && cStr === String(selectedMember.name).trim().toLowerCase())
+                      );
+                    }))
                   );
+
+                  const isPromoting = memberActionPhase === 'promoting';
+                  const isPromotedDone = memberActionPhase === 'promoted_success';
+                  const isDemoting = memberActionPhase === 'demoting';
+                  const isDemotedDone = memberActionPhase === 'demoted_success';
+                  const isKicking = memberActionPhase === 'kicking';
+                  const isKickedDone = memberActionPhase === 'kicked_success';
+                  const isAnyActionRunning = memberActionPhase !== 'idle';
 
                   return (
                     <>
                       {isLeader && (
                         <>
                           {isSelectedMemberCoLeader ? (
-                            <AnimatedPressable
-                              style={styles.actionRowBtn}
-                              onPress={() => handleDemoteCoLeader(selectedMember)}
-                              disabled={memberActionLoading}
-                            >
-                              <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                                <Ionicons name="shield-outline" size={18} color="#F59E0B" />
+                            isDemotedDone ? (
+                              <View style={[styles.actionRowBtn, styles.actionRowBtnSuccessAmber]}>
+                                <Animated.View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.25)', transform: [{ scale: actionSuccessAnim }] }]}>
+                                  <Ionicons name="checkmark-circle" size={24} color="#F59E0B" />
+                                </Animated.View>
+                                <View style={{ flex: 1 }}>
+                                  <ThemedText style={[styles.actionBtnTitle, { color: '#F59E0B', fontSize: 14.5 }]}>
+                                    Returned to Warrior Rank ✓
+                                  </ThemedText>
+                                  <ThemedText style={[styles.actionBtnDesc, { color: '#FCD34D' }]}>
+                                    Co-Leader privileges revoked successfully
+                                  </ThemedText>
+                                </View>
                               </View>
-                              <View style={{ flex: 1 }}>
-                                <ThemedText style={[styles.actionBtnTitle, { color: '#F59E0B' }]}>
-                                  Demote from Co-Leader
-                                </ThemedText>
-                                <ThemedText style={styles.actionBtnDesc}>
-                                  Remove petition review and moderation privileges
-                                </ThemedText>
-                              </View>
-                              {memberActionLoading && <ActivityIndicator size="small" color="#F59E0B" />}
-                            </AnimatedPressable>
+                            ) : (
+                              <AnimatedPressable
+                                style={[
+                                  styles.actionRowBtn,
+                                  isDemoting && styles.actionRowBtnActiveAmber,
+                                  (isAnyActionRunning && !isDemoting) && { opacity: 0.35 },
+                                ]}
+                                onPress={() => handleDemoteCoLeader(selectedMember)}
+                                disabled={isAnyActionRunning}
+                              >
+                                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                                  {isDemoting ? (
+                                    <ActivityIndicator size="small" color="#F59E0B" />
+                                  ) : (
+                                    <Ionicons name="shield-outline" size={18} color="#F59E0B" />
+                                  )}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <ThemedText style={[styles.actionBtnTitle, { color: '#F59E0B' }]}>
+                                    {isDemoting ? 'Revoking Co-Leader Rank...' : 'Demote from Co-Leader'}
+                                  </ThemedText>
+                                  <ThemedText style={styles.actionBtnDesc}>
+                                    {isDemoting ? 'Updating permissions...' : 'Remove petition review and moderation privileges'}
+                                  </ThemedText>
+                                </View>
+                              </AnimatedPressable>
+                            )
                           ) : (
-                            <AnimatedPressable
-                              style={styles.actionRowBtn}
-                              onPress={() => handlePromoteCoLeader(selectedMember)}
-                              disabled={memberActionLoading}
-                            >
-                              <View style={[styles.actionIconBox, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
-                                <Ionicons name="shield-half" size={18} color="#00E5FF" />
+                            isPromotedDone ? (
+                              <View style={[styles.actionRowBtn, styles.actionRowBtnSuccessCyan]}>
+                                <Animated.View style={[styles.actionIconBox, { backgroundColor: 'rgba(0, 229, 255, 0.25)', transform: [{ scale: actionSuccessAnim }] }]}>
+                                  <Ionicons name="checkmark-circle" size={24} color="#00E5FF" />
+                                </Animated.View>
+                                <View style={{ flex: 1 }}>
+                                  <ThemedText style={[styles.actionBtnTitle, { color: '#00E5FF', fontSize: 14.5 }]}>
+                                    Appointed Co-Leader! 🛡️
+                                  </ThemedText>
+                                  <ThemedText style={[styles.actionBtnDesc, { color: '#A5F3FC' }]}>
+                                    Granted petition review & squad moderation rights
+                                  </ThemedText>
+                                </View>
                               </View>
-                              <View style={{ flex: 1 }}>
-                                <ThemedText style={[styles.actionBtnTitle, { color: '#00E5FF' }]}>
-                                  Promote to Co-Leader
-                                </ThemedText>
-                                <ThemedText style={styles.actionBtnDesc}>
-                                  Grant petition review & member moderation rights
-                                </ThemedText>
-                              </View>
-                              {memberActionLoading && <ActivityIndicator size="small" color="#00E5FF" />}
-                            </AnimatedPressable>
+                            ) : (
+                              <AnimatedPressable
+                                style={[
+                                  styles.actionRowBtn,
+                                  isPromoting && styles.actionRowBtnActiveCyan,
+                                  (isAnyActionRunning && !isPromoting) && { opacity: 0.35 },
+                                ]}
+                                onPress={() => handlePromoteCoLeader(selectedMember)}
+                                disabled={isAnyActionRunning}
+                              >
+                                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
+                                  {isPromoting ? (
+                                    <ActivityIndicator size="small" color="#00E5FF" />
+                                  ) : (
+                                    <Ionicons name="shield-half" size={18} color="#00E5FF" />
+                                  )}
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <ThemedText style={[styles.actionBtnTitle, { color: '#00E5FF' }]}>
+                                    {isPromoting ? 'Appointing Co-Leader...' : 'Promote to Co-Leader'}
+                                  </ThemedText>
+                                  <ThemedText style={styles.actionBtnDesc}>
+                                    {isPromoting ? 'Activating leadership authority...' : 'Grant petition review & member moderation rights'}
+                                  </ThemedText>
+                                </View>
+                              </AnimatedPressable>
+                            )
                           )}
                         </>
                       )}
 
                       {/* Kick / Exile Option: Leader can kick anyone except self, Co-Leader can kick regular members */}
                       {(isLeader || (!selectedMember.is_leader && !isSelectedMemberCoLeader)) && (
-                        <AnimatedPressable
-                          style={[styles.actionRowBtn, styles.actionRowBtnDanger]}
-                          onPress={() => handleKickMember(selectedMember)}
-                          disabled={memberActionLoading}
-                        >
-                          <View style={[styles.actionIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
-                            <Ionicons name="person-remove-outline" size={18} color="#EF4444" />
+                        isKickedDone ? (
+                          <View style={[styles.actionRowBtn, styles.actionRowBtnSuccessRed]}>
+                            <Animated.View style={[styles.actionIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.25)', transform: [{ scale: actionSuccessAnim }] }]}>
+                              <Ionicons name="checkmark-circle" size={24} color="#EF4444" />
+                            </Animated.View>
+                            <View style={{ flex: 1 }}>
+                              <ThemedText style={[styles.actionBtnTitle, { color: '#EF4444', fontSize: 14.5 }]}>
+                                Exiled from Squad ✓
+                              </ThemedText>
+                              <ThemedText style={[styles.actionBtnDesc, { color: '#FCA5A5' }]}>
+                                Warrior removed from squad roster
+                              </ThemedText>
+                            </View>
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <ThemedText style={[styles.actionBtnTitle, { color: '#EF4444' }]}>
-                              Exile Member from Squad
-                            </ThemedText>
-                            <ThemedText style={styles.actionBtnDesc}>
-                              Remove member and revoke squad membership
-                            </ThemedText>
-                          </View>
-                        </AnimatedPressable>
+                        ) : (
+                          <AnimatedPressable
+                            style={[
+                              styles.actionRowBtn,
+                              styles.actionRowBtnDanger,
+                              isKicking && styles.actionRowBtnActiveRed,
+                              (isAnyActionRunning && !isKicking) && { opacity: 0.35 },
+                            ]}
+                            onPress={() => handleKickMember(selectedMember)}
+                            disabled={isAnyActionRunning}
+                          >
+                            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                              {isKicking ? (
+                                <ActivityIndicator size="small" color="#EF4444" />
+                              ) : (
+                                <Ionicons name="person-remove-outline" size={18} color="#EF4444" />
+                              )}
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <ThemedText style={[styles.actionBtnTitle, { color: '#EF4444' }]}>
+                                {isKicking ? 'Exiling Member...' : 'Exile Member from Squad'}
+                              </ThemedText>
+                              <ThemedText style={styles.actionBtnDesc}>
+                                {isKicking ? 'Removing from roster...' : 'Remove member and revoke squad membership'}
+                              </ThemedText>
+                            </View>
+                          </AnimatedPressable>
+                        )
                       )}
                     </>
                   );
                 })()}
 
                 <AnimatedPressable
-                  style={styles.actionCancelBtn}
+                  style={[styles.actionCancelBtn, memberActionPhase !== 'idle' && { opacity: 0.4 }]}
                   onPress={() => setIsMemberModalVisible(false)}
-                  disabled={memberActionLoading}
+                  disabled={memberActionLoading || memberActionPhase !== 'idle'}
                 >
                   <ThemedText style={styles.actionCancelBtnText}>Cancel</ThemedText>
                 </AnimatedPressable>
@@ -2589,6 +2736,30 @@ const styles = StyleSheet.create({
   actionRowBtnDanger: {
     backgroundColor: 'rgba(239, 68, 68, 0.06)',
     borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  actionRowBtnActiveCyan: {
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    borderColor: '#00E5FF',
+  },
+  actionRowBtnSuccessCyan: {
+    backgroundColor: 'rgba(0, 229, 255, 0.18)',
+    borderColor: '#00E5FF',
+  },
+  actionRowBtnActiveAmber: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: '#F59E0B',
+  },
+  actionRowBtnSuccessAmber: {
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    borderColor: '#F59E0B',
+  },
+  actionRowBtnActiveRed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderColor: '#EF4444',
+  },
+  actionRowBtnSuccessRed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.22)',
+    borderColor: '#EF4444',
   },
   actionIconBox: {
     width: 38,

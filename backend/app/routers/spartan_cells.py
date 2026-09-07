@@ -942,10 +942,36 @@ async def promote_co_leader(
     if target_user and target_user.email:
         target_clean_ids.add(target_user.email.lower())
 
+    # Fallback search inside cell.members for matching member
+    if not target_user and cell.members:
+        for m in cell.members:
+            if isinstance(m, dict):
+                m_uid = str(m.get("user_id") or "").strip()
+                m_email = str(m.get("email") or "").strip().lower()
+                m_name = str(m.get("name") or "").strip().lower()
+                if target_id.lower() in {m_uid.lower(), m_email, m_name}:
+                    if m_uid:
+                        target_clean_ids.add(m_uid.lower())
+                        u = await get_user_safely(m_uid)
+                        if u:
+                            target_user = u
+                            canonical_target_id = str(u.id)
+                            target_clean_ids.add(canonical_target_id.lower())
+                            if u.email:
+                                target_clean_ids.add(u.email.lower())
+                    break
+
     if any(tid in caller_identifiers for tid in target_clean_ids):
         raise HTTPException(status_code=400, detail="Leader already possesses full sovereign command.")
 
-    is_in_cell = any(str(m).lower() in target_clean_ids for m in cell.member_ids)
+    is_in_cell = any(str(m).strip().lower() in target_clean_ids for m in cell.member_ids) or any(
+        isinstance(m, dict) and (
+            str(m.get("user_id") or "").strip().lower() in target_clean_ids or
+            str(m.get("email") or "").strip().lower() in target_clean_ids or
+            str(m.get("name") or "").strip().lower() == target_id.lower()
+        )
+        for m in (cell.members or [])
+    )
     if not is_in_cell:
         raise HTTPException(status_code=404, detail="Warrior is not a member of this squad.")
 
@@ -954,6 +980,16 @@ async def promote_co_leader(
 
     if canonical_target_id not in cell.co_leader_ids:
         cell.co_leader_ids.append(canonical_target_id)
+    if target_id not in cell.co_leader_ids:
+        cell.co_leader_ids.append(target_id)
+
+    # Immediately reflect promotion in members array
+    for m in (cell.members or []):
+        if isinstance(m, dict):
+            m_uid = str(m.get("user_id") or "").strip().lower()
+            m_email = str(m.get("email") or "").strip().lower()
+            if m_uid in target_clean_ids or (m_email and m_email in target_clean_ids):
+                m["is_co_leader"] = True
 
     updated_cell = await recalculate_cell_stats(cell)
     summary = _cell_to_summary(updated_cell, requesting_user_id=caller_id, requesting_user_email=caller_email)
@@ -1025,7 +1061,36 @@ async def demote_co_leader(
     if target_user and target_user.email:
         target_clean_ids.add(target_user.email.lower())
 
-    cell.co_leader_ids = [cid for cid in (getattr(cell, "co_leader_ids", []) or []) if str(cid).lower() not in target_clean_ids]
+    if not target_user and cell.members:
+        for m in cell.members:
+            if isinstance(m, dict):
+                m_uid = str(m.get("user_id") or "").strip()
+                m_email = str(m.get("email") or "").strip().lower()
+                m_name = str(m.get("name") or "").strip().lower()
+                if target_id.lower() in {m_uid.lower(), m_email, m_name}:
+                    if m_uid:
+                        target_clean_ids.add(m_uid.lower())
+                        u = await get_user_safely(m_uid)
+                        if u:
+                            target_user = u
+                            canonical_target_id = str(u.id)
+                            target_clean_ids.add(canonical_target_id.lower())
+                            if u.email:
+                                target_clean_ids.add(u.email.lower())
+                    break
+
+    cell.co_leader_ids = [
+        cid for cid in (getattr(cell, "co_leader_ids", []) or [])
+        if str(cid).strip().lower() not in target_clean_ids
+    ]
+    # Immediately reflect demotion in members array
+    for m in (cell.members or []):
+        if isinstance(m, dict):
+            m_uid = str(m.get("user_id") or "").strip().lower()
+            m_email = str(m.get("email") or "").strip().lower()
+            if m_uid in target_clean_ids or (m_email and m_email in target_clean_ids):
+                m["is_co_leader"] = False
+
     updated_cell = await recalculate_cell_stats(cell)
     summary = _cell_to_summary(updated_cell, requesting_user_id=caller_id, requesting_user_email=caller_email)
 
@@ -1116,6 +1181,24 @@ async def kick_member(
     if target_user and target_user.email:
         target_clean_ids.add(target_user.email.lower())
 
+    if not target_user and cell.members:
+        for m in cell.members:
+            if isinstance(m, dict):
+                m_uid = str(m.get("user_id") or "").strip()
+                m_email = str(m.get("email") or "").strip().lower()
+                m_name = str(m.get("name") or "").strip().lower()
+                if target_id.lower() in {m_uid.lower(), m_email, m_name}:
+                    if m_uid:
+                        target_clean_ids.add(m_uid.lower())
+                        u = await get_user_safely(m_uid)
+                        if u:
+                            target_user = u
+                            canonical_target_id = str(u.id)
+                            target_clean_ids.add(canonical_target_id.lower())
+                            if u.email:
+                                target_clean_ids.add(u.email.lower())
+                    break
+
     target_is_leader = any(tid == str(cell.leader_id).strip().lower() for tid in target_clean_ids)
     target_is_co_leader = any(tid in co_leaders for tid in target_clean_ids)
 
@@ -1125,7 +1208,14 @@ async def kick_member(
     if is_leader and target_is_leader:
         raise HTTPException(status_code=400, detail="You cannot kick yourself. Use the Leave button instead.")
 
-    is_in_cell = any(str(m).lower() in target_clean_ids for m in cell.member_ids)
+    is_in_cell = any(str(m).strip().lower() in target_clean_ids for m in cell.member_ids) or any(
+        isinstance(m, dict) and (
+            str(m.get("user_id") or "").strip().lower() in target_clean_ids or
+            str(m.get("email") or "").strip().lower() in target_clean_ids or
+            str(m.get("name") or "").strip().lower() == target_id.lower()
+        )
+        for m in (cell.members or [])
+    )
     if not is_in_cell:
         raise HTTPException(status_code=404, detail="Warrior is not a member of this squad.")
 

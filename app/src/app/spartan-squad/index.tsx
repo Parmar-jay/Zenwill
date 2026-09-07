@@ -155,13 +155,14 @@ export default function SpartanSquadIndexScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData(false);
+      // Low-frequency fallback poll (35s) while screen is actively focused to protect free-tier server
       const fastSyncTimer = setInterval(() => {
         if (!actionLoadingRef.current && !joiningCodeRef.current) {
           fetchMyCell({ showLoading: false }).catch(() => { });
           fetchPublicCells().catch(() => { });
           fetchMyJoinRequests().catch(() => { });
         }
-      }, 3500);
+      }, 35000);
 
       return () => {
         clearInterval(fastSyncTimer);

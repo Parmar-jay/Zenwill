@@ -139,17 +139,20 @@ export const spartanApi = {
 
   async promoteCoLeader(targetUserId: string): Promise<SpartanCellData> {
     invalidateApiCache('/spartan-cells');
-    return api.post<SpartanCellData>('/spartan-cells/promote-co-leader', { target_user_id: targetUserId });
+    const res = await api.post<any>('/spartan-cells/promote-co-leader', { target_user_id: targetUserId });
+    return (res?.data || res) as SpartanCellData;
   },
 
   async demoteCoLeader(targetUserId: string): Promise<SpartanCellData> {
     invalidateApiCache('/spartan-cells');
-    return api.post<SpartanCellData>('/spartan-cells/demote-co-leader', { target_user_id: targetUserId });
+    const res = await api.post<any>('/spartan-cells/demote-co-leader', { target_user_id: targetUserId });
+    return (res?.data || res) as SpartanCellData;
   },
 
   async kickMember(targetUserId: string): Promise<SpartanCellData> {
     invalidateApiCache('/spartan-cells');
-    return api.post<SpartanCellData>('/spartan-cells/kick-member', { target_user_id: targetUserId });
+    const res = await api.post<any>('/spartan-cells/kick-member', { target_user_id: targetUserId });
+    return (res?.data || res) as SpartanCellData;
   },
 
   async getMyCell(): Promise<SpartanCellData | null> {

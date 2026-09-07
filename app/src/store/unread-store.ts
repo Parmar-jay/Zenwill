@@ -79,6 +79,7 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
     get().fetchUnreadCount();
 
     if (!pollingInterval) {
+      // Low-frequency fallback poll (35s) - realtimeClient handles instant push events
       pollingInterval = setInterval(async () => {
         const token = await TokenStorage.getAccessToken();
         if (!token) {
@@ -90,7 +91,7 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
           return;
         }
         get().fetchUnreadCount();
-      }, 12000);
+      }, 35000);
       set({ isPolling: true });
     }
 

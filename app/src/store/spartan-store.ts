@@ -523,8 +523,9 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       });
     }
     try {
-      const cell = await spartanApi.promoteCoLeader(targetUserId);
-      if (cell) set({ myCell: cell });
+      const res: any = await spartanApi.promoteCoLeader(targetUserId);
+      const cell = res?.data || res;
+      if (cell && Array.isArray(cell.members)) set({ myCell: cell });
       return cell;
     } catch (err) {
       get().fetchMyCell({ showLoading: false }).catch(() => { });
@@ -548,8 +549,9 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       });
     }
     try {
-      const cell = await spartanApi.demoteCoLeader(targetUserId);
-      if (cell) set({ myCell: cell });
+      const res: any = await spartanApi.demoteCoLeader(targetUserId);
+      const cell = res?.data || res;
+      if (cell && Array.isArray(cell.members)) set({ myCell: cell });
       return cell;
     } catch (err) {
       get().fetchMyCell({ showLoading: false }).catch(() => { });
@@ -573,8 +575,9 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       });
     }
     try {
-      const cell = await spartanApi.kickMember(targetUserId);
-      if (cell) set({ myCell: cell });
+      const res: any = await spartanApi.kickMember(targetUserId);
+      const cell = res?.data || res;
+      if (cell && Array.isArray(cell.members)) set({ myCell: cell });
       return cell;
     } catch (err) {
       get().fetchMyCell({ showLoading: false }).catch(() => { });

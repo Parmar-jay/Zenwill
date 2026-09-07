@@ -345,10 +345,11 @@ export default function CommunityWorldChatScreen() {
       }
     );
 
+    // Low-frequency fallback poll (20s) - realtimeClient handles instant push events
     const interval = setInterval(() => {
       fetchMessages(false);
       fetchDmConversations();
-    }, 3000);
+    }, 20000);
 
     return () => {
       clearInterval(interval);

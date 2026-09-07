@@ -39,10 +39,10 @@ export const isApiLoggingOut = () => isLoggingOut;
 // Pre-hydrate memory tokens from AsyncStorage immediately
 AsyncStorage.getItem(TOKEN_KEY).then((token) => {
     if (token) memoryAccessToken = token;
-}).catch(() => {});
+}).catch(() => { });
 AsyncStorage.getItem(REFRESH_KEY).then((token) => {
     if (token) memoryRefreshToken = token;
-}).catch(() => {});
+}).catch(() => { });
 
 export const TokenStorage = {
     async getAccessToken(): Promise<string | null> {
@@ -78,7 +78,7 @@ export const TokenStorage = {
         memoryRefreshToken = null;
         try {
             await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY]);
-        } catch {}
+        } catch { }
     },
 };
 
@@ -213,7 +213,7 @@ async function executeFetch<T>(
                 try {
                     const { useAuthStore } = require('../store/auth-store');
                     useAuthStore.getState().logout();
-                } catch {}
+                } catch { }
                 throw { detail: 'Session expired', status: 401, isLoggedOut: true, silent: true };
             }
         }
