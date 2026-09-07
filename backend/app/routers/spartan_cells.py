@@ -1304,6 +1304,12 @@ async def send_strength_to_member(
 
 @router.get("/public-cells", response_model=List[SpartanCellSummary])
 async def get_public_cells(limit: int = 20):
-    """Retrieve open public Spartan Cells looking for warriors."""
+    """Retrieve open public Spartan Cells with live recalculated streaks and member lists."""
     cells = await SpartanCell.find(SpartanCell.is_public == True).sort("-total_streak").limit(limit).to_list()
-    return [_cell_to_summary(c) for c in cells]
+    results = []
+    for c in cells:
+        updated = await recalculate_cell_stats(c)
+        results.append(_cell_to_summary(updated))
+    results.sort(key=lambda x: (-x.total_streak, -x.collective_xp))
+    return results
+

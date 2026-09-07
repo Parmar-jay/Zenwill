@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, invalidateApiCache } from './api';
 
 export interface JoinRequestItem {
   id: string;
@@ -109,38 +109,46 @@ export interface BattleSessionData {
 export const spartanApi = {
   // ── Spartan Cell Hub ──────────────────────────────────────────────────────
   async createCell(name: string, motto: string = 'We hold the line together.', isPublic: boolean = true): Promise<SpartanCellData> {
+    invalidateApiCache('/spartan-cells');
     return api.post<SpartanCellData>('/spartan-cells/create', { name, motto, is_public: isPublic });
   },
 
   async joinCell(joinCode: string): Promise<SpartanCellData> {
+    invalidateApiCache('/spartan-cells');
     return api.post<SpartanCellData>('/spartan-cells/join', { join_code: joinCode });
   },
 
   async requestJoinCell(joinCode: string): Promise<{ status: string; message: string; cell_id: string; join_code: string }> {
+    invalidateApiCache('/spartan-cells');
     return api.post<{ status: string; message: string; cell_id: string; join_code: string }>('/spartan-cells/request-join', { join_code: joinCode });
   },
 
   async cancelJoinRequest(joinCodeOrCellId: string): Promise<{ status: string; message: string }> {
+    invalidateApiCache('/spartan-cells');
     return api.post<{ status: string; message: string }>('/spartan-cells/cancel-join-request', { join_code: joinCodeOrCellId, cell_id: joinCodeOrCellId });
   },
 
   async respondJoinRequest(cellId: string, requestId: string, action: 'approve' | 'reject'): Promise<any> {
+    invalidateApiCache('/spartan-cells');
     return api.post('/spartan-cells/respond-join-request', { cell_id: cellId, request_id: requestId, action });
   },
 
   async getMyJoinRequests(): Promise<Array<{ cell_id: string; join_code: string; name: string }>> {
-    return api.get<Array<{ cell_id: string; join_code: string; name: string }>>('/spartan-cells/my-requests');
+    return api.get<Array<{ cell_id: string; join_code: string; name: string }>>('/spartan-cells/my-requests', { noCache: true });
   },
 
   async promoteCoLeader(targetUserId: string): Promise<SpartanCellData> {
+    invalidateApiCache('/spartan-cells');
     return api.post<SpartanCellData>('/spartan-cells/promote-co-leader', { target_user_id: targetUserId });
   },
 
   async demoteCoLeader(targetUserId: string): Promise<SpartanCellData> {
+    invalidateApiCache('/spartan-cells');
     return api.post<SpartanCellData>('/spartan-cells/demote-co-leader', { target_user_id: targetUserId });
   },
 
   async kickMember(targetUserId: string): Promise<SpartanCellData> {
+    invalidateApiCache('/spartan-cells');
     return api.post<SpartanCellData>('/spartan-cells/kick-member', { target_user_id: targetUserId });
   },
 
@@ -149,19 +157,21 @@ export const spartanApi = {
   },
 
   async leaveCell(): Promise<{ status: string; message: string }> {
+    invalidateApiCache('/spartan-cells');
     return api.post<{ status: string; message: string }>('/spartan-cells/leave');
   },
 
   async deleteCell(): Promise<{ status: string; message: string }> {
+    invalidateApiCache('/spartan-cells');
     return api.post<{ status: string; message: string }>('/spartan-cells/delete');
   },
 
   async getCellLeaderboard(limit: number = 50): Promise<SpartanCellData[]> {
-    return api.get<SpartanCellData[]>(`/spartan-cells/leaderboard?limit=${limit}`);
+    return api.get<SpartanCellData[]>(`/spartan-cells/leaderboard?limit=${limit}`, { noCache: true });
   },
 
   async getPublicCells(limit: number = 20): Promise<SpartanCellData[]> {
-    return api.get<SpartanCellData[]>(`/spartan-cells/public-cells?limit=${limit}`);
+    return api.get<SpartanCellData[]>(`/spartan-cells/public-cells?limit=${limit}`, { noCache: true });
   },
 
   async nudgeMember(targetUserId: string, targetUserName: string): Promise<{ status: string; message: string }> {

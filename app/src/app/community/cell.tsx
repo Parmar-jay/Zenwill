@@ -145,14 +145,14 @@ export default function SpartanCellScreen() {
     useCallback(() => {
       // Quiet background refresh on screen focus
       loadData(false);
-      // Fast adaptive poll (4s) while screen is actively focused without full reload
+      // Fast adaptive poll (2.5s) while screen is actively focused without full reload
       const fastSyncTimer = setInterval(() => {
         if (!actionLoading && !joiningCode && !isLeaving) {
           fetchMyCell({ showLoading: false }).catch(() => {});
           fetchPublicCells().catch(() => {});
           fetchMyJoinRequests().catch(() => {});
         }
-      }, 4000);
+      }, 2500);
 
       return () => {
         clearInterval(fastSyncTimer);
@@ -1098,8 +1098,17 @@ export default function SpartanCellScreen() {
                   const isPending = isUserInCellRequests ||
                     myPendingRequests.some((key) => {
                       const k = String(key || '').trim().toLowerCase();
-                      return k === String(cell.id || '').trim().toLowerCase() ||
-                             k === String(cell.join_code || '').trim().toLowerCase();
+                      const cellId = String(cell.id || '').trim().toLowerCase();
+                      const cellCode = String(cell.join_code || '').trim().toLowerCase();
+                      const pureCode = cellCode.replace('sp-', '').replace('sp ', '').replace('sp', '').trim();
+                      return (
+                        k === cellId ||
+                        k === cellCode ||
+                        k === pureCode ||
+                        k === `sp-${pureCode}` ||
+                        k === `sp ${pureCode}` ||
+                        (pureCode && (k === pureCode || k.includes(pureCode)))
+                      );
                     });
 
                   const isJoiningThis = joiningCode === cell.join_code;

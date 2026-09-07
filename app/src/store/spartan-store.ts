@@ -242,7 +242,23 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   fetchMyJoinRequests: async () => {
     try {
       const list = await spartanApi.getMyJoinRequests();
-      const keys = list.flatMap((r) => [r.join_code, r.cell_id, r.join_code?.toUpperCase(), r.join_code?.toLowerCase()].filter(Boolean));
+      const keys = (list || []).flatMap((r) => {
+        const rawCode = (r.join_code || '').trim();
+        const cleanCode = rawCode.toUpperCase();
+        const pureCode = cleanCode.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
+        const cellId = (r.cell_id || '').trim();
+        return [
+          cellId,
+          cellId.toLowerCase(),
+          rawCode,
+          cleanCode,
+          cleanCode.toLowerCase(),
+          pureCode,
+          pureCode.toLowerCase(),
+          `SP-${pureCode}`,
+          `sp-${pureCode.toLowerCase()}`,
+        ].filter(Boolean);
+      });
       set({ myPendingRequests: Array.from(new Set(keys as string[])) });
     } catch {
       // keep existing
@@ -255,6 +271,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       const cell = await spartanApi.createCell(name, motto, isPublic);
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
       set({ myCell: cell, isLoadingCell: false });
+      get().fetchPublicCells().catch(() => {});
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -266,9 +283,9 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     const seq = ++myCellFetchSeq;
     try {
       const cell = await spartanApi.joinCell(code);
-      // Bump sequence so background polls cannot overwrite with stale data
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
       set({ myCell: cell, isLoadingCell: false });
+      get().fetchPublicCells().catch(() => {});
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -277,30 +294,90 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   },
 
   requestJoinCell: async (code: string) => {
+    const raw = (code || '').trim();
+    const clean = raw.toUpperCase();
+    const pure = clean.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
+    const fullSp = `SP-${pure}`;
+
+    // 1. Instantly mark as pending in local state before the network call finishes!
+    set((state) => ({
+      myPendingRequests: Array.from(new Set([
+        ...state.myPendingRequests,
+        raw,
+        clean,
+        clean.toLowerCase(),
+        pure,
+        pure.toLowerCase(),
+        fullSp,
+        fullSp.toLowerCase(),
+      ].filter(Boolean))),
+    }));
+
     try {
       const res = await spartanApi.requestJoinCell(code);
-      const clean = code.trim().toUpperCase();
+      const resClean = (res.join_code || '').trim().toUpperCase();
+      const resPure = resClean.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
+      const resCellId = (res.cell_id || '').trim();
+
       set((state) => ({
-        myPendingRequests: Array.from(new Set([...state.myPendingRequests, clean, res.join_code, res.cell_id])),
+        myPendingRequests: Array.from(new Set([
+          ...state.myPendingRequests,
+          clean,
+          pure,
+          fullSp,
+          resClean,
+          resClean.toLowerCase(),
+          resPure,
+          resPure.toLowerCase(),
+          `SP-${resPure}`,
+          `sp-${resPure.toLowerCase()}`,
+          resCellId,
+          resCellId.toLowerCase(),
+        ].filter(Boolean))),
       }));
-      get().fetchPublicCells().catch(() => {});
-      get().fetchMyJoinRequests().catch(() => {});
+
+      // Immediately synchronize public cells and my join requests
+      await Promise.allSettled([
+        get().fetchPublicCells(),
+        get().fetchMyJoinRequests(),
+      ]);
+
       return res;
     } catch (err) {
+      get().fetchMyJoinRequests().catch(() => {});
       throw err;
     }
   },
 
   cancelJoinRequest: async (codeOrCellId: string) => {
+    const raw = (codeOrCellId || '').trim();
+    const clean = raw.toUpperCase();
+    const pure = clean.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
+    const fullSp = `SP-${pure}`;
+
+    // 1. Instantly remove from local pending set
+    set((state) => ({
+      myPendingRequests: state.myPendingRequests.filter(
+        (k) =>
+          k !== raw &&
+          k !== clean &&
+          k !== clean.toLowerCase() &&
+          k !== pure &&
+          k !== pure.toLowerCase() &&
+          k !== fullSp &&
+          k !== fullSp.toLowerCase() &&
+          k !== codeOrCellId
+      ),
+    }));
+
     try {
       await spartanApi.cancelJoinRequest(codeOrCellId);
-      const clean = codeOrCellId.trim().toUpperCase();
-      set((state) => ({
-        myPendingRequests: state.myPendingRequests.filter((k) => k !== clean && k !== codeOrCellId),
-      }));
-      get().fetchPublicCells().catch(() => {});
-      get().fetchMyJoinRequests().catch(() => {});
+      await Promise.allSettled([
+        get().fetchPublicCells(),
+        get().fetchMyJoinRequests(),
+      ]);
     } catch (err) {
+      get().fetchMyJoinRequests().catch(() => {});
       throw err;
     }
   },
@@ -311,8 +388,10 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       if (res?.data) {
         set({ myCell: res.data });
       }
-      get().fetchMyCell({ showLoading: false }).catch(() => {});
-      get().fetchPublicCells().catch(() => {});
+      await Promise.allSettled([
+        get().fetchMyCell({ showLoading: false }),
+        get().fetchPublicCells(),
+      ]);
       return res;
     } catch (err) {
       throw err;
