@@ -85,10 +85,6 @@ export default function SpartanCellScreen() {
     fetchMyCell,
     fetchPublicCells,
     fetchMyJoinRequests,
-    createCell,
-    joinCell,
-    requestJoinCell,
-    cancelJoinRequest,
     respondJoinRequest,
     promoteCoLeader,
     demoteCoLeader,
@@ -98,13 +94,7 @@ export default function SpartanCellScreen() {
     nudgeMember,
   } = useSpartanStore();
 
-  const [isCreateModalVisible, setIsCreateModalVisible] = useState<boolean>(false);
-  const [isJoinModalVisible, setIsJoinModalVisible] = useState<boolean>(false);
-  const [newCellName, setNewCellName] = useState<string>('');
-  const [newCellMotto, setNewCellMotto] = useState<string>(MOTTO_PRESETS[0]);
-  const [joinCodeInput, setJoinCodeInput] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
-  const [joiningCode, setJoiningCode] = useState<string | null>(null);
   const [isLeaving, setIsLeaving] = useState<boolean>(false);
 
   // Review & member moderation states
@@ -126,8 +116,6 @@ export default function SpartanCellScreen() {
 
   const actionLoadingRef = useRef(actionLoading);
   actionLoadingRef.current = actionLoading;
-  const joiningCodeRef = useRef(joiningCode);
-  joiningCodeRef.current = joiningCode;
   const isLeavingRef = useRef(isLeaving);
   isLeavingRef.current = isLeaving;
 
@@ -159,7 +147,7 @@ export default function SpartanCellScreen() {
       loadData(false);
       // Fast adaptive poll (3.5s) while screen is actively focused without full reload
       const fastSyncTimer = setInterval(() => {
-        if (!actionLoadingRef.current && !joiningCodeRef.current && !isLeavingRef.current) {
+        if (!actionLoadingRef.current && !isLeavingRef.current) {
           fetchMyCell({ showLoading: false }).catch(() => {});
           fetchPublicCells().catch(() => {});
           fetchMyJoinRequests().catch(() => {});
@@ -187,84 +175,12 @@ export default function SpartanCellScreen() {
 
   const hasManagementRights = isLeader || isCoLeader;
 
-  const handleCreateCell = async () => {
-    if (!newCellName.trim() || newCellName.trim().length < 3) {
-      setCustomDialog({
-        visible: true,
-        title: 'Invalid Cell Name',
-        message: 'Cell name must be at least 3 characters.',
-        type: 'info',
-        confirmText: 'Got It',
-      });
-      return;
+  // If user is no longer enrolled in a squad (or departed/kicked), seamlessly navigate to discovery Hub
+  useEffect(() => {
+    if (!myCell && hasLoadedInitialCell && !isLoadingCell && !isLeaving) {
+      router.replace('/spartan-squad' as any);
     }
-    triggerHaptic('medium');
-    setActionLoading(true);
-    try {
-      await createCell(newCellName.trim(), newCellMotto.trim());
-      setIsCreateModalVisible(false);
-      setNewCellName('');
-    } catch (err: any) {
-      setCustomDialog({
-        visible: true,
-        title: 'Creation Failed',
-        message: err?.response?.data?.detail || 'Could not establish cell.',
-        type: 'danger',
-        confirmText: 'Dismiss',
-      });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleRequestJoin = async (codeToJoin?: string) => {
-    const raw = codeToJoin || joinCodeInput;
-    if (!raw || raw.trim().length < 2) {
-      setCustomDialog({
-        visible: true,
-        title: 'Invalid Code',
-        message: 'Please enter a valid Spartan Cell join code.',
-        type: 'info',
-        confirmText: 'Understood',
-      });
-      return;
-    }
-    let cleanCode = raw.trim().toUpperCase();
-    if (!cleanCode.startsWith('SP-')) {
-      cleanCode = `SP-${cleanCode}`;
-    }
-    triggerHaptic('medium');
-    setActionLoading(true);
-    setJoiningCode(cleanCode);
-    try {
-      await requestJoinCell(cleanCode);
-      setIsJoinModalVisible(false);
-      setJoinCodeInput('');
-      fetchMyJoinRequests().catch(() => {});
-      fetchPublicCells().catch(() => {});
-    } catch (err: any) {
-      setCustomDialog({
-        visible: true,
-        title: 'Request Failed',
-        message: err?.response?.data?.detail || err?.detail || 'Could not send join petition.',
-        type: 'danger',
-        confirmText: 'Dismiss',
-      });
-    } finally {
-      setActionLoading(false);
-      setJoiningCode(null);
-    }
-  };
-
-  const handleCancelJoinRequest = (cellCodeOrId: string) => {
-    triggerHaptic('medium');
-    setActionLoading(true);
-    cancelJoinRequest(cellCodeOrId)
-      .catch(() => {})
-      .finally(() => {
-        setActionLoading(false);
-      });
-  };
+  }, [myCell, hasLoadedInitialCell, isLoadingCell, isLeaving]);
 
   const handleRespondRequest = async (requestId: string, action: 'approve' | 'reject', applicantName: string) => {
     if (!myCell?.id) return;
@@ -400,6 +316,7 @@ export default function SpartanCellScreen() {
           setActionLoading(false);
           setIsLeaving(false);
           setCustomDialog(null);
+          router.replace('/spartan-squad' as any);
         }
       },
     });
@@ -428,6 +345,7 @@ export default function SpartanCellScreen() {
           setActionLoading(false);
           setIsLeaving(false);
           setCustomDialog(null);
+          router.replace('/spartan-squad' as any);
         }
       },
     });
@@ -530,6 +448,11 @@ export default function SpartanCellScreen() {
           <View style={styles.centerLoading}>
             <ActivityIndicator size="large" color="#00E5FF" />
             <ThemedText style={styles.loadingText}>Syncing Squad Discipline Matrix...</ThemedText>
+          </View>
+        ) : !myCell && hasLoadedInitialCell ? (
+          <View style={styles.centerLoading}>
+            <ActivityIndicator size="large" color="#00E5FF" />
+            <ThemedText style={styles.loadingText}>Redirecting to Spartan Squad Hub...</ThemedText>
           </View>
         ) : myCell ? (
           /* ── ACTIVE SQUAD VIEW ── */
@@ -1016,307 +939,7 @@ export default function SpartanCellScreen() {
 
             <View style={{ height: 40 }} />
           </ScrollView>
-        ) : (
-          /* ── UNAFFILIATED: ESTABLISHMENT VIEW ── */
-          <ScrollView
-            style={styles.scrollContent}
-            contentContainerStyle={styles.scrollInner}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Holographic Crest Hero */}
-            <View style={styles.unaffiliatedHero}>
-              <View style={styles.crestAura}>
-                <View style={styles.shieldGlowCircle}>
-                  <Ionicons name="shield-checkmark" size={42} color="#00E5FF" />
-                </View>
-              </View>
-
-              <ThemedText style={styles.unaffiliatedCategory}>SHARED COMMITMENT & REINFORCEMENT</ThemedText>
-              <ThemedText style={styles.unaffiliatedTitle}>5–20 Member Accountability Squads</ThemedText>
-              <ThemedText style={styles.unaffiliatedBody}>
-                Isolation weakens resolve. In an Accountability Squad, individual streaks unite into a collective squad shield. When 100% of members check in daily, your squad maintains Gold Shield status (+20% XP boost).
-              </ThemedText>
-
-              {/* Value Pillar Bar */}
-              <View style={styles.pillarStrip}>
-                <View style={styles.pillarItem}>
-                  <View style={[styles.pillarIconBadge, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                    <Ionicons name="flash" size={14} color="#F59E0B" />
-                  </View>
-                  <ThemedText style={styles.pillarTitle}>Pooled Streak</ThemedText>
-                  <ThemedText style={styles.pillarDesc}>Shared Stakes</ThemedText>
-                </View>
-                <View style={styles.pillarDivider} />
-                <View style={styles.pillarItem}>
-                  <View style={[styles.pillarIconBadge, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
-                    <Ionicons name="shield-checkmark" size={14} color="#00E5FF" />
-                  </View>
-                  <ThemedText style={styles.pillarTitle}>Gold Shield</ThemedText>
-                  <ThemedText style={styles.pillarDesc}>+20% Boost</ThemedText>
-                </View>
-                <View style={styles.pillarDivider} />
-                <View style={styles.pillarItem}>
-                  <View style={[styles.pillarIconBadge, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                    <Ionicons name="people" size={14} color="#10B981" />
-                  </View>
-                  <ThemedText style={styles.pillarTitle}>20 Members</ThemedText>
-                  <ThemedText style={styles.pillarDesc}>Max Capacity</ThemedText>
-                </View>
-              </View>
-
-              {/* Action Buttons */}
-              <View style={styles.heroActionRow}>
-                <TouchableOpacity
-                  style={styles.createCellBtn}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    triggerHaptic('medium');
-                    setIsCreateModalVisible(true);
-                  }}
-                >
-                  <Ionicons name="add-circle" size={19} color="#000000" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.createCellBtnText}>Establish Squad</ThemedText>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.joinWithCodeBtn}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    triggerHaptic('light');
-                    setIsJoinModalVisible(true);
-                  }}
-                >
-                  <Ionicons name="key-outline" size={17} color="#00E5FF" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.joinWithCodeBtnText}>Enter Code</ThemedText>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Public Open Cells List */}
-            <View style={styles.publicSection}>
-              <View style={styles.publicHeaderRow}>
-                <Ionicons name="globe-outline" size={14} color="#00E5FF" />
-                <ThemedText style={styles.publicSectionTitle}>OPEN SQUADS RECRUITING</ThemedText>
-              </View>
-
-              {publicCells.length === 0 ? (
-                <View style={styles.emptyPublicCard}>
-                  <View style={styles.emptyIconCircle}>
-                    <Ionicons name="shield-outline" size={24} color="#64748B" />
-                  </View>
-                  <ThemedText style={styles.emptyPublicTitle}>No Open Squads Active</ThemedText>
-                  <ThemedText style={styles.emptyPublicText}>
-                    Establish a new accountability squad to lead fellow members and climb the global ranks.
-                  </ThemedText>
-                </View>
-              ) : (
-                publicCells.map((cell) => {
-                  const isUserInCellRequests = (cell.join_requests || []).some((req: any) => {
-                    const reqUid = String(req.user_id || '').trim().toLowerCase();
-                    const reqEmail = String(req.user_email || req.email || '').trim().toLowerCase();
-                    const currentUid = String(user?.id || '').trim().toLowerCase();
-                    const currentEmail = String(user?.email || '').trim().toLowerCase();
-                    return (currentUid && reqUid === currentUid) || (currentEmail && reqEmail === currentEmail);
-                  });
-
-                  const isPending = isUserInCellRequests ||
-                    myPendingRequests.some((key) => {
-                      const k = String(key || '').trim().toLowerCase();
-                      const cellId = String(cell.id || '').trim().toLowerCase();
-                      const cellCode = String(cell.join_code || '').trim().toLowerCase();
-                      const pureCode = cellCode.replace('sp-', '').replace('sp ', '').replace('sp', '').trim();
-                      return (
-                        k === cellId ||
-                        k === cellCode ||
-                        k === pureCode ||
-                        k === `sp-${pureCode}` ||
-                        k === `sp ${pureCode}` ||
-                        (pureCode && (k === pureCode || k.includes(pureCode)))
-                      );
-                    });
-
-                  const isJoiningThis = joiningCode === cell.join_code;
-                  return (
-                    <View key={cell.id} style={[styles.publicCellCard, isPending && styles.publicCellCardPending]}>
-                      <View style={styles.publicCellHeader}>
-                        <View style={{ flex: 1, marginRight: 10 }}>
-                          <ThemedText style={styles.publicCellName} numberOfLines={1}>{cell.name}</ThemedText>
-                          <ThemedText style={styles.publicCellMotto} numberOfLines={2}>{cell.motto}</ThemedText>
-                        </View>
-                        <View style={styles.publicStreakBadge}>
-                          <ThemedText style={styles.publicStreakText}>🔥 {cell.total_streak}d</ThemedText>
-                        </View>
-                      </View>
-
-                      <View style={styles.publicCellFooter}>
-                        <ThemedText style={styles.publicMembersCount} numberOfLines={1}>
-                          {cell.member_count}/{cell.max_members} Members • {cell.leader_name}
-                        </ThemedText>
-
-                        {isPending ? (
-                          <TouchableOpacity
-                            style={styles.pendingRequestBtn}
-                            activeOpacity={0.8}
-                            onPress={() => handleCancelJoinRequest(cell.join_code || cell.id)}
-                            disabled={actionLoading}
-                          >
-                            <Ionicons name="time-outline" size={13} color="#F59E0B" />
-                            <ThemedText style={styles.pendingRequestBtnText}>Pending Approval ⏳</ThemedText>
-                          </TouchableOpacity>
-                        ) : (
-                          <TouchableOpacity
-                            style={[
-                              styles.joinPublicBtn,
-                              isJoiningThis && styles.joinPublicBtnLoading,
-                            ]}
-                            activeOpacity={0.8}
-                            onPress={() => handleRequestJoin(cell.join_code)}
-                            disabled={actionLoading || !!joiningCode}
-                          >
-                            {isJoiningThis ? (
-                              <View style={styles.btnLoadingRow}>
-                                <ActivityIndicator size="small" color="#00E5FF" />
-                                <ThemedText style={styles.joinPublicBtnText}>Submitting...</ThemedText>
-                              </View>
-                            ) : (
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                                <Ionicons name="paper-plane-outline" size={13} color="#00E5FF" />
-                                <ThemedText style={styles.joinPublicBtnText}>Join Squad</ThemedText>
-                              </View>
-                            )}
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
-
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        )}
-
-        {/* Modal: Establish Accountability Squad */}
-        <Modal
-          visible={isCreateModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setIsCreateModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeaderRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Ionicons name="shield-checkmark" size={24} color="#00E5FF" />
-                  <ThemedText style={styles.modalTitle}>Establish Accountability Squad</ThemedText>
-                </View>
-                <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.modalCloseBtn}>
-                  <Ionicons name="close" size={20} color="#94A3B8" />
-                </TouchableOpacity>
-              </View>
-
-              <ThemedText style={styles.inputLabel}>SQUAD NAME</ThemedText>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Iron Vanguard"
-                placeholderTextColor="#475569"
-                value={newCellName}
-                onChangeText={setNewCellName}
-                maxLength={40}
-              />
-
-              <ThemedText style={styles.inputLabel}>CHOOSE SQUAD MOTTO</ThemedText>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mottoPresetRow}>
-                {MOTTO_PRESETS.map((m) => (
-                  <TouchableOpacity
-                    key={m}
-                    style={[styles.mottoPill, newCellMotto === m && styles.mottoPillActive]}
-                    onPress={() => setNewCellMotto(m)}
-                  >
-                    <ThemedText style={[styles.mottoPillText, newCellMotto === m && styles.mottoPillTextActive]}>
-                      {m}
-                    </ThemedText>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <TouchableOpacity
-                style={[styles.submitModalBtn, actionLoading && styles.submitModalBtnLoading]}
-                activeOpacity={0.85}
-                onPress={handleCreateCell}
-                disabled={actionLoading || !!joiningCode}
-              >
-                {actionLoading ? (
-                  <View style={styles.btnLoadingRow}>
-                    <ActivityIndicator size="small" color="#000000" />
-                    <ThemedText style={styles.submitModalBtnText}>Establishing Squad...</ThemedText>
-                  </View>
-                ) : (
-                  <ThemedText style={styles.submitModalBtnText}>Establish & Become Leader</ThemedText>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Modal: Enter Join Code */}
-        <Modal
-          visible={isJoinModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setIsJoinModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeaderRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Ionicons name="key" size={20} color="#00E5FF" />
-                  <ThemedText style={styles.modalTitle}>Join Accountability Squad</ThemedText>
-                </View>
-                <TouchableOpacity onPress={() => setIsJoinModalVisible(false)} style={styles.modalCloseBtn}>
-                  <Ionicons name="close" size={20} color="#94A3B8" />
-                </TouchableOpacity>
-              </View>
-
-              <ThemedText style={styles.inputLabel}>ENTER SQUAD JOIN CODE</ThemedText>
-              <View style={styles.joinCodeInputContainer}>
-                <View style={styles.codePrefixBadge}>
-                  <ThemedText style={styles.codePrefixText}>SP -</ThemedText>
-                </View>
-                <TextInput
-                  style={styles.joinCodeInnerInput}
-                  placeholder="A49Q"
-                  placeholderTextColor="#475569"
-                  value={joinCodeInput}
-                  onChangeText={(val) => {
-                    const clean = val.replace(/^sp-?/i, '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-                    setJoinCodeInput(clean);
-                  }}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  maxLength={6}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.submitModalBtn, (actionLoading || !!joiningCode) && styles.submitModalBtnLoading]}
-                activeOpacity={0.85}
-                onPress={() => handleRequestJoin()}
-                disabled={actionLoading || !!joiningCode}
-              >
-                {actionLoading || !!joiningCode ? (
-                  <View style={styles.btnLoadingRow}>
-                    <ActivityIndicator size="small" color="#000000" />
-                    <ThemedText style={styles.submitModalBtnText}>Submitting Petition...</ThemedText>
-                  </View>
-                ) : (
-                  <ThemedText style={styles.submitModalBtnText}>Request to Join Squad</ThemedText>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        ) : null}
 
         {/* Modal: Member Management (Promote / Demote / Kick) */}
         {selectedMember && (

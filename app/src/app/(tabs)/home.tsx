@@ -493,6 +493,12 @@ export default function HomeScreen() {
     triggerHaptic();
     if (action.isEmergency) {
       setTriggerModalVisible(true);
+    } else if (action.id === 'spartan-cell') {
+      if (myCell) {
+        router.push('/spartan-squad/cell' as any);
+      } else {
+        router.push('/spartan-squad' as any);
+      }
     } else if (action.route) {
       router.push(action.route as any);
     }
@@ -1270,7 +1276,7 @@ export default function HomeScreen() {
                     activeOpacity={0.8}
                     onPress={() => {
                       triggerHaptic();
-                      router.push('/spartan-squad' as any);
+                      router.push('/spartan-squad/cell' as any);
                     }}
                   >
                     <View style={styles.spartanWidgetHeader}>

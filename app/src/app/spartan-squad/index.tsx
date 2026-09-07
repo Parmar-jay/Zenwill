@@ -24,7 +24,6 @@ import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData } from '../../services/spartan-api';
-import SpartanCellScreen from './cell';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -146,6 +145,7 @@ export default function SpartanSquadIndexScreen() {
       await createCell(newCellName.trim(), newCellMotto.trim());
       setIsCreateModalVisible(false);
       setNewCellName('');
+      router.replace('/spartan-squad/cell' as any);
     } catch (err: any) {
       setCustomDialog({
         visible: true,
@@ -208,9 +208,22 @@ export default function SpartanSquadIndexScreen() {
       });
   };
 
-  // If user is currently enrolled in a squad, render the dedicated Squad view
+  // If user is currently enrolled in a squad, seamlessly navigate to dedicated Squad dashboard
+  useEffect(() => {
+    if (myCell && hasLoadedInitialCell) {
+      router.replace('/spartan-squad/cell' as any);
+    }
+  }, [myCell, hasLoadedInitialCell]);
+
   if (myCell) {
-    return <SpartanCellScreen />;
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.centerLoading}>
+          <ActivityIndicator size="large" color="#00E5FF" />
+          <ThemedText style={styles.loadingText}>Opening Squad Dashboard...</ThemedText>
+        </View>
+      </SafeAreaView>
+    );
   }
 
   // Filtered public squads based on search query
