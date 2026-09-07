@@ -703,7 +703,10 @@ export default function SpartanCellScreen() {
                     </View>
                     <ThemedText style={styles.requestsSectionTitle}>JOIN PETITIONS</ThemedText>
                   </View>
-                  <ThemedText style={styles.requestsSubtitle}>Verification Required</ThemedText>
+                  <View style={styles.verificationTag}>
+                    <View style={styles.verificationDot} />
+                    <ThemedText style={styles.requestsSubtitle}>Verification Required</ThemedText>
+                  </View>
                 </View>
 
                 <View style={styles.requestsList}>
@@ -737,7 +740,7 @@ export default function SpartanCellScreen() {
                         </View>
 
                         <View style={styles.requestActionsGroup}>
-                          {/* Wrong / Reject Button (X) */}
+                          {/* Reject Button (X) */}
                           <TouchableOpacity
                             style={[
                               styles.rejectReqBtn,
@@ -751,11 +754,11 @@ export default function SpartanCellScreen() {
                             {isCurrentReviewing && reviewAction === 'reject' ? (
                               <ActivityIndicator size="small" color="#EF4444" />
                             ) : (
-                              <Ionicons name="close-sharp" size={18} color="#EF4444" />
+                              <Ionicons name="close" size={20} color="#EF4444" />
                             )}
                           </TouchableOpacity>
 
-                          {/* Right / Approve Button (Checkmark) */}
+                          {/* Approve Button (Checkmark) */}
                           <TouchableOpacity
                             style={[
                               styles.approveReqBtn,
@@ -769,7 +772,7 @@ export default function SpartanCellScreen() {
                             {isCurrentReviewing && reviewAction === 'approve' ? (
                               <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
-                              <Ionicons name="checkmark-sharp" size={18} color="#FFFFFF" />
+                              <Ionicons name="checkmark" size={20} color="#FFFFFF" />
                             )}
                           </TouchableOpacity>
                         </View>
@@ -815,13 +818,23 @@ export default function SpartanCellScreen() {
                     isLeader || (!member.is_leader && !isCoLeaderMember)
                   );
 
+                  // Priority for thin colored card borders: Leader (Yellow), Co-Leader (Orange), You (Cyan), Relapsed (Red)
+                  const memberRowBorderStyle = member.is_leader
+                    ? styles.memberRowLeader
+                    : isCoLeaderMember
+                    ? styles.memberRowCoLeader
+                    : isCurrentUser
+                    ? styles.memberRowSelf
+                    : isRelapsed
+                    ? styles.memberRowRelapsed
+                    : null;
+
                   return (
                     <TouchableOpacity
                       key={`${member.user_id}-${index}`}
                       style={[
                         styles.memberRow,
-                        isCurrentUser && styles.memberRowSelf,
-                        isRelapsed && styles.memberRowRelapsed
+                        memberRowBorderStyle,
                       ]}
                       activeOpacity={isCurrentUser ? 1 : 0.7}
                       onPress={() => {
@@ -873,22 +886,9 @@ export default function SpartanCellScreen() {
                               </View>
                             ) : null}
                           </View>
-                          <View style={styles.memberBadgesRow}>
-                            <View style={[
-                              styles.memberRankPill,
-                              {
-                                backgroundColor: `${memberRank.color}15`,
-                                borderColor: `${memberRank.color}40`,
-                              }
-                            ]}>
-                              <Text style={[styles.memberRankNameText, { color: memberRank.color }]}>
-                                {memberRank.name}
-                              </Text>
-                            </View>
-                            <View style={styles.memberXpBadge}>
-                              <ThemedText style={styles.memberXpText}>⚡ {Number(memberXp).toLocaleString()} XP</ThemedText>
-                            </View>
-                          </View>
+                          <ThemedText style={styles.memberMetaText} numberOfLines={1}>
+                            {memberRank.name} • {Number(memberXp).toLocaleString()} XP
+                          </ThemedText>
                         </View>
                       </View>
 
@@ -1106,15 +1106,8 @@ export default function SpartanCellScreen() {
                   return (
                     <View key={cell.id} style={[styles.publicCellCard, isPending && styles.publicCellCardPending]}>
                       <View style={styles.publicCellHeader}>
-                        <View style={{ flex: 1, marginRight: 8 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
-                            <ThemedText style={styles.publicCellName}>{cell.name}</ThemedText>
-                            {isPending && (
-                              <View style={styles.pendingBadgePill}>
-                                <ThemedText style={styles.pendingBadgePillText}>REQUEST PENDING</ThemedText>
-                              </View>
-                            )}
-                          </View>
+                        <View style={{ flex: 1, marginRight: 10 }}>
+                          <ThemedText style={styles.publicCellName} numberOfLines={1}>{cell.name}</ThemedText>
                           <ThemedText style={styles.publicCellMotto} numberOfLines={2}>{cell.motto}</ThemedText>
                         </View>
                         <View style={styles.publicStreakBadge}>
@@ -1123,7 +1116,7 @@ export default function SpartanCellScreen() {
                       </View>
 
                       <View style={styles.publicCellFooter}>
-                        <ThemedText style={styles.publicMembersCount}>
+                        <ThemedText style={styles.publicMembersCount} numberOfLines={1}>
                           {cell.member_count}/{cell.max_members} Members • Leader: {cell.leader_name}
                         </ThemedText>
 
@@ -1134,7 +1127,7 @@ export default function SpartanCellScreen() {
                             onPress={() => handleCancelJoinRequest(cell.join_code || cell.id)}
                             disabled={actionLoading}
                           >
-                            <Ionicons name="time-outline" size={13} color="#F59E0B" style={{ marginRight: 5 }} />
+                            <Ionicons name="time-outline" size={13} color="#F59E0B" />
                             <ThemedText style={styles.pendingRequestBtnText}>Pending Approval ⏳</ThemedText>
                           </TouchableOpacity>
                         ) : (
@@ -1831,11 +1824,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.07)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   memberRowSelf: {
-    borderColor: 'rgba(0, 229, 255, 0.35)',
-    backgroundColor: 'rgba(0, 229, 255, 0.04)',
+    borderColor: '#00E5FF',
+    borderWidth: 1.2,
+    backgroundColor: 'rgba(0, 229, 255, 0.035)',
+  },
+  memberRowLeader: {
+    borderColor: '#FBBF24',
+    borderWidth: 1.2,
+    backgroundColor: 'rgba(251, 191, 36, 0.035)',
+  },
+  memberRowCoLeader: {
+    borderColor: '#FB923C',
+    borderWidth: 1.2,
+    backgroundColor: 'rgba(251, 146, 60, 0.035)',
   },
   memberLeftGroup: {
     flexDirection: 'row',
@@ -1880,13 +1884,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     flexShrink: 1,
   },
+  memberMetaText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94A3B8',
+    marginTop: 2,
+  },
   youBadge: {
     backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
     borderRadius: 5,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.5)',
   },
   youBadgeText: {
     fontSize: 9.5,
@@ -1894,48 +1904,17 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
   },
   leaderBadge: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    backgroundColor: 'rgba(251, 191, 36, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
     borderRadius: 5,
-    borderWidth: 0.5,
-    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 191, 36, 0.5)',
   },
   leaderText: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#F59E0B',
-  },
-  memberBadgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 4,
-  },
-  memberRankPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 5,
-    borderWidth: 0.5,
-  },
-  memberRankNameText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-  memberXpBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 5,
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    borderWidth: 0.5,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-  },
-  memberXpText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#F59E0B',
-    letterSpacing: 0.2,
+    color: '#FBBF24',
   },
   memberRightGroup: {
     flexDirection: 'column',
@@ -2391,12 +2370,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 13,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: 'rgba(255, 255, 255, 0.07)',
     marginBottom: 8,
   },
   publicCellCardPending: {
     backgroundColor: 'rgba(245, 158, 11, 0.035)',
-    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderWidth: 1.2,
   },
   pendingBadgePill: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
@@ -2414,9 +2394,9 @@ const styles = StyleSheet.create({
   },
   publicCellHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   publicCellName: {
     fontSize: 14.5,
@@ -2433,9 +2413,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
   },
   publicStreakText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
     color: '#F59E0B',
   },
@@ -2443,18 +2425,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 10,
+    gap: 8,
   },
   publicMembersCount: {
     fontSize: 11,
-    color: '#64748B',
+    color: '#94A3B8',
     fontWeight: '600',
+    flex: 1,
   },
   joinPublicBtn: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.35)',
+    borderColor: 'rgba(0, 229, 255, 0.4)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 6.5,
     borderRadius: 8,
   },
   joinPublicBtnLoading: {
@@ -2676,17 +2661,17 @@ const styles = StyleSheet.create({
   },
   /* ── JOIN PETITIONS REVIEW SECTION ── */
   requestsSection: {
-    backgroundColor: 'rgba(0, 229, 255, 0.04)',
+    backgroundColor: '#09101E',
     borderRadius: 18,
     padding: 14,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 229, 255, 0.28)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
     marginBottom: 16,
     shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 3,
   },
   requestsHeaderRow: {
     flexDirection: 'row',
@@ -2718,24 +2703,41 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.8,
   },
+  verificationTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(0, 229, 255, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: 'rgba(0, 229, 255, 0.25)',
+  },
+  verificationDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00E5FF',
+  },
   requestsSubtitle: {
-    fontSize: 10.5,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
     color: '#00E5FF',
     letterSpacing: 0.3,
   },
   requestsList: {
-    gap: 10,
+    gap: 8,
   },
   requestCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'rgba(255, 255, 255, 0.035)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.09)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 14,
-    padding: 11,
+    padding: 12,
   },
   requestLeft: {
     flexDirection: 'row',
@@ -2759,7 +2761,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   requestName: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
     marginBottom: 2,
@@ -2767,7 +2769,7 @@ const styles = StyleSheet.create({
   requestDetailsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
   },
   requestStreak: {
     fontSize: 11,
@@ -2785,28 +2787,28 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   rejectReqBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 11,
-    backgroundColor: 'rgba(239, 68, 68, 0.14)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(239, 68, 68, 0.5)',
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   approveReqBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 11,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     backgroundColor: '#10B981',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.45,
-    shadowRadius: 5,
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
     elevation: 3,
   },
   reqBtnLoading: {
@@ -2814,17 +2816,17 @@ const styles = StyleSheet.create({
   },
   /* ── CO-LEADER & MEMBER MODERATION ── */
   coLeaderBadge: {
-    backgroundColor: 'rgba(0, 229, 255, 0.15)',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    backgroundColor: 'rgba(251, 146, 60, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
     borderRadius: 5,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0, 229, 255, 0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.5)',
   },
   coLeaderText: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#00E5FF',
+    color: '#FB923C',
   },
   memberRightWrapper: {
     flexDirection: 'row',
@@ -2846,15 +2848,16 @@ const styles = StyleSheet.create({
   pendingRequestBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.5)',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
+    gap: 4,
   },
   pendingRequestBtnText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
     color: '#F59E0B',
   },
