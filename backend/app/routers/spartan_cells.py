@@ -193,6 +193,10 @@ async def join_spartan_cell(
         # Already member
         return _cell_to_summary(await recalculate_cell_stats(cell))
 
+    # Check maximum capacity
+    if len(cell.member_ids or []) >= (cell.max_members or 20):
+        raise HTTPException(status_code=400, detail="This Accountability Squad has reached maximum member capacity (20 warriors).")
+
     # Remove user from any prior cell (if not the target cell)
     user_email = (current_user.email or "").strip().lower()
     prior_query = {

@@ -90,6 +90,8 @@ export default function SpartanCellScreen() {
   const [newCellMotto, setNewCellMotto] = useState<string>(MOTTO_PRESETS[0]);
   const [joinCodeInput, setJoinCodeInput] = useState<string>('');
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [joiningCode, setJoiningCode] = useState<string | null>(null);
+  const [isLeaving, setIsLeaving] = useState<boolean>(false);
   const [nudgeNotice, setNudgeNotice] = useState<string | null>(null);
 
   const [customDialog, setCustomDialog] = useState<{
@@ -140,13 +142,15 @@ export default function SpartanCellScreen() {
       loadData();
       // Fast adaptive poll (3.5s) while screen is actively focused
       const fastSyncTimer = setInterval(() => {
-        fetchMyCell().catch(() => {});
+        if (!actionLoading && !joiningCode && !isLeaving) {
+          fetchMyCell().catch(() => {});
+        }
       }, 3500);
 
       return () => {
         clearInterval(fastSyncTimer);
       };
-    }, [loadData])
+    }, [loadData, actionLoading, joiningCode, isLeaving])
   );
 
   const isLeader = useMemo(() => {
@@ -204,20 +208,23 @@ export default function SpartanCellScreen() {
     }
     triggerHaptic('medium');
     setActionLoading(true);
+    setJoiningCode(cleanCode);
     try {
       await joinCell(cleanCode);
       setIsJoinModalVisible(false);
       setJoinCodeInput('');
+      fetchPublicCells().catch(() => {});
     } catch (err: any) {
       setCustomDialog({
         visible: true,
         title: 'Join Failed',
-        message: err?.response?.data?.detail || 'Invalid or expired cell code.',
+        message: err?.response?.data?.detail || err?.detail || 'Invalid or expired cell code.',
         type: 'danger',
         confirmText: 'Dismiss',
       });
     } finally {
       setActionLoading(false);
+      setJoiningCode(null);
     }
   };
 
@@ -232,13 +239,15 @@ export default function SpartanCellScreen() {
       onConfirm: async () => {
         triggerHaptic('heavy');
         setActionLoading(true);
+        setIsLeaving(true);
         try {
           await leaveCell();
-          await fetchPublicCells();
+          fetchPublicCells().catch(() => {});
         } catch (err: any) {
           // silent fallback
         } finally {
           setActionLoading(false);
+          setIsLeaving(false);
           setCustomDialog(null);
         }
       },
@@ -256,9 +265,10 @@ export default function SpartanCellScreen() {
       onConfirm: async () => {
         triggerHaptic('heavy');
         setActionLoading(true);
+        setIsLeaving(true);
         try {
           await deleteCell();
-          await fetchPublicCells();
+          fetchPublicCells().catch(() => {});
           setCustomDialog({
             visible: true,
             title: 'Cell Disbanded',
@@ -270,12 +280,13 @@ export default function SpartanCellScreen() {
           setCustomDialog({
             visible: true,
             title: 'Error',
-            message: err?.response?.data?.detail || 'Could not disband cell.',
+            message: err?.response?.data?.detail || err?.detail || 'Could not disband cell.',
             type: 'danger',
             confirmText: 'Dismiss',
           });
         } finally {
           setActionLoading(false);
+          setIsLeaving(false);
         }
       },
     });
@@ -680,13 +691,22 @@ export default function SpartanCellScreen() {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  style={styles.leaveBtn}
+                  style={[styles.leaveBtn, (isLeaving || actionLoading) && styles.leaveBtnLoading]}
                   activeOpacity={0.7}
                   onPress={handleLeaveCell}
-                  disabled={actionLoading}
+                  disabled={actionLoading || isLeaving}
                 >
-                  <Ionicons name="exit-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.leaveBtnText}>Leave Accountability Cell</ThemedText>
+                  {isLeaving ? (
+                    <View style={styles.btnLoadingRow}>
+                      <ActivityIndicator size="small" color="#EF4444" />
+                      <ThemedText style={[styles.leaveBtnText, { color: '#EF4444' }]}>Leaving Squad...</ThemedText>
+                    </View>
+                  ) : (
+                    <>
+                      <Ionicons name="exit-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
+                      <ThemedText style={styles.leaveBtnText}>Leave Accountability Cell</ThemedText>
+                    </>
+                  )}
                 </TouchableOpacity>
               )}
             </View>
@@ -805,12 +825,22 @@ export default function SpartanCellScreen() {
                       </ThemedText>
 
                       <TouchableOpacity
-                        style={styles.joinPublicBtn}
+                        style={[
+                          styles.joinPublicBtn,
+                          joiningCode === cell.join_code && styles.joinPublicBtnLoading,
+                        ]}
                         activeOpacity={0.8}
                         onPress={() => handleJoinCell(cell.join_code)}
-                        disabled={actionLoading}
+                        disabled={actionLoading || !!joiningCode}
                       >
-                        <ThemedText style={styles.joinPublicBtnText}>Join Squad</ThemedText>
+                        {joiningCode === cell.join_code ? (
+                          <View style={styles.btnLoadingRow}>
+                            <ActivityIndicator size="small" color="#00E5FF" />
+                            <ThemedText style={styles.joinPublicBtnText}>Joining...</ThemedText>
+                          </View>
+                        ) : (
+                          <ThemedText style={styles.joinPublicBtnText}>Join Squad</ThemedText>
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -844,50 +874,39 @@ export default function SpartanCellScreen() {
               <ThemedText style={styles.inputLabel}>SQUAD NAME</ThemedText>
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g. Sovereign Phalanx, Iron Vanguard"
-                placeholderTextColor="#64748B"
+                placeholder="e.g. Iron Vanguard"
+                placeholderTextColor="#475569"
                 value={newCellName}
                 onChangeText={setNewCellName}
                 maxLength={40}
               />
 
               <ThemedText style={styles.inputLabel}>CHOOSE SQUAD MOTTO</ThemedText>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. We hold the line together."
-                placeholderTextColor="#64748B"
-                value={newCellMotto}
-                onChangeText={setNewCellMotto}
-                maxLength={80}
-              />
-
-              {/* Quick Motto Presets */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mottoPresetRow}>
-                {MOTTO_PRESETS.map((motto, idx) => (
+                {MOTTO_PRESETS.map((m) => (
                   <TouchableOpacity
-                    key={idx}
-                    style={[styles.mottoPill, newCellMotto === motto && styles.mottoPillActive]}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      triggerHaptic('light');
-                      setNewCellMotto(motto);
-                    }}
+                    key={m}
+                    style={[styles.mottoPill, newCellMotto === m && styles.mottoPillActive]}
+                    onPress={() => setNewCellMotto(m)}
                   >
-                    <ThemedText style={[styles.mottoPillText, newCellMotto === motto && styles.mottoPillTextActive]}>
-                      {motto}
+                    <ThemedText style={[styles.mottoPillText, newCellMotto === m && styles.mottoPillTextActive]}>
+                      {m}
                     </ThemedText>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
 
               <TouchableOpacity
-                style={styles.submitModalBtn}
+                style={[styles.submitModalBtn, actionLoading && styles.submitModalBtnLoading]}
                 activeOpacity={0.85}
                 onPress={handleCreateCell}
-                disabled={actionLoading}
+                disabled={actionLoading || !!joiningCode}
               >
                 {actionLoading ? (
-                  <ActivityIndicator color="#000000" />
+                  <View style={styles.btnLoadingRow}>
+                    <ActivityIndicator size="small" color="#000000" />
+                    <ThemedText style={styles.submitModalBtnText}>Establishing Squad...</ThemedText>
+                  </View>
                 ) : (
                   <ThemedText style={styles.submitModalBtnText}>Establish & Become Leader</ThemedText>
                 )}
@@ -936,13 +955,16 @@ export default function SpartanCellScreen() {
               </View>
 
               <TouchableOpacity
-                style={styles.submitModalBtn}
+                style={[styles.submitModalBtn, (actionLoading || !!joiningCode) && styles.submitModalBtnLoading]}
                 activeOpacity={0.85}
                 onPress={() => handleJoinCell()}
-                disabled={actionLoading}
+                disabled={actionLoading || !!joiningCode}
               >
-                {actionLoading ? (
-                  <ActivityIndicator color="#00E5FF" />
+                {actionLoading || !!joiningCode ? (
+                  <View style={styles.btnLoadingRow}>
+                    <ActivityIndicator size="small" color="#000000" />
+                    <ThemedText style={styles.submitModalBtnText}>Joining Squad...</ThemedText>
+                  </View>
                 ) : (
                   <ThemedText style={styles.submitModalBtnText}>Join Accountability Squad</ThemedText>
                 )}
@@ -974,8 +996,9 @@ export default function SpartanCellScreen() {
                 <View style={styles.dialogBtnRow}>
                   {customDialog.cancelText && (
                     <TouchableOpacity
-                      style={styles.dialogCancelBtn}
+                      style={[styles.dialogCancelBtn, (actionLoading || isLeaving) && { opacity: 0.5 }]}
                       activeOpacity={0.7}
+                      disabled={actionLoading || isLeaving}
                       onPress={() => setCustomDialog(null)}
                     >
                       <ThemedText style={styles.dialogCancelText}>{customDialog.cancelText}</ThemedText>
@@ -984,9 +1007,11 @@ export default function SpartanCellScreen() {
                   <TouchableOpacity
                     style={[
                       styles.dialogConfirmBtn,
-                      customDialog.type === 'danger' && { backgroundColor: '#EF4444' }
+                      customDialog.type === 'danger' && { backgroundColor: '#EF4444' },
+                      (actionLoading || isLeaving) && { opacity: 0.85 },
                     ]}
                     activeOpacity={0.85}
+                    disabled={actionLoading || isLeaving}
                     onPress={() => {
                       if (customDialog.onConfirm) {
                         customDialog.onConfirm();
@@ -995,12 +1020,31 @@ export default function SpartanCellScreen() {
                       }
                     }}
                   >
-                    <ThemedText style={[
-                      styles.dialogConfirmText,
-                      customDialog.type === 'danger' && { color: '#FFFFFF' }
-                    ]}>
-                      {customDialog.confirmText || 'OK'}
-                    </ThemedText>
+                    {actionLoading || isLeaving ? (
+                      <View style={styles.btnLoadingRow}>
+                        <ActivityIndicator
+                          size="small"
+                          color={customDialog.type === 'danger' ? '#FFFFFF' : '#000000'}
+                        />
+                        <ThemedText
+                          style={[
+                            styles.dialogConfirmText,
+                            customDialog.type === 'danger' && { color: '#FFFFFF' },
+                          ]}
+                        >
+                          Processing...
+                        </ThemedText>
+                      </View>
+                    ) : (
+                      <ThemedText
+                        style={[
+                          styles.dialogConfirmText,
+                          customDialog.type === 'danger' && { color: '#FFFFFF' },
+                        ]}
+                      >
+                        {customDialog.confirmText || 'OK'}
+                      </ThemedText>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1645,6 +1689,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
+  leaveBtnLoading: {
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  },
   leaveBtnText: {
     fontSize: 13,
     fontWeight: '700',
@@ -1952,6 +2000,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
+  joinPublicBtnLoading: {
+    backgroundColor: 'rgba(0, 229, 255, 0.25)',
+    borderColor: 'rgba(0, 229, 255, 0.65)',
+  },
   joinPublicBtnText: {
     fontSize: 11.5,
     fontWeight: '800',
@@ -2074,6 +2126,15 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.3,
+  },
+  submitModalBtnLoading: {
+    opacity: 0.85,
+  },
+  btnLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
   },
   dialogCard: {
     width: '100%',

@@ -129,7 +129,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         return null;
       }
 
-      if (!get().myCell) {
+      if (!get().myCell && !get().isLoadingCell) {
         set({ isLoadingCell: true });
       }
       const cell = await spartanApi.getMyCell();
@@ -180,9 +180,9 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       const token = await TokenStorage.getAccessToken();
       if (!token) return null;
 
-      const battle = await spartanApi.getActiveBattleSession();
-      set({ activeBattle: battle });
-      return battle;
+      const session = await spartanApi.getActiveBattleSession();
+      set({ activeBattle: session });
+      return session;
     } catch {
       return null;
     }
@@ -190,7 +190,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   fetchCellLeaderboard: async () => {
     try {
-      const list = await spartanApi.getCellLeaderboard(50);
+      const list = await spartanApi.getCellLeaderboard();
       set({ cellLeaderboard: list });
     } catch {
       // Keep existing
@@ -208,12 +208,10 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   createCell: async (name: string, motto: string = 'We hold the line together.', isPublic: boolean = true) => {
     const seq = ++myCellFetchSeq;
-    set({ isLoadingCell: true });
     try {
       const cell = await spartanApi.createCell(name, motto, isPublic);
-      if (seq === myCellFetchSeq) {
-        set({ myCell: cell, isLoadingCell: false });
-      }
+      myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
+      set({ myCell: cell, isLoadingCell: false });
       if (cell?.id) {
         try {
           const { realtimeClient } = require('../services/realtime-client');
@@ -222,21 +220,18 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       }
       return cell;
     } catch (err) {
-      if (seq === myCellFetchSeq) {
-        set({ isLoadingCell: false });
-      }
+      set({ isLoadingCell: false });
       throw err;
     }
   },
 
   joinCell: async (code: string) => {
     const seq = ++myCellFetchSeq;
-    set({ isLoadingCell: true });
     try {
       const cell = await spartanApi.joinCell(code);
-      if (seq === myCellFetchSeq) {
-        set({ myCell: cell, isLoadingCell: false });
-      }
+      // Bump sequence so background polls cannot overwrite with stale data
+      myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
+      set({ myCell: cell, isLoadingCell: false });
       if (cell?.id) {
         try {
           const { realtimeClient } = require('../services/realtime-client');
@@ -245,9 +240,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       }
       return cell;
     } catch (err) {
-      if (seq === myCellFetchSeq) {
-        set({ isLoadingCell: false });
-      }
+      set({ isLoadingCell: false });
       throw err;
     }
   },
@@ -255,7 +248,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   leaveCell: async () => {
     const seq = ++myCellFetchSeq;
     const priorId = get().myCell?.id;
-    set({ isLoadingCell: true });
     try {
       await spartanApi.leaveCell();
       if (priorId) {
@@ -264,13 +256,10 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
           realtimeClient.unsubscribe(`cell:${priorId}`);
         } catch {}
       }
-      if (seq === myCellFetchSeq) {
-        set({ myCell: null, isLoadingCell: false });
-      }
+      myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
+      set({ myCell: null, isLoadingCell: false });
     } catch (err) {
-      if (seq === myCellFetchSeq) {
-        set({ isLoadingCell: false });
-      }
+      set({ isLoadingCell: false });
       throw err;
     }
   },
@@ -278,7 +267,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   deleteCell: async () => {
     const seq = ++myCellFetchSeq;
     const priorId = get().myCell?.id;
-    set({ isLoadingCell: true });
     try {
       await spartanApi.deleteCell();
       if (priorId) {
@@ -287,13 +275,10 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
           realtimeClient.unsubscribe(`cell:${priorId}`);
         } catch {}
       }
-      if (seq === myCellFetchSeq) {
-        set({ myCell: null, isLoadingCell: false });
-      }
+      myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
+      set({ myCell: null, isLoadingCell: false });
     } catch (err) {
-      if (seq === myCellFetchSeq) {
-        set({ isLoadingCell: false });
-      }
+      set({ isLoadingCell: false });
       throw err;
     }
   },

@@ -184,21 +184,44 @@ class RealtimeClient {
         (currentUserEmail && msg.user_email && String(msg.user_email).trim().toLowerCase() === currentUserEmail)
       );
 
+      // Check if this event explicitly signifies that the current user joined
+      const isCurrentUserJoined = msg.event === 'member_joined' && (
+        (currentUserId && msg.user_id && String(msg.user_id) === currentUserId) ||
+        (currentUserEmail && msg.user_email && String(msg.user_email).trim().toLowerCase() === currentUserEmail)
+      );
+
       const myCell = spartan.myCell;
-      const isTargetingMyCell = myCell && (myCell.id === msg.cell_id || myCell.id === msg.data.id || myCell.join_code === msg.data.join_code);
+      const isTargetingMyCell = !!(myCell && (
+        myCell.id === msg.cell_id ||
+        myCell.id === msg.data?.id ||
+        myCell.join_code === msg.data?.join_code
+      ));
 
       if (isCurrentUserDeparted) {
-        useSpartanStore.setState({ myCell: null });
+        // ONLY clear myCell if this event targets the cell user is currently in!
+        // Never wipe a newly joined cell due to prior cell departure broadcasts!
+        if (isTargetingMyCell) {
+          useSpartanStore.setState({ myCell: null });
+          if (msg.cell_id) {
+            this.unsubscribe(`cell:${msg.cell_id}`);
+          }
+        }
+      } else if (isCurrentUserJoined) {
+        // Current user joined this cell: immediately bind it to state
+        useSpartanStore.setState({ myCell: msg.data });
+        if (msg.cell_id || msg.data?.id) {
+          this.subscribe(`cell:${msg.cell_id || msg.data?.id}`);
+        }
       } else if (isTargetingMyCell) {
         // Seamlessly update live stats, members, streaks, and shields in real time
         useSpartanStore.setState({ myCell: msg.data });
       }
 
       // Update cell in leaderboard if visible
-      if (spartan.cellLeaderboard.some((c) => c.id === msg.cell_id || c.id === msg.data.id)) {
+      if (spartan.cellLeaderboard.some((c) => c.id === msg.cell_id || c.id === msg.data?.id)) {
         useSpartanStore.setState({
           cellLeaderboard: spartan.cellLeaderboard.map((c) =>
-            c.id === msg.cell_id || c.id === msg.data.id ? msg.data : c
+            c.id === msg.cell_id || c.id === msg.data?.id ? msg.data : c
           ),
         });
       }
@@ -206,6 +229,9 @@ class RealtimeClient {
       const myCell = useSpartanStore.getState().myCell;
       if (myCell && (myCell.id === msg.cell_id || myCell.id === msg.data?.id)) {
         useSpartanStore.setState({ myCell: null });
+        if (msg.cell_id) {
+          this.unsubscribe(`cell:${msg.cell_id}`);
+        }
       }
     } else if (type === 'PUBLIC_CELLS_CHANGED') {
       useSpartanStore.getState().fetchPublicCells().catch(() => {});
