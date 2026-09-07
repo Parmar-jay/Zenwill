@@ -863,15 +863,6 @@ export default function SpartanCellScreen() {
                                 <ThemedText style={styles.youBadgeText}>You</ThemedText>
                               </View>
                             )}
-                            {member.is_leader ? (
-                              <View style={styles.leaderBadge}>
-                                <ThemedText style={styles.leaderText}>Leader 👑</ThemedText>
-                              </View>
-                            ) : isCoLeaderMember ? (
-                              <View style={styles.coLeaderBadge}>
-                                <ThemedText style={styles.coLeaderText}>Co-Leader 🛡️</ThemedText>
-                              </View>
-                            ) : null}
                           </View>
                           <ThemedText style={styles.memberMetaText} numberOfLines={1}>
                             {memberRank.name} • {Number(memberXp).toLocaleString()} XP
@@ -1104,7 +1095,7 @@ export default function SpartanCellScreen() {
 
                       <View style={styles.publicCellFooter}>
                         <ThemedText style={styles.publicMembersCount} numberOfLines={1}>
-                          {cell.member_count}/{cell.max_members} Members • Leader: {cell.leader_name}
+                          {cell.member_count}/{cell.max_members} Members • {cell.leader_name}
                         </ThemedText>
 
                         {isPending ? (
