@@ -164,7 +164,12 @@ class RealtimeClient {
         break;
       }
       case 'JOIN_REQUEST_RECEIVED': {
-        // If current user is leader or co-leader, refresh or update join requests
+        if (data.data) {
+          const currentCell = useSpartanStore.getState().myCell;
+          if (currentCell && String(currentCell.id) === String(data.cell_id)) {
+            useSpartanStore.setState({ myCell: data.data });
+          }
+        }
         useSpartanStore.getState().fetchMyCell({ showLoading: false }).catch(() => {});
         break;
       }
@@ -180,6 +185,14 @@ class RealtimeClient {
         break;
       }
       case 'JOIN_REQUEST_REJECTED': {
+        const rejectedCellId = data.cell_id ? String(data.cell_id).trim().toLowerCase() : null;
+        if (rejectedCellId) {
+          useSpartanStore.setState((state) => ({
+            myPendingRequests: state.myPendingRequests.filter(
+              (k) => k && k.trim().toLowerCase() !== rejectedCellId
+            ),
+          }));
+        }
         useSpartanStore.getState().fetchMyJoinRequests().catch(() => {});
         useSpartanStore.getState().fetchPublicCells().catch(() => {});
         break;

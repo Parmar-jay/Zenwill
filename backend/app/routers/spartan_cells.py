@@ -93,28 +93,7 @@ def _cell_to_summary(
             deduped_members.append(m)
         elif not uid:
             deduped_members.append(m)
-
     raw_reqs = getattr(c, "join_requests", []) or []
-    visible_reqs = []
-
-    if requesting_user_id or requesting_user_email:
-        req_id_str = str(requesting_user_id or "").strip().lower()
-        req_email_str = str(requesting_user_email or "").strip().lower()
-
-        leader_id_str = str(c.leader_id or "").strip().lower()
-        co_leaders = [str(cid).strip().lower() for cid in (getattr(c, "co_leader_ids", []) or [])]
-
-        is_leader = (
-            (req_id_str and req_id_str == leader_id_str) or
-            (req_email_str and req_email_str == leader_id_str)
-        )
-        is_co_leader = (
-            (req_id_str and req_id_str in co_leaders) or
-            (req_email_str and req_email_str in co_leaders)
-        )
-
-        if is_leader or is_co_leader:
-            visible_reqs = raw_reqs
 
     return SpartanCellSummary(
         id=str(c.id),
@@ -124,7 +103,7 @@ def _cell_to_summary(
         leader_id=c.leader_id,
         leader_name=c.leader_name,
         co_leader_ids=getattr(c, "co_leader_ids", []) or [],
-        join_requests=visible_reqs,
+        join_requests=raw_reqs,
         member_count=len(deduped_members),
         max_members=c.max_members,
         total_streak=c.total_streak,
@@ -405,7 +384,7 @@ async def request_join_spartan_cell(
     cell.updated_at = datetime.utcnow()
     await cell.save()
 
-    # Real-time notification broadcast to cell members
+    # Real-time notification broadcast to cell leadership and members
     try:
         summary = _cell_to_summary(cell)
         await realtime_bus.broadcast_to_channel(
@@ -417,6 +396,28 @@ async def request_join_spartan_cell(
                 "data": summary.model_dump(),
             }
         )
+        if cell.leader_id:
+            await realtime_bus.send_to_user(
+                cell.leader_id,
+                {
+                    "type": "CELL_UPDATED",
+                    "cell_id": str(cell.id),
+                    "event": "join_request_received",
+                    "data": summary.model_dump(),
+                }
+            )
+        for cid in (getattr(cell, "co_leader_ids", []) or []):
+            if cid:
+                await realtime_bus.send_to_user(
+                    str(cid),
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(cell.id),
+                        "event": "join_request_received",
+                        "data": summary.model_dump(),
+                    }
+                )
+        await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
     except Exception:
         pass
 
@@ -488,6 +489,28 @@ async def cancel_join_request(
                     "data": summary.model_dump(),
                 }
             )
+            if c.leader_id:
+                await realtime_bus.send_to_user(
+                    c.leader_id,
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(c.id),
+                        "event": "join_request_cancelled",
+                        "data": summary.model_dump(),
+                    }
+                )
+            for cid in (getattr(c, "co_leader_ids", []) or []):
+                if cid:
+                    await realtime_bus.send_to_user(
+                        str(cid),
+                        {
+                            "type": "CELL_UPDATED",
+                            "cell_id": str(c.id),
+                            "event": "join_request_cancelled",
+                            "data": summary.model_dump(),
+                        }
+                    )
+            await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
         except Exception:
             pass
 
@@ -565,11 +588,19 @@ async def respond_join_request(
     applicant_email = (target_req.get("user_email") or "").strip().lower()
 
     if payload.action == "reject":
-        cell.join_requests = [r for r in reqs if r.get("id") != target_req.get("id") and r.get("user_id") != applicant_id]
+        target_id_str = str(target_req.get("id") or "")
+        applicant_id_str = applicant_id.lower()
+
+        cell.join_requests = [
+            r for r in reqs
+            if str(r.get("id") or "") != target_id_str
+            and str(r.get("user_id") or "").strip().lower() != applicant_id_str
+            and (not applicant_email or str(r.get("user_email") or "").strip().lower() != applicant_email)
+        ]
         cell.updated_at = datetime.utcnow()
         await cell.save()
         updated_cell = await recalculate_cell_stats(cell)
-        summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
+        summary = _cell_to_summary(updated_cell)
 
         # Notify applicant over real-time socket
         await realtime_bus.send_to_user(
@@ -580,7 +611,17 @@ async def respond_join_request(
                 "cell_name": cell.name,
             }
         )
-        # Broadcast updated cell to cell members
+        if applicant_email:
+            await realtime_bus.send_to_user(
+                applicant_email,
+                {
+                    "type": "JOIN_REQUEST_REJECTED",
+                    "cell_id": str(cell.id),
+                    "cell_name": cell.name,
+                }
+            )
+
+        # Broadcast updated cell to all squad subscribers
         await realtime_bus.broadcast_to_channel(
             f"cell:{cell.id}",
             {
@@ -590,6 +631,32 @@ async def respond_join_request(
                 "data": summary.model_dump(),
             }
         )
+        # Directly notify Leader and all Co-Leaders to guarantee universal live sync across accounts
+        if cell.leader_id:
+            await realtime_bus.send_to_user(
+                cell.leader_id,
+                {
+                    "type": "CELL_UPDATED",
+                    "cell_id": str(cell.id),
+                    "event": "join_request_rejected",
+                    "data": summary.model_dump(),
+                }
+            )
+        for cid in (getattr(cell, "co_leader_ids", []) or []):
+            if cid:
+                await realtime_bus.send_to_user(
+                    str(cid),
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(cell.id),
+                        "event": "join_request_rejected",
+                        "data": summary.model_dump(),
+                    }
+                )
+
+        await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+        await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
+
         return {"status": "rejected", "message": f"Join request from {applicant_name} was declined.", "data": summary.model_dump()}
 
     elif payload.action == "approve":
@@ -612,9 +679,13 @@ async def respond_join_request(
 
         if already_in_cell and str(already_in_cell.id) != str(cell.id):
             # Remove applicant's petition from target cell
+            target_id_str = str(target_req.get("id") or "")
+            applicant_id_str = applicant_id.lower()
             cell.join_requests = [
                 r for r in (cell.join_requests or [])
-                if r.get("id") != target_req.get("id") and r.get("user_id") != applicant_id and (not applicant_email or r.get("user_email") != applicant_email)
+                if str(r.get("id") or "") != target_id_str
+                and str(r.get("user_id") or "").strip().lower() != applicant_id_str
+                and (not applicant_email or str(r.get("user_email") or "").strip().lower() != applicant_email)
             ]
             cell.updated_at = datetime.utcnow()
             await cell.save()
@@ -628,14 +699,15 @@ async def respond_join_request(
                 for arc in all_requested_cells:
                     arc.join_requests = [
                         r for r in (arc.join_requests or [])
-                        if r.get("user_id") != applicant_id and (not applicant_email or r.get("user_email") != applicant_email)
+                        if str(r.get("user_id") or "").strip().lower() != applicant_id_str
+                        and (not applicant_email or str(r.get("user_email") or "").strip().lower() != applicant_email)
                     ]
                     await arc.save()
             except Exception:
                 pass
 
             updated_cell = await recalculate_cell_stats(cell)
-            summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
+            summary = _cell_to_summary(updated_cell)
 
             await realtime_bus.broadcast_to_channel(
                 f"cell:{cell.id}",
@@ -646,6 +718,27 @@ async def respond_join_request(
                     "data": summary.model_dump(),
                 }
             )
+            if cell.leader_id:
+                await realtime_bus.send_to_user(
+                    cell.leader_id,
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(cell.id),
+                        "event": "join_request_cleared",
+                        "data": summary.model_dump(),
+                    }
+                )
+            for cid in (getattr(cell, "co_leader_ids", []) or []):
+                if cid:
+                    await realtime_bus.send_to_user(
+                        str(cid),
+                        {
+                            "type": "CELL_UPDATED",
+                            "cell_id": str(cell.id),
+                            "event": "join_request_cleared",
+                            "data": summary.model_dump(),
+                        }
+                    )
 
             return {
                 "status": "already_joined",
@@ -654,6 +747,8 @@ async def respond_join_request(
             }
 
         # 1. Clean up applicant's pending requests from ALL cells in MongoDB
+        target_id_str = str(target_req.get("id") or "")
+        applicant_id_str = applicant_id.lower()
         try:
             applicant_clauses = [{"join_requests.user_id": applicant_id}]
             if applicant_email:
@@ -663,7 +758,8 @@ async def respond_join_request(
             for arc in all_requested_cells:
                 arc.join_requests = [
                     r for r in (arc.join_requests or [])
-                    if r.get("user_id") != applicant_id and (not applicant_email or r.get("user_email") != applicant_email)
+                    if str(r.get("user_id") or "").strip().lower() != applicant_id_str
+                    and (not applicant_email or str(r.get("user_email") or "").strip().lower() != applicant_email)
                 ]
                 await arc.save()
         except Exception:
@@ -696,12 +792,14 @@ async def respond_join_request(
 
         cell.join_requests = [
             r for r in (cell.join_requests or [])
-            if r.get("id") != target_req.get("id") and r.get("user_id") != applicant_id and (not applicant_email or r.get("user_email") != applicant_email)
+            if str(r.get("id") or "") != target_id_str
+            and str(r.get("user_id") or "").strip().lower() != applicant_id_str
+            and (not applicant_email or str(r.get("user_email") or "").strip().lower() != applicant_email)
         ]
 
         # 4. Recalculate cell stats
         updated_cell = await recalculate_cell_stats(cell)
-        summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
+        summary = _cell_to_summary(updated_cell)
 
         # 5. Real-time notification directly to applicant
         await realtime_bus.send_to_user(
@@ -726,6 +824,32 @@ async def respond_join_request(
                 "data": summary.model_dump(),
             }
         )
+        if cell.leader_id:
+            await realtime_bus.send_to_user(
+                cell.leader_id,
+                {
+                    "type": "CELL_UPDATED",
+                    "cell_id": str(cell.id),
+                    "event": "member_joined",
+                    "user_id": applicant_id,
+                    "user_name": applicant_name,
+                    "data": summary.model_dump(),
+                }
+            )
+        for cid in (getattr(cell, "co_leader_ids", []) or []):
+            if cid:
+                await realtime_bus.send_to_user(
+                    str(cid),
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(cell.id),
+                        "event": "member_joined",
+                        "user_id": applicant_id,
+                        "user_name": applicant_name,
+                        "data": summary.model_dump(),
+                    }
+                )
+
         await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
         await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
 
