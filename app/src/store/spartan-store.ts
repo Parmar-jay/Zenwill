@@ -248,8 +248,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     try {
       const cell = await spartanApi.createCell(name, motto, isPublic);
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
-      set({ myCell: cell, isLoadingCell: false });
-      get().fetchPublicCells().catch(() => {});
+      set({ myCell: cell, isLoadingCell: false, myPendingRequests: [] });
+      get().fetchPublicCells().catch(() => { });
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -262,8 +262,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     try {
       const cell = await spartanApi.joinCell(code);
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
-      set({ myCell: cell, isLoadingCell: false });
-      get().fetchPublicCells().catch(() => {});
+      set({ myCell: cell, isLoadingCell: false, myPendingRequests: [] });
+      get().fetchPublicCells().catch(() => { });
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -367,14 +367,14 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       }));
 
       // Background quiet sync without flickering UI
-      get().fetchPublicCells().catch(() => {});
-      get().fetchMyJoinRequests().catch(() => {});
+      get().fetchPublicCells().catch(() => { });
+      get().fetchMyJoinRequests().catch(() => { });
 
       return res;
     } catch (err) {
       // Revert if failed
-      get().fetchMyJoinRequests().catch(() => {});
-      get().fetchPublicCells().catch(() => {});
+      get().fetchMyJoinRequests().catch(() => { });
+      get().fetchPublicCells().catch(() => { });
       throw err;
     }
   },
@@ -436,11 +436,11 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
     try {
       await spartanApi.cancelJoinRequest(codeOrCellId);
-      get().fetchPublicCells().catch(() => {});
-      get().fetchMyJoinRequests().catch(() => {});
+      get().fetchPublicCells().catch(() => { });
+      get().fetchMyJoinRequests().catch(() => { });
     } catch (err) {
-      get().fetchMyJoinRequests().catch(() => {});
-      get().fetchPublicCells().catch(() => {});
+      get().fetchMyJoinRequests().catch(() => { });
+      get().fetchPublicCells().catch(() => { });
       throw err;
     }
   },
@@ -498,10 +498,10 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       if (res?.data) {
         set({ myCell: res.data });
       }
-      get().fetchPublicCells().catch(() => {});
+      get().fetchPublicCells().catch(() => { });
       return res;
     } catch (err) {
-      get().fetchMyCell({ showLoading: false }).catch(() => {});
+      get().fetchMyCell({ showLoading: false }).catch(() => { });
       throw err;
     }
   },
@@ -527,7 +527,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       if (cell) set({ myCell: cell });
       return cell;
     } catch (err) {
-      get().fetchMyCell({ showLoading: false }).catch(() => {});
+      get().fetchMyCell({ showLoading: false }).catch(() => { });
       throw err;
     }
   },
@@ -552,7 +552,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       if (cell) set({ myCell: cell });
       return cell;
     } catch (err) {
-      get().fetchMyCell({ showLoading: false }).catch(() => {});
+      get().fetchMyCell({ showLoading: false }).catch(() => { });
       throw err;
     }
   },
@@ -577,7 +577,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       if (cell) set({ myCell: cell });
       return cell;
     } catch (err) {
-      get().fetchMyCell({ showLoading: false }).catch(() => {});
+      get().fetchMyCell({ showLoading: false }).catch(() => { });
       throw err;
     }
   },

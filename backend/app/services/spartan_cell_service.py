@@ -200,6 +200,14 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
 
         user_display_name = user.name or (user.email.split("@")[0] if user.email else "Warrior")
 
+        existing_m = next(
+            (pm for pm in (cell.members or [])
+             if str(pm.get("user_id") or "").strip().lower() == uid.lower()
+             or (user.email and str(pm.get("email") or "").strip().lower() == user.email.lower())),
+            None
+        )
+        joined_at_val = existing_m.get("joined_at") if (existing_m and existing_m.get("joined_at")) else datetime.utcnow().isoformat()
+
         updated_members.append({
             "user_id": str(user.id),
             "email": user.email if user and user.email else None,
@@ -217,7 +225,7 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
             "is_leader": is_leader,
             "is_co_leader": is_co_leader,
             "is_online": True,
-            "joined_at": datetime.utcnow().isoformat(),
+            "joined_at": joined_at_val,
         })
 
     # Filter canonical co-leader IDs (must be in members and not leader)

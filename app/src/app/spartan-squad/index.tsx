@@ -12,8 +12,8 @@ import {
   Share,
   Dimensions,
   LayoutAnimation,
-  UIManager,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,11 +25,59 @@ import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData } from '../../services/spartan-api';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+interface AnimatedPressableProps {
+  onPress?: () => void;
+  style?: any;
+  disabled?: boolean;
+  scaleTo?: number;
+  children: React.ReactNode;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const AnimatedPressable: React.FC<AnimatedPressableProps> = ({
+  onPress,
+  style,
+  disabled,
+  scaleTo = 0.96,
+  children,
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: scaleTo,
+      useNativeDriver: true,
+      speed: 35,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 25,
+      bounciness: 5,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }]}>
+      <TouchableOpacity
+        activeOpacity={0.88}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+        style={style}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 const MOTTO_PRESETS = [
   'We hold the line together.',
@@ -89,7 +137,7 @@ export default function SpartanSquadIndexScreen() {
         else if (style === 'medium') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const loadData = useCallback(async (showLoading = false) => {
@@ -109,9 +157,9 @@ export default function SpartanSquadIndexScreen() {
       loadData(false);
       const fastSyncTimer = setInterval(() => {
         if (!actionLoadingRef.current && !joiningCodeRef.current) {
-          fetchMyCell({ showLoading: false }).catch(() => {});
-          fetchPublicCells().catch(() => {});
-          fetchMyJoinRequests().catch(() => {});
+          fetchMyCell({ showLoading: false }).catch(() => { });
+          fetchPublicCells().catch(() => { });
+          fetchMyJoinRequests().catch(() => { });
         }
       }, 3500);
 
@@ -196,7 +244,7 @@ export default function SpartanSquadIndexScreen() {
 
   const handleCancelJoinRequest = (cellCodeOrId: string) => {
     triggerHaptic('medium');
-    cancelJoinRequest(cellCodeOrId).catch(() => {});
+    cancelJoinRequest(cellCodeOrId).catch(() => { });
   };
 
   // If user is currently enrolled in a squad, seamlessly navigate to dedicated Squad dashboard
@@ -320,9 +368,8 @@ export default function SpartanSquadIndexScreen() {
 
             {/* Action Buttons */}
             <View style={styles.heroActionRow}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.createCellBtn}
-                activeOpacity={0.85}
                 onPress={() => {
                   triggerHaptic('medium');
                   setIsCreateModalVisible(true);
@@ -330,11 +377,10 @@ export default function SpartanSquadIndexScreen() {
               >
                 <Ionicons name="add-circle" size={19} color="#000000" style={{ marginRight: 6 }} />
                 <ThemedText style={styles.createCellBtnText}>Establish Squad</ThemedText>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.joinWithCodeBtn}
-                activeOpacity={0.85}
                 onPress={() => {
                   triggerHaptic('light');
                   setIsJoinModalVisible(true);
@@ -342,7 +388,7 @@ export default function SpartanSquadIndexScreen() {
               >
                 <Ionicons name="key-outline" size={17} color="#00E5FF" style={{ marginRight: 6 }} />
                 <ThemedText style={styles.joinWithCodeBtnText}>Enter Code</ThemedText>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
 
@@ -438,22 +484,20 @@ export default function SpartanSquadIndexScreen() {
                       </ThemedText>
 
                       {isPending ? (
-                        <TouchableOpacity
+                        <AnimatedPressable
                           style={styles.pendingRequestBtn}
-                          activeOpacity={0.8}
                           onPress={() => handleCancelJoinRequest(cell.join_code || cell.id)}
                           disabled={actionLoading}
                         >
                           <Ionicons name="time-outline" size={13} color="#F59E0B" />
                           <ThemedText style={styles.pendingRequestBtnText}>Pending Approval ⏳</ThemedText>
-                        </TouchableOpacity>
+                        </AnimatedPressable>
                       ) : (
-                        <TouchableOpacity
+                        <AnimatedPressable
                           style={[
                             styles.joinPublicBtn,
                             isJoiningThis && styles.joinPublicBtnLoading,
                           ]}
-                          activeOpacity={0.8}
                           onPress={() => handleRequestJoin(cell.join_code)}
                           disabled={actionLoading || !!joiningCode}
                         >
@@ -468,7 +512,7 @@ export default function SpartanSquadIndexScreen() {
                               <ThemedText style={styles.joinPublicBtnText}>Request Join</ThemedText>
                             </View>
                           )}
-                        </TouchableOpacity>
+                        </AnimatedPressable>
                       )}
                     </View>
                   </View>
@@ -539,9 +583,8 @@ export default function SpartanSquadIndexScreen() {
               ))}
             </ScrollView>
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.modalPrimaryBtn, actionLoading && styles.modalPrimaryBtnLoading]}
-              activeOpacity={0.85}
               onPress={handleCreateCell}
               disabled={actionLoading}
             >
@@ -550,7 +593,7 @@ export default function SpartanSquadIndexScreen() {
               ) : (
                 <ThemedText style={styles.modalPrimaryBtnText}>Commission Squad</ThemedText>
               )}
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
       </Modal>
@@ -589,9 +632,8 @@ export default function SpartanSquadIndexScreen() {
               autoFocus={true}
             />
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.modalPrimaryBtn, actionLoading && styles.modalPrimaryBtnLoading]}
-              activeOpacity={0.85}
               onPress={() => handleRequestJoin()}
               disabled={actionLoading}
             >
@@ -600,7 +642,7 @@ export default function SpartanSquadIndexScreen() {
               ) : (
                 <ThemedText style={styles.modalPrimaryBtnText}>Send Join Petition</ThemedText>
               )}
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
       </Modal>
@@ -627,16 +669,16 @@ export default function SpartanSquadIndexScreen() {
                   customDialog?.type === 'danger'
                     ? 'alert-circle'
                     : customDialog?.type === 'success'
-                    ? 'checkmark-circle'
-                    : 'information-circle'
+                      ? 'checkmark-circle'
+                      : 'information-circle'
                 }
                 size={28}
                 color={
                   customDialog?.type === 'danger'
                     ? '#EF4444'
                     : customDialog?.type === 'success'
-                    ? '#10B981'
-                    : '#00E5FF'
+                      ? '#10B981'
+                      : '#00E5FF'
                 }
               />
             </View>

@@ -12,7 +12,7 @@ import {
   Share,
   Dimensions,
   LayoutAnimation,
-  UIManager,
+  Animated,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,11 +25,62 @@ import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData, JoinRequestItem } from '../../services/spartan-api';
 import { communityApi } from '../../services/community-api';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+interface AnimatedPressableProps {
+  onPress?: (e?: any) => void;
+  style?: any;
+  disabled?: boolean;
+  scaleTo?: number;
+  accessibilityLabel?: string;
+  children: React.ReactNode;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const AnimatedPressable: React.FC<AnimatedPressableProps> = ({
+  onPress,
+  style,
+  disabled,
+  scaleTo = 0.95,
+  accessibilityLabel,
+  children,
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: scaleTo,
+      useNativeDriver: true,
+      speed: 35,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 25,
+      bounciness: 5,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }]}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+        accessibilityLabel={accessibilityLabel}
+        style={style}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 const MOTTO_PRESETS = [
   'We hold the line together.',
@@ -126,7 +177,7 @@ export default function SpartanCellScreen() {
         else if (style === 'medium') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const loadData = useCallback(async (showLoading = false) => {
@@ -148,9 +199,9 @@ export default function SpartanCellScreen() {
       // Fast adaptive poll (3.5s) while screen is actively focused without full reload
       const fastSyncTimer = setInterval(() => {
         if (!actionLoadingRef.current && !isLeavingRef.current) {
-          fetchMyCell({ showLoading: false }).catch(() => {});
-          fetchPublicCells().catch(() => {});
-          fetchMyJoinRequests().catch(() => {});
+          fetchMyCell({ showLoading: false }).catch(() => { });
+          fetchPublicCells().catch(() => { });
+          fetchMyJoinRequests().catch(() => { });
         }
       }, 3500);
 
@@ -198,6 +249,15 @@ export default function SpartanCellScreen() {
           type: 'info',
           confirmText: 'Understood',
         });
+      } else if (res?.status === 'approved' || action === 'approve') {
+        triggerHaptic('heavy');
+        setCustomDialog({
+          visible: true,
+          title: 'Warrior Inducted! 🛡️',
+          message: res?.message || `${applicantName} has been admitted to ${myCell.name}. We hold the line together!`,
+          type: 'success',
+          confirmText: 'Great',
+        });
       }
     } catch (err: any) {
       const errorMsg = err?.response?.data?.detail || err?.detail || 'Failed to process request.';
@@ -209,7 +269,7 @@ export default function SpartanCellScreen() {
         type: isAlreadyJoinedError ? 'info' : 'danger',
         confirmText: 'Understood',
       });
-      fetchMyCell({ showLoading: false }).catch(() => {});
+      fetchMyCell({ showLoading: false }).catch(() => { });
     } finally {
       setReviewingRequestId(null);
       setReviewAction(null);
@@ -308,8 +368,8 @@ export default function SpartanCellScreen() {
         useSpartanStore.setState({ myCell: null });
         try {
           await leaveCell();
-          fetchPublicCells().catch(() => {});
-          fetchMyJoinRequests().catch(() => {});
+          fetchPublicCells().catch(() => { });
+          fetchMyJoinRequests().catch(() => { });
         } catch (err: any) {
           useSpartanStore.setState({ myCell: null });
         } finally {
@@ -337,8 +397,8 @@ export default function SpartanCellScreen() {
         useSpartanStore.setState({ myCell: null });
         try {
           await deleteCell();
-          fetchPublicCells().catch(() => {});
-          fetchMyJoinRequests().catch(() => {});
+          fetchPublicCells().catch(() => { });
+          fetchMyJoinRequests().catch(() => { });
         } catch (err: any) {
           useSpartanStore.setState({ myCell: null });
         } finally {
@@ -358,9 +418,9 @@ export default function SpartanCellScreen() {
       // 1. Send backend nudge (creates DM in MongoDB)
       await nudgeMember(member.user_id, member.name);
       // 2. Also dispatch via communityApi for instant client sync
-      communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => {});
+      communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => { });
     } catch {
-      communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => {});
+      communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => { });
     }
   };
 
@@ -404,7 +464,7 @@ export default function SpartanCellScreen() {
       await Share.share({
         message: `🛡️ Join my Accountability Squad "${myCell.name}" on ZenWill — the neuroscience-backed platform for dopamine mastery, daily retention, and shared brotherhood discipline.\n\nCollective Squad Streak: ${myCell.total_streak} Days\nJoin Code: ${myCell.join_code}\n\nDownload ZenWill & master your dopamine: https://zenwill.me`,
       });
-    } catch {}
+    } catch { }
   };
 
   return (
@@ -475,9 +535,8 @@ export default function SpartanCellScreen() {
               </View>
 
               {/* Join Code & Share Chip */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={styles.joinCodeStrip}
-                activeOpacity={0.8}
                 onPress={handleShareCode}
               >
                 <View style={styles.codeTextRow}>
@@ -488,7 +547,7 @@ export default function SpartanCellScreen() {
                   <Ionicons name="share-social-outline" size={15} color="#00E5FF" />
                   <ThemedText style={styles.shareCodeText}>Invite Member</ThemedText>
                 </View>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
 
             {/* Exact 2-Column Stats Grid */}
@@ -533,20 +592,20 @@ export default function SpartanCellScreen() {
                     isGoldShield
                       ? 'shield-checkmark'
                       : hasRelapsedMembers
-                      ? 'warning-outline'
-                      : hasPendingMembers
-                      ? 'time-outline'
-                      : 'shield-outline'
+                        ? 'warning-outline'
+                        : hasPendingMembers
+                          ? 'time-outline'
+                          : 'shield-outline'
                   }
                   size={24}
                   color={
                     isGoldShield
                       ? '#F59E0B'
                       : hasRelapsedMembers
-                      ? '#EF4444'
-                      : hasPendingMembers
-                      ? '#F59E0B'
-                      : '#00E5FF'
+                        ? '#EF4444'
+                        : hasPendingMembers
+                          ? '#F59E0B'
+                          : '#00E5FF'
                   }
                 />
                 <View style={styles.shieldTitleWrapper}>
@@ -557,28 +616,28 @@ export default function SpartanCellScreen() {
                         isGoldShield
                           ? '#F59E0B'
                           : hasRelapsedMembers
-                          ? '#EF4444'
-                          : hasPendingMembers
-                          ? '#F59E0B'
-                          : '#00E5FF'
+                            ? '#EF4444'
+                            : hasPendingMembers
+                              ? '#F59E0B'
+                              : '#00E5FF'
                     }
                   ]}>
                     {isGoldShield
                       ? 'GOLD SHIELD ACTIVE (+20% XP)'
                       : hasRelapsedMembers
-                      ? 'SQUAD SHIELD CRACKED'
-                      : hasPendingMembers
-                      ? 'SHIELD PENDING (CHECK-IN AWAITED)'
-                      : 'DISCIPLINE SHIELD ACTIVE'}
+                        ? 'SQUAD SHIELD CRACKED'
+                        : hasPendingMembers
+                          ? 'SHIELD PENDING (CHECK-IN AWAITED)'
+                          : 'DISCIPLINE SHIELD ACTIVE'}
                   </ThemedText>
                   <ThemedText style={styles.shieldSubText}>
                     {isGoldShield
                       ? '100% of squad members confirmed retention today! +20% XP boost active for the entire squad.'
                       : hasRelapsedMembers
-                      ? 'A squad member has relapsed today. In this squad, we hold the line together and rebuild retention.'
-                      : hasPendingMembers
-                      ? 'One or more members have pending daily check-ins. Remind them to complete check-in before midnight.'
-                      : 'Maintain consistent daily check-ins across all members to unlock the Gold Shield before midnight.'}
+                        ? 'A squad member has relapsed today. In this squad, we hold the line together and rebuild retention.'
+                        : hasPendingMembers
+                          ? 'One or more members have pending daily check-ins. Remind them to complete check-in before midnight.'
+                          : 'Maintain consistent daily check-ins across all members to unlock the Gold Shield before midnight.'}
                   </ThemedText>
                 </View>
               </View>
@@ -636,12 +695,11 @@ export default function SpartanCellScreen() {
 
                         <View style={styles.requestActionsGroup}>
                           {/* Reject Button (X) */}
-                          <TouchableOpacity
+                          <AnimatedPressable
                             style={[
                               styles.rejectReqBtn,
                               isCurrentReviewing && reviewAction === 'reject' && styles.reqBtnLoading,
                             ]}
-                            activeOpacity={0.75}
                             disabled={isCurrentReviewing}
                             onPress={() => handleRespondRequest(req.id, 'reject', applicantDisplayName)}
                             accessibilityLabel={`Reject petition from ${applicantDisplayName}`}
@@ -651,15 +709,14 @@ export default function SpartanCellScreen() {
                             ) : (
                               <Ionicons name="close" size={20} color="#EF4444" />
                             )}
-                          </TouchableOpacity>
+                          </AnimatedPressable>
 
                           {/* Approve Button (Checkmark) */}
-                          <TouchableOpacity
+                          <AnimatedPressable
                             style={[
                               styles.approveReqBtn,
                               isCurrentReviewing && reviewAction === 'approve' && styles.reqBtnLoading,
                             ]}
-                            activeOpacity={0.8}
                             disabled={isCurrentReviewing}
                             onPress={() => handleRespondRequest(req.id, 'approve', applicantDisplayName)}
                             accessibilityLabel={`Approve petition from ${applicantDisplayName}`}
@@ -669,7 +726,7 @@ export default function SpartanCellScreen() {
                             ) : (
                               <Ionicons name="checkmark" size={20} color="#FFFFFF" />
                             )}
-                          </TouchableOpacity>
+                          </AnimatedPressable>
                         </View>
                       </View>
                     );
@@ -717,12 +774,12 @@ export default function SpartanCellScreen() {
                   const memberRowBorderStyle = member.is_leader
                     ? styles.memberRowLeader
                     : isCoLeaderMember
-                    ? styles.memberRowCoLeader
-                    : isCurrentUser
-                    ? styles.memberRowSelf
-                    : isRelapsed
-                    ? styles.memberRowRelapsed
-                    : null;
+                      ? styles.memberRowCoLeader
+                      : isCurrentUser
+                        ? styles.memberRowSelf
+                        : isRelapsed
+                          ? styles.memberRowRelapsed
+                          : null;
 
                   return (
                     <TouchableOpacity
@@ -829,12 +886,10 @@ export default function SpartanCellScreen() {
                         </View>
 
                         {canManageThisMember && (
-                          <TouchableOpacity
+                          <AnimatedPressable
                             style={styles.memberManageBtn}
-                            activeOpacity={0.7}
-                            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                             onPress={(e) => {
-                              e.stopPropagation?.();
+                              e?.stopPropagation?.();
                               triggerHaptic('light');
                               setSelectedMember(member);
                               setIsMemberModalVisible(true);
@@ -842,7 +897,7 @@ export default function SpartanCellScreen() {
                             accessibilityLabel={`Manage ${member.name}`}
                           >
                             <Ionicons name="ellipsis-vertical" size={16} color="#94A3B8" />
-                          </TouchableOpacity>
+                          </AnimatedPressable>
                         )}
                       </View>
                     </TouchableOpacity>
@@ -853,9 +908,8 @@ export default function SpartanCellScreen() {
 
             {/* Action Buttons: Leave Squad (available for all) & Leader Disband */}
             <View style={styles.cellFooterActions}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.leaveBtn, (isLeaving || actionLoading) && styles.leaveBtnLoading]}
-                activeOpacity={0.7}
                 onPress={handleLeaveCell}
                 disabled={actionLoading || isLeaving}
               >
@@ -865,23 +919,24 @@ export default function SpartanCellScreen() {
                     <ThemedText style={[styles.leaveBtnText, { color: '#EF4444' }]}>Departing Squad...</ThemedText>
                   </View>
                 ) : (
-                  <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Ionicons name="exit-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
                     <ThemedText style={styles.leaveBtnText}>Leave Accountability Squad</ThemedText>
-                  </>
+                  </View>
                 )}
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               {isLeader && (
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.disbandBtn}
-                  activeOpacity={0.7}
                   onPress={handleDeleteCell}
                   disabled={actionLoading || isLeaving}
                 >
-                  <Ionicons name="trash-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.disbandBtnText}>Disband Squad (Leader)</ThemedText>
-                </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="trash-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
+                    <ThemedText style={styles.disbandBtnText}>Disband Squad (Leader)</ThemedText>
+                  </View>
+                </AnimatedPressable>
               )}
             </View>
 
@@ -938,9 +993,8 @@ export default function SpartanCellScreen() {
                       {isLeader && (
                         <>
                           {isSelectedMemberCoLeader ? (
-                            <TouchableOpacity
+                            <AnimatedPressable
                               style={styles.actionRowBtn}
-                              activeOpacity={0.8}
                               onPress={() => handleDemoteCoLeader(selectedMember)}
                               disabled={memberActionLoading}
                             >
@@ -956,11 +1010,10 @@ export default function SpartanCellScreen() {
                                 </ThemedText>
                               </View>
                               {memberActionLoading && <ActivityIndicator size="small" color="#F59E0B" />}
-                            </TouchableOpacity>
+                            </AnimatedPressable>
                           ) : (
-                            <TouchableOpacity
+                            <AnimatedPressable
                               style={styles.actionRowBtn}
-                              activeOpacity={0.8}
                               onPress={() => handlePromoteCoLeader(selectedMember)}
                               disabled={memberActionLoading}
                             >
@@ -976,16 +1029,15 @@ export default function SpartanCellScreen() {
                                 </ThemedText>
                               </View>
                               {memberActionLoading && <ActivityIndicator size="small" color="#00E5FF" />}
-                            </TouchableOpacity>
+                            </AnimatedPressable>
                           )}
                         </>
                       )}
 
                       {/* Kick / Exile Option: Leader can kick anyone except self, Co-Leader can kick regular members */}
                       {(isLeader || (!selectedMember.is_leader && !isSelectedMemberCoLeader)) && (
-                        <TouchableOpacity
+                        <AnimatedPressable
                           style={[styles.actionRowBtn, styles.actionRowBtnDanger]}
-                          activeOpacity={0.8}
                           onPress={() => handleKickMember(selectedMember)}
                           disabled={memberActionLoading}
                         >
@@ -1000,20 +1052,19 @@ export default function SpartanCellScreen() {
                               Remove member and revoke squad membership
                             </ThemedText>
                           </View>
-                        </TouchableOpacity>
+                        </AnimatedPressable>
                       )}
                     </>
                   );
                 })()}
 
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.actionCancelBtn}
-                  activeOpacity={0.7}
                   onPress={() => setIsMemberModalVisible(false)}
                   disabled={memberActionLoading}
                 >
                   <ThemedText style={styles.actionCancelBtnText}>Cancel</ThemedText>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             </View>
           </Modal>
