@@ -176,14 +176,11 @@ export default function SpartanSquadIndexScreen() {
       cleanCode = `SP-${cleanCode}`;
     }
     triggerHaptic('medium');
-    setActionLoading(true);
     setJoiningCode(cleanCode);
     try {
       await requestJoinCell(cleanCode);
       setIsJoinModalVisible(false);
       setJoinCodeInput('');
-      fetchMyJoinRequests().catch(() => {});
-      fetchPublicCells().catch(() => {});
     } catch (err: any) {
       setCustomDialog({
         visible: true,
@@ -193,19 +190,13 @@ export default function SpartanSquadIndexScreen() {
         confirmText: 'Dismiss',
       });
     } finally {
-      setActionLoading(false);
       setJoiningCode(null);
     }
   };
 
   const handleCancelJoinRequest = (cellCodeOrId: string) => {
     triggerHaptic('medium');
-    setActionLoading(true);
-    cancelJoinRequest(cellCodeOrId)
-      .catch(() => {})
-      .finally(() => {
-        setActionLoading(false);
-      });
+    cancelJoinRequest(cellCodeOrId).catch(() => {});
   };
 
   // If user is currently enrolled in a squad, seamlessly navigate to dedicated Squad dashboard

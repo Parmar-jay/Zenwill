@@ -159,6 +159,11 @@ class RealtimeClient {
           if (currentCell && String(currentCell.id) === String(data.cell_id)) {
             useSpartanStore.setState({ myCell: data.data });
           }
+          useSpartanStore.setState((state) => ({
+            publicCells: state.publicCells.map((c) =>
+              String(c.id) === String(data.cell_id) ? { ...c, ...data.data } : c
+            ),
+          }));
         }
         useSpartanStore.getState().fetchPublicCells().catch(() => {});
         break;
@@ -169,12 +174,22 @@ class RealtimeClient {
           if (currentCell && String(currentCell.id) === String(data.cell_id)) {
             useSpartanStore.setState({ myCell: data.data });
           }
+          useSpartanStore.setState((state) => ({
+            publicCells: state.publicCells.map((c) =>
+              String(c.id) === String(data.cell_id) ? { ...c, ...data.data } : c
+            ),
+          }));
         }
-        useSpartanStore.getState().fetchMyCell({ showLoading: false }).catch(() => {});
         break;
       }
       case 'JOIN_REQUEST_APPROVED': {
         // Applicant was approved by leadership! Immediately sync active cell
+        if (data.data) {
+          useSpartanStore.setState({ myCell: data.data, myPendingRequests: [] });
+        }
+        if (data.cell_id) {
+          this.subscribe(`cell:${data.cell_id}`);
+        }
         useSpartanStore.getState().fetchMyCell({ showLoading: false }).then((c) => {
           if (c?.id) {
             this.subscribe(`cell:${c.id}`);
@@ -186,13 +201,28 @@ class RealtimeClient {
       }
       case 'JOIN_REQUEST_REJECTED': {
         const rejectedCellId = data.cell_id ? String(data.cell_id).trim().toLowerCase() : null;
-        if (rejectedCellId) {
-          useSpartanStore.setState((state) => ({
-            myPendingRequests: state.myPendingRequests.filter(
-              (k) => k && k.trim().toLowerCase() !== rejectedCellId
-            ),
-          }));
-        }
+        useSpartanStore.setState((state) => {
+          const nextPending = rejectedCellId
+            ? state.myPendingRequests.filter((k) => k && k.trim().toLowerCase() !== rejectedCellId)
+            : state.myPendingRequests;
+          const authUser = useAuthStore.getState().user;
+          const uid = String(authUser?.id || '').toLowerCase();
+          const email = String(authUser?.email || '').toLowerCase();
+          const nextPublic = state.publicCells.map((cell) => {
+            if (rejectedCellId && String(cell.id).toLowerCase() === rejectedCellId) {
+              return {
+                ...cell,
+                join_requests: (cell.join_requests || []).filter((req: any) => {
+                  const rUid = String(req.user_id || '').toLowerCase();
+                  const rEmail = String(req.user_email || req.email || '').toLowerCase();
+                  return rUid !== uid && rEmail !== email;
+                }),
+              };
+            }
+            return cell;
+          });
+          return { myPendingRequests: nextPending, publicCells: nextPublic };
+        });
         useSpartanStore.getState().fetchMyJoinRequests().catch(() => {});
         useSpartanStore.getState().fetchPublicCells().catch(() => {});
         break;
@@ -200,8 +230,8 @@ class RealtimeClient {
       case 'MEMBER_KICKED': {
         // Current user was kicked from the cell
         const currentCell = useSpartanStore.getState().myCell;
-        if (currentCell && String(currentCell.id) === String(data.cell_id)) {
-          this.unsubscribe(`cell:${currentCell.id}`);
+        if (currentCell && (!data.cell_id || String(currentCell.id) === String(data.cell_id))) {
+          if (currentCell.id) this.unsubscribe(`cell:${currentCell.id}`);
           useSpartanStore.setState({ myCell: null });
         }
         useSpartanStore.getState().fetchPublicCells().catch(() => {});

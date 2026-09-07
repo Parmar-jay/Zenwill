@@ -299,9 +299,17 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     const pure = clean.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
     const fullSp = `SP-${pure}`;
 
-    // 1. Instantly mark as pending in local state before the network call finishes!
-    set((state) => ({
-      myPendingRequests: Array.from(new Set([
+    const { useAuthStore } = require('./auth-store');
+    const authUser = useAuthStore.getState().user;
+    const authUid = String(authUser?.id || '').trim();
+    const authEmail = (authUser?.email || '').trim().toLowerCase();
+    const authName = authUser?.name || 'Warrior';
+    const authStreak = authUser?.streak || 0;
+    const authXp = authUser?.total_points || 100;
+
+    // 1. Instantly mark as pending in local state before the network call finishes
+    set((state) => {
+      const nextPending = Array.from(new Set([
         ...state.myPendingRequests,
         raw,
         clean,
@@ -310,8 +318,52 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         pure.toLowerCase(),
         fullSp,
         fullSp.toLowerCase(),
-      ].filter(Boolean))),
-    }));
+      ].filter(Boolean)));
+
+      const nextPublic = state.publicCells.map((c) => {
+        const cCode = (c.join_code || '').trim().toUpperCase();
+        const cPure = cCode.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
+        const matches = (
+          cCode === clean ||
+          cPure === pure ||
+          c.id === raw ||
+          c.id === clean
+        );
+        if (matches) {
+          const reqs = c.join_requests || [];
+          const alreadyInReqs = reqs.some(
+            (r: any) =>
+              (authUid && String(r.user_id || '').trim().toLowerCase() === authUid.toLowerCase()) ||
+              (authEmail && String(r.user_email || r.email || '').trim().toLowerCase() === authEmail)
+          );
+          if (!alreadyInReqs) {
+            return {
+              ...c,
+              join_requests: [
+                ...reqs,
+                {
+                  id: `temp-${Date.now()}`,
+                  user_id: authUid,
+                  user_name: authName,
+                  user_email: authEmail,
+                  streak: authStreak,
+                  xp: authXp,
+                  badge: '🛡️',
+                  rank_tier: 'Warrior',
+                  created_at: new Date().toISOString(),
+                },
+              ],
+            };
+          }
+        }
+        return c;
+      });
+
+      return {
+        myPendingRequests: nextPending,
+        publicCells: nextPublic,
+      };
+    });
 
     try {
       const res = await spartanApi.requestJoinCell(code);
@@ -336,15 +388,15 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         ].filter(Boolean))),
       }));
 
-      // Immediately synchronize public cells and my join requests
-      await Promise.allSettled([
-        get().fetchPublicCells(),
-        get().fetchMyJoinRequests(),
-      ]);
+      // Background quiet sync without flickering UI
+      get().fetchPublicCells().catch(() => {});
+      get().fetchMyJoinRequests().catch(() => {});
 
       return res;
     } catch (err) {
+      // Revert if failed
       get().fetchMyJoinRequests().catch(() => {});
+      get().fetchPublicCells().catch(() => {});
       throw err;
     }
   },
@@ -355,9 +407,14 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     const pure = clean.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
     const fullSp = `SP-${pure}`;
 
-    // 1. Instantly remove from local pending set
-    set((state) => ({
-      myPendingRequests: state.myPendingRequests.filter(
+    const { useAuthStore } = require('./auth-store');
+    const authUser = useAuthStore.getState().user;
+    const authUid = String(authUser?.id || '').trim().toLowerCase();
+    const authEmail = (authUser?.email || '').trim().toLowerCase();
+
+    // 1. Instantly remove from local pending set AND publicCells in memory
+    set((state) => {
+      const nextPending = state.myPendingRequests.filter(
         (k) =>
           k !== raw &&
           k !== clean &&
@@ -366,29 +423,91 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
           k !== pure.toLowerCase() &&
           k !== fullSp &&
           k !== fullSp.toLowerCase() &&
-          k !== codeOrCellId
-      ),
-    }));
+          k !== codeOrCellId &&
+          k !== String(codeOrCellId).toLowerCase()
+      );
+
+      const nextPublic = state.publicCells.map((c) => {
+        const cCode = (c.join_code || '').trim().toUpperCase();
+        const cPure = cCode.replace('SP-', '').replace('SP ', '').replace('SP', '').trim();
+        const matches = (
+          cCode === clean ||
+          cPure === pure ||
+          c.id === raw ||
+          c.id === clean ||
+          c.id === codeOrCellId
+        );
+        if (matches) {
+          return {
+            ...c,
+            join_requests: (c.join_requests || []).filter(
+              (r: any) =>
+                (authUid && String(r.user_id || '').trim().toLowerCase() !== authUid) &&
+                (authEmail && String(r.user_email || r.email || '').trim().toLowerCase() !== authEmail)
+            ),
+          };
+        }
+        return c;
+      });
+
+      return {
+        myPendingRequests: nextPending,
+        publicCells: nextPublic,
+      };
+    });
 
     try {
       await spartanApi.cancelJoinRequest(codeOrCellId);
-      await Promise.allSettled([
-        get().fetchPublicCells(),
-        get().fetchMyJoinRequests(),
-      ]);
+      get().fetchPublicCells().catch(() => {});
+      get().fetchMyJoinRequests().catch(() => {});
     } catch (err) {
       get().fetchMyJoinRequests().catch(() => {});
+      get().fetchPublicCells().catch(() => {});
       throw err;
     }
   },
 
   respondJoinRequest: async (cellId: string, requestId: string, action: 'approve' | 'reject') => {
-    // 1. Optimistically remove the petition from local state immediately
+    // 1. Optimistically remove the petition and update members immediately
     const currentCell = get().myCell;
+    let targetApplicant: any = null;
     if (currentCell && Array.isArray(currentCell.join_requests)) {
+      targetApplicant = currentCell.join_requests.find(
+        (r) => r.id === requestId || r.user_id === requestId
+      );
+
+      let updatedMembers = currentCell.members || [];
+      let updatedTotalStreak = currentCell.total_streak || 0;
+      let updatedMemberCount = currentCell.member_count || updatedMembers.length;
+
+      if (action === 'approve' && targetApplicant) {
+        const newMember = {
+          user_id: targetApplicant.user_id,
+          name: targetApplicant.user_name || 'Warrior',
+          streak: targetApplicant.streak || 0,
+          xp: targetApplicant.xp || 100,
+          badge: targetApplicant.badge || '🥉',
+          rank_tier: targetApplicant.rank_tier || 'Bronze I',
+          status: 'retained',
+          last_retain_status: 'retained',
+          today_checked_in: true,
+          is_leader: false,
+          is_co_leader: false,
+        };
+        const seen = new Set(updatedMembers.map((m) => m.user_id));
+        if (!seen.has(newMember.user_id)) {
+          updatedMembers = [...updatedMembers, newMember as any];
+          updatedMemberCount = updatedMembers.length;
+          updatedTotalStreak += (targetApplicant.streak || 0);
+        }
+      }
+
       set({
         myCell: {
           ...currentCell,
+          members: updatedMembers,
+          member_count: updatedMemberCount,
+          total_streak: updatedTotalStreak,
           join_requests: currentCell.join_requests.filter(
             (r) => r.id !== requestId && r.user_id !== requestId
           ),
@@ -463,12 +582,15 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   kickMember: async (targetUserId: string) => {
     const current = get().myCell;
     if (current) {
+      const kicked = (current.members || []).find((m) => m.user_id === targetUserId);
+      const kickedStreak = kicked?.streak || 0;
       const updatedMembers = (current.members || []).filter((m) => m.user_id !== targetUserId);
       set({
         myCell: {
           ...current,
           members: updatedMembers,
           member_count: updatedMembers.length,
+          total_streak: Math.max(0, (current.total_streak || 0) - kickedStreak),
         },
       });
     }
