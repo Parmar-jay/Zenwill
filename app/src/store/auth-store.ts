@@ -133,10 +133,6 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
-          try {
-            const { realtimeClient } = require('@/services/realtime-client');
-            realtimeClient.connect().catch(() => {});
-          } catch (e) {}
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Login failed' });
           throw err;
@@ -188,10 +184,6 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
-          try {
-            const { realtimeClient } = require('@/services/realtime-client');
-            realtimeClient.connect().catch(() => {});
-          } catch (e) {}
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Invalid or expired OTP code' });
           throw err;
@@ -221,10 +213,6 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
-          try {
-            const { realtimeClient } = require('@/services/realtime-client');
-            realtimeClient.connect().catch(() => {});
-          } catch (e) {}
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Google authentication failed' });
           throw err;
@@ -238,13 +226,7 @@ export const useAuthStore = create<AuthState>()(
           api.setLoggingOut(true);
         } catch (e) {}
 
-        // 2. Disconnect real-time WebSocket connection
-        try {
-          const { realtimeClient } = require('@/services/realtime-client');
-          realtimeClient.disconnect();
-        } catch (e) {}
-
-        // 3. Clear auth tokens from memory and storage
+        // 2. Clear auth tokens from memory and storage
         try {
           await authApi.logout();
         } catch (e) {}
@@ -356,10 +338,6 @@ export const useAuthStore = create<AuthState>()(
         if (state?.isAuthenticated) {
           useDailyMissionStore.getState().syncWithBackend().catch(() => {});
           useHabitStore.getState().syncFromDatabase().catch(() => {});
-          try {
-            const { realtimeClient } = require('@/services/realtime-client');
-            realtimeClient.connect().catch(() => {});
-          } catch (e) {}
         }
       },
     }

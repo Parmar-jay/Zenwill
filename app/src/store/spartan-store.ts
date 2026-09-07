@@ -153,13 +153,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       }
 
       if (!cell) {
-        const priorId = get().myCell?.id;
-        if (priorId) {
-          try {
-            const { realtimeClient } = require('../services/realtime-client');
-            realtimeClient.unsubscribe(`cell:${priorId}`);
-          } catch {}
-        }
         set({ myCell: null, isLoadingCell: false, hasLoadedInitialCell: true });
         return null;
       }
@@ -182,13 +175,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
           });
 
           if (!isMember) {
-            const priorId = get().myCell?.id;
-            if (priorId) {
-              try {
-                const { realtimeClient } = require('../services/realtime-client');
-                realtimeClient.unsubscribe(`cell:${priorId}`);
-              } catch {}
-            }
             set({ myCell: null, isLoadingCell: false, hasLoadedInitialCell: true });
             return null;
           }
@@ -211,14 +197,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         }
       }
       set({ myCell: cell, isLoadingCell: false, hasLoadedInitialCell: true });
-
-      // Automatically register real-time channel subscription for live updates
-      if (cell?.id) {
-        try {
-          const { realtimeClient } = require('../services/realtime-client');
-          realtimeClient.subscribe(`cell:${cell.id}`);
-        } catch {}
-      }
 
       return cell;
     } catch {
@@ -245,8 +223,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   fetchCellLeaderboard: async () => {
     try {
-      const list = await spartanApi.getCellLeaderboard();
-      set({ cellLeaderboard: list });
+      const data = await spartanApi.getCellLeaderboard();
+      set({ cellLeaderboard: Array.isArray(data) ? data : [] });
     } catch {
       // Keep existing
     }
@@ -277,12 +255,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       const cell = await spartanApi.createCell(name, motto, isPublic);
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
       set({ myCell: cell, isLoadingCell: false });
-      if (cell?.id) {
-        try {
-          const { realtimeClient } = require('../services/realtime-client');
-          realtimeClient.subscribe(`cell:${cell.id}`);
-        } catch {}
-      }
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -297,12 +269,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       // Bump sequence so background polls cannot overwrite with stale data
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
       set({ myCell: cell, isLoadingCell: false });
-      if (cell?.id) {
-        try {
-          const { realtimeClient } = require('../services/realtime-client');
-          realtimeClient.subscribe(`cell:${cell.id}`);
-        } catch {}
-      }
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -379,14 +345,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   leaveCell: async () => {
     const seq = ++myCellFetchSeq;
-    const priorId = get().myCell?.id;
     set({ myCell: null, isLoadingCell: false });
-    if (priorId) {
-      try {
-        const { realtimeClient } = require('../services/realtime-client');
-        realtimeClient.unsubscribe(`cell:${priorId}`);
-      } catch {}
-    }
     try {
       await spartanApi.leaveCell();
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
@@ -400,14 +359,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   deleteCell: async () => {
     const seq = ++myCellFetchSeq;
-    const priorId = get().myCell?.id;
     set({ myCell: null, isLoadingCell: false });
-    if (priorId) {
-      try {
-        const { realtimeClient } = require('../services/realtime-client');
-        realtimeClient.unsubscribe(`cell:${priorId}`);
-      } catch {}
-    }
     try {
       await spartanApi.deleteCell();
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);

@@ -22,7 +22,6 @@ import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData, JoinRequestItem } from '../../services/spartan-api';
 import { communityApi } from '../../services/community-api';
-import { realtimeClient } from '../../services/realtime-client';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -140,37 +139,25 @@ export default function SpartanCellScreen() {
 
   useEffect(() => {
     loadData(!hasLoadedInitialCell);
-    realtimeClient.subscribe('public_cells');
-
-    return () => {
-      realtimeClient.unsubscribe('public_cells');
-    };
   }, []);
-
-  useEffect(() => {
-    if (myCell?.id) {
-      realtimeClient.subscribe(`cell:${myCell.id}`);
-      return () => {
-        realtimeClient.unsubscribe(`cell:${myCell.id}`);
-      };
-    }
-  }, [myCell?.id]);
 
   useFocusEffect(
     useCallback(() => {
       // Quiet background refresh on screen focus
       loadData(false);
-      // Fast adaptive poll (5s) while screen is actively focused without full reload
+      // Fast adaptive poll (4s) while screen is actively focused without full reload
       const fastSyncTimer = setInterval(() => {
         if (!actionLoading && !joiningCode && !isLeaving) {
           fetchMyCell({ showLoading: false }).catch(() => {});
+          fetchPublicCells().catch(() => {});
+          fetchMyJoinRequests().catch(() => {});
         }
-      }, 5000);
+      }, 4000);
 
       return () => {
         clearInterval(fastSyncTimer);
       };
-    }, [actionLoading, joiningCode, isLeaving, loadData, fetchMyCell])
+    }, [actionLoading, joiningCode, isLeaving, loadData, fetchMyCell, fetchPublicCells, fetchMyJoinRequests])
   );
 
   const isLeader = useMemo(() => {
