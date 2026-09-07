@@ -928,6 +928,58 @@ export default function SpartanCellScreen() {
               </View>
             </View>
 
+            {/* Allied Squads Network (All Existing Cells in Database) */}
+            {publicCells.filter((c) => String(c.id) !== String(myCell.id)).length > 0 && (
+              <View style={styles.alliedSection}>
+                <View style={styles.alliedHeaderRow}>
+                  <Ionicons name="globe-outline" size={14} color="#00E5FF" />
+                  <ThemedText style={styles.alliedSectionTitle}>ALLIED SQUADS DIRECTORY</ThemedText>
+                </View>
+
+                <View style={styles.alliedList}>
+                  {publicCells
+                    .filter((c) => String(c.id) !== String(myCell.id))
+                    .map((cell) => (
+                      <View key={cell.id} style={styles.alliedCard}>
+                        <View style={styles.alliedCardHeader}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <ThemedText style={styles.alliedName} numberOfLines={1}>
+                              {cell.name}
+                            </ThemedText>
+                            <ThemedText style={styles.alliedMotto} numberOfLines={1}>
+                              {cell.motto}
+                            </ThemedText>
+                          </View>
+                          <View style={styles.alliedStreakBadge}>
+                            <ThemedText style={styles.alliedStreakText}>🔥 {cell.total_streak}d</ThemedText>
+                          </View>
+                        </View>
+                        <View style={styles.alliedCardFooter}>
+                          <ThemedText style={styles.alliedMembersCount} numberOfLines={1}>
+                            {cell.member_count}/{cell.max_members || 20} Members • Commander {cell.leader_name}
+                          </ThemedText>
+                          <View style={styles.alliedShieldPill}>
+                            <Ionicons
+                              name={cell.shield_status === 'gold' ? 'shield-checkmark' : 'shield-outline'}
+                              size={11}
+                              color={cell.shield_status === 'gold' ? '#F59E0B' : '#00E5FF'}
+                            />
+                            <ThemedText
+                              style={[
+                                styles.alliedShieldText,
+                                { color: cell.shield_status === 'gold' ? '#F59E0B' : '#00E5FF' },
+                              ]}
+                            >
+                              {cell.shield_status.toUpperCase()}
+                            </ThemedText>
+                          </View>
+                        </View>
+                      </View>
+                    ))}
+                </View>
+              </View>
+            )}
+
             {/* Action Buttons: Leave Squad (available for all) & Leader Disband */}
             <View style={styles.cellFooterActions}>
               <TouchableOpacity
@@ -2944,5 +2996,88 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '700',
     color: '#94A3B8',
+  },
+  alliedSection: {
+    marginBottom: 20,
+    marginTop: 4,
+  },
+  alliedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  alliedSectionTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    color: '#00E5FF',
+  },
+  alliedList: {
+    gap: 10,
+  },
+  alliedCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  alliedCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  alliedName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  alliedMotto: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  alliedStreakBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+  },
+  alliedStreakText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#F59E0B',
+  },
+  alliedCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.04)',
+    paddingTop: 8,
+  },
+  alliedMembersCount: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  alliedShieldPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  alliedShieldText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });
