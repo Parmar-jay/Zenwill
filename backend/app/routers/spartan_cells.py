@@ -746,7 +746,7 @@ async def respond_join_request(
                 "data": summary.model_dump()
             }
 
-        # 1. Clean up applicant's pending requests from ALL cells in MongoDB
+        # 1. Clean up applicant's pending requests from ALL cells in MongoDB EXCEPT target cell
         target_id_str = str(target_req.get("id") or "")
         applicant_id_str = applicant_id.lower()
         try:
@@ -756,39 +756,49 @@ async def respond_join_request(
 
             all_requested_cells = await SpartanCell.find({"$or": applicant_clauses}).to_list()
             for arc in all_requested_cells:
-                arc.join_requests = [
-                    r for r in (arc.join_requests or [])
-                    if str(r.get("user_id") or "").strip().lower() != applicant_id_str
-                    and (not applicant_email or str(r.get("user_email") or "").strip().lower() != applicant_email)
-                ]
-                await arc.save()
+                if str(arc.id) != str(cell.id):
+                    arc.join_requests = [
+                        r for r in (arc.join_requests or [])
+                        if str(r.get("user_id") or "").strip().lower() != applicant_id_str
+                        and (not applicant_email or str(r.get("user_email") or "").strip().lower() != applicant_email)
+                    ]
+                    await arc.save()
         except Exception:
             pass
 
         # 2. Depart applicant from any prior cell
+        applicant_user = await get_user_safely(applicant_id)
+        applicant_clean_ids = {applicant_id.lower()}
+        if applicant_user:
+            applicant_clean_ids.add(str(applicant_user.id).lower())
+            if applicant_user.email:
+                applicant_clean_ids.add(applicant_user.email.lower())
+        if applicant_email:
+            applicant_clean_ids.add(applicant_email.lower())
+
         prior_query = {
             "$or": [
-                {"member_ids": applicant_id},
-                {"leader_id": applicant_id},
+                {"member_ids": {"$in": list(applicant_clean_ids)}},
+                {"leader_id": {"$in": list(applicant_clean_ids)}},
             ]
         }
-        if applicant_email:
-            prior_query["$or"].extend([
-                {"member_ids": applicant_email},
-                {"leader_id": applicant_email},
-            ])
         prior_cells = await SpartanCell.find(prior_query).to_list()
         for pc in prior_cells:
             if str(pc.id) != str(cell.id):
-                pc.member_ids = [m for m in pc.member_ids if m != applicant_id and (not applicant_email or m.lower() != applicant_email)]
+                pc.member_ids = [m for m in pc.member_ids if str(m).lower() not in applicant_clean_ids]
                 if not pc.member_ids:
                     await pc.delete()
                 else:
                     await recalculate_cell_stats(pc)
 
         # 3. Add applicant to target cell's member_ids and remove from target cell's join_requests
+        canonical_applicant_id = str(applicant_user.id) if applicant_user else applicant_id
+        if canonical_applicant_id not in cell.member_ids:
+            cell.member_ids.append(canonical_applicant_id)
         if applicant_id not in cell.member_ids:
             cell.member_ids.append(applicant_id)
+        if applicant_email and applicant_email not in cell.member_ids:
+            cell.member_ids.append(applicant_email)
 
         cell.join_requests = [
             r for r in (cell.join_requests or [])
@@ -811,6 +821,16 @@ async def respond_join_request(
                 "data": summary.model_dump(),
             }
         )
+        if applicant_email and applicant_email != applicant_id:
+            await realtime_bus.send_to_user(
+                applicant_email,
+                {
+                    "type": "JOIN_REQUEST_APPROVED",
+                    "cell_id": str(cell.id),
+                    "cell_name": cell.name,
+                    "data": summary.model_dump(),
+                }
+            )
 
         # 6. Real-time broadcast to all squad members
         await realtime_bus.broadcast_to_channel(
@@ -1076,7 +1096,7 @@ async def get_my_spartan_cell(
     def is_user_in_cell(c: SpartanCell) -> bool:
         if not c:
             return False
-        # Strictly verify active membership in member_ids or members list
+        # Strictly verify active membership in member_ids, members list, or leadership
         for m in (c.member_ids or []):
             if m and str(m).strip().lower() in user_identifiers:
                 return True
@@ -1084,24 +1104,49 @@ async def get_my_spartan_cell(
             if isinstance(m, dict):
                 uid = str(m.get("user_id") or "").strip().lower()
                 em = str(m.get("email") or "").strip().lower()
-                if (uid and uid in user_identifiers) or (em and em in user_identifiers):
+                nm = str(m.get("name") or "").strip().lower()
+                if (uid and uid in user_identifiers) or (em and em in user_identifiers) or (nm and nm in user_identifiers):
                     return True
+        if c.leader_id and str(c.leader_id).strip().lower() in user_identifiers:
+            return True
         return False
 
-    all_cells = await SpartanCell.find_all().to_list()
+    query_clauses: List[Dict[str, Any]] = [
+        {"member_ids": user_id_str},
+        {"member_ids": user_email},
+        {"leader_id": user_id_str},
+        {"leader_id": user_email},
+        {"members.user_id": user_id_str},
+        {"members.email": user_email},
+    ]
+    if raw_email and raw_email != user_email:
+        query_clauses.extend([
+            {"member_ids": raw_email},
+            {"leader_id": raw_email},
+            {"members.email": raw_email},
+        ])
+    from bson import ObjectId
+    if ObjectId.is_valid(user_id_str):
+        query_clauses.append({"member_ids": ObjectId(user_id_str)})
+
+    matching_cells = await SpartanCell.find({"$or": query_clauses}).sort("-updated_at").to_list()
     active_cell = None
-    for c in all_cells:
+    for c in matching_cells:
         if is_user_in_cell(c):
             active_cell = c
             break
 
     if not active_cell:
+        all_cells = await SpartanCell.find_all().sort("-updated_at").to_list()
+        for c in all_cells:
+            if is_user_in_cell(c):
+                active_cell = c
+                break
+
+    if not active_cell:
         return None
 
     updated_cell = await recalculate_cell_stats(active_cell)
-    if not is_user_in_cell(updated_cell):
-        return None
-
     return _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
 
 

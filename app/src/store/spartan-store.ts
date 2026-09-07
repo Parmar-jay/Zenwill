@@ -158,28 +158,6 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       }
 
       if (cell && Array.isArray(cell.members)) {
-        const { useAuthStore } = require('./auth-store');
-        const authUser = useAuthStore.getState().user;
-        if (authUser) {
-          const userIds = new Set([
-            String(authUser.id || '').trim().toLowerCase(),
-            (authUser.email || '').trim().toLowerCase(),
-            (authUser.name || '').trim().toLowerCase(),
-          ].filter(Boolean));
-
-          const isMember = cell.members.some((m) => {
-            const mUid = (m.user_id || '').trim().toLowerCase();
-            const mEmail = (m.email || '').trim().toLowerCase();
-            const mName = (m.name || '').trim().toLowerCase();
-            return userIds.has(mUid) || userIds.has(mEmail) || userIds.has(mName);
-          });
-
-          if (!isMember) {
-            set({ myCell: null, isLoadingCell: false, hasLoadedInitialCell: true });
-            return null;
-          }
-        }
-
         const seen = new Set<string>();
         cell.members = cell.members.filter((m) => {
           const uid = (m.user_id || '').trim().toLowerCase();
