@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Platform,
   Share,
   Dimensions,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +24,10 @@ import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData, JoinRequestItem } from '../../services/spartan-api';
 import { communityApi } from '../../services/community-api';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -118,6 +124,13 @@ export default function SpartanCellScreen() {
     onConfirm?: () => void;
   } | null>(null);
 
+  const actionLoadingRef = useRef(actionLoading);
+  actionLoadingRef.current = actionLoading;
+  const joiningCodeRef = useRef(joiningCode);
+  joiningCodeRef.current = joiningCode;
+  const isLeavingRef = useRef(isLeaving);
+  isLeavingRef.current = isLeaving;
+
   const triggerHaptic = useCallback((style: 'light' | 'medium' | 'heavy' = 'light') => {
     try {
       if (Platform.OS !== 'web') {
@@ -144,19 +157,19 @@ export default function SpartanCellScreen() {
     useCallback(() => {
       // Quiet background refresh on screen focus
       loadData(false);
-      // Fast adaptive poll (2.5s) while screen is actively focused without full reload
+      // Fast adaptive poll (3.5s) while screen is actively focused without full reload
       const fastSyncTimer = setInterval(() => {
-        if (!actionLoading && !joiningCode && !isLeaving) {
+        if (!actionLoadingRef.current && !joiningCodeRef.current && !isLeavingRef.current) {
           fetchMyCell({ showLoading: false }).catch(() => {});
           fetchPublicCells().catch(() => {});
           fetchMyJoinRequests().catch(() => {});
         }
-      }, 2500);
+      }, 3500);
 
       return () => {
         clearInterval(fastSyncTimer);
       };
-    }, [actionLoading, joiningCode, isLeaving, loadData, fetchMyCell, fetchPublicCells, fetchMyJoinRequests])
+    }, [loadData, fetchMyCell, fetchPublicCells, fetchMyJoinRequests])
   );
 
   const isLeader = useMemo(() => {
@@ -256,6 +269,7 @@ export default function SpartanCellScreen() {
   const handleRespondRequest = async (requestId: string, action: 'approve' | 'reject', applicantName: string) => {
     if (!myCell?.id) return;
     triggerHaptic(action === 'approve' ? 'heavy' : 'medium');
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setReviewingRequestId(requestId);
     setReviewAction(action);
     try {
@@ -288,6 +302,7 @@ export default function SpartanCellScreen() {
 
   const handlePromoteCoLeader = async (member: CellMemberItem) => {
     triggerHaptic('heavy');
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMemberActionLoading(true);
     try {
       await promoteCoLeader(member.user_id);
@@ -308,6 +323,7 @@ export default function SpartanCellScreen() {
 
   const handleDemoteCoLeader = async (member: CellMemberItem) => {
     triggerHaptic('medium');
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMemberActionLoading(true);
     try {
       await demoteCoLeader(member.user_id);
@@ -336,6 +352,7 @@ export default function SpartanCellScreen() {
       cancelText: 'Cancel',
       onConfirm: async () => {
         triggerHaptic('heavy');
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setMemberActionLoading(true);
         try {
           await kickMember(member.user_id);

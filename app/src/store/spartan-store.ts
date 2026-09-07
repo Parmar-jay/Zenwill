@@ -383,47 +383,101 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   },
 
   respondJoinRequest: async (cellId: string, requestId: string, action: 'approve' | 'reject') => {
+    // 1. Optimistically remove the petition from local state immediately
+    const currentCell = get().myCell;
+    if (currentCell && Array.isArray(currentCell.join_requests)) {
+      set({
+        myCell: {
+          ...currentCell,
+          join_requests: currentCell.join_requests.filter(
+            (r) => r.id !== requestId && r.user_id !== requestId
+          ),
+        },
+      });
+    }
+
     try {
       const res = await spartanApi.respondJoinRequest(cellId, requestId, action);
       if (res?.data) {
         set({ myCell: res.data });
       }
-      await Promise.allSettled([
-        get().fetchMyCell({ showLoading: false }),
-        get().fetchPublicCells(),
-      ]);
+      get().fetchPublicCells().catch(() => {});
       return res;
     } catch (err) {
+      get().fetchMyCell({ showLoading: false }).catch(() => {});
       throw err;
     }
   },
 
   promoteCoLeader: async (targetUserId: string) => {
+    const current = get().myCell;
+    if (current) {
+      const coLeaders = new Set(current.co_leader_ids || []);
+      coLeaders.add(targetUserId);
+      const updatedMembers = (current.members || []).map((m) =>
+        m.user_id === targetUserId ? { ...m, is_co_leader: true } : m
+      );
+      set({
+        myCell: {
+          ...current,
+          co_leader_ids: Array.from(coLeaders),
+          members: updatedMembers,
+        },
+      });
+    }
     try {
       const cell = await spartanApi.promoteCoLeader(targetUserId);
-      set({ myCell: cell });
+      if (cell) set({ myCell: cell });
       return cell;
     } catch (err) {
+      get().fetchMyCell({ showLoading: false }).catch(() => {});
       throw err;
     }
   },
 
   demoteCoLeader: async (targetUserId: string) => {
+    const current = get().myCell;
+    if (current) {
+      const coLeaders = (current.co_leader_ids || []).filter((id) => id !== targetUserId);
+      const updatedMembers = (current.members || []).map((m) =>
+        m.user_id === targetUserId ? { ...m, is_co_leader: false } : m
+      );
+      set({
+        myCell: {
+          ...current,
+          co_leader_ids: coLeaders,
+          members: updatedMembers,
+        },
+      });
+    }
     try {
       const cell = await spartanApi.demoteCoLeader(targetUserId);
-      set({ myCell: cell });
+      if (cell) set({ myCell: cell });
       return cell;
     } catch (err) {
+      get().fetchMyCell({ showLoading: false }).catch(() => {});
       throw err;
     }
   },
 
   kickMember: async (targetUserId: string) => {
+    const current = get().myCell;
+    if (current) {
+      const updatedMembers = (current.members || []).filter((m) => m.user_id !== targetUserId);
+      set({
+        myCell: {
+          ...current,
+          members: updatedMembers,
+          member_count: updatedMembers.length,
+        },
+      });
+    }
     try {
       const cell = await spartanApi.kickMember(targetUserId);
-      set({ myCell: cell });
+      if (cell) set({ myCell: cell });
       return cell;
     } catch (err) {
+      get().fetchMyCell({ showLoading: false }).catch(() => {});
       throw err;
     }
   },
