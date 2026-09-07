@@ -1,45 +1,74 @@
 # ==============================================================================
 # EAS Build & Update Ignore File (.easignore)
-# Ensures ONLY necessary frontend application code and assets are uploaded.
 # ==============================================================================
 
-# Dependencies (Installed cleanly on EAS Cloud)
+# Dependencies (Must NEVER be uploaded; EAS installs clean in the cloud)
+node_modules
 node_modules/
-.pnpm-store/
-.yarn/
+node_modules/**
+**/node_modules/**
+.pnpm-store
+.yarn
+
+# Git
+.git
+.git/
+.git/**
+**/.git/**
 
 # Expo Cache & Build Outputs
+.expo
 .expo/
+.expo/**
+**/.expo/**
+dist
 dist/
+dist/**
+web-build
 web-build/
 *.tsbuildinfo
 
 # Native Android Build Artifacts & Large Caches
-android/.gradle/
-android/build/
-android/app/build/
-android/.cxx/
-android/app/.cxx/
-android/captures/
+android/.gradle
+android/.gradle/**
+android/build
+android/build/**
+android/app/build
+android/app/build/**
+android/.cxx
+android/.cxx/**
+android/app/.cxx
+android/app/.cxx/**
+android/captures
 android/local.properties
 local.properties
 *.apk
 *.aab
 
 # Native iOS Build Artifacts & Pods
-ios/Pods/
-ios/build/
-ios/DerivedData/
+ios/Pods
+ios/Pods/**
+ios/build
+ios/build/**
+ios/DerivedData
+ios/DerivedData/**
+
+# IDE & Editor Files
+.idea
+.vscode
+.claude
 
 # Logs, Temp Files & Exports
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 pnpm-debug.*
-*.log
 *.tmp
-inst_user_settings.tmp
+temp_export
 temp_export/
+temp_export/**
+inst_user_settings.tmp
 .DS_Store
 Thumbs.db
 
