@@ -194,7 +194,8 @@ export default function RootLayout() {
           <Stack.Screen name="missions/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="community/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="community/dm" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
-          <Stack.Screen name="community/cell" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="spartan-squad/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
+          <Stack.Screen name="spartan-squad/cell" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="community/leaderboard" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="relapse-autopsy/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />
           <Stack.Screen name="trigger-intelligence/index" options={{ headerShown: false, contentStyle: { backgroundColor: '#000000' } }} />

@@ -161,7 +161,7 @@ export default function CommunityLeaderboardScreen() {
     setJoiningCellId(cell.id);
     try {
       await joinCell(cell.join_code);
-      router.push('/community/cell' as any);
+      router.push('/spartan-squad' as any);
     } catch (err: any) {
       Alert.alert('Unable to Join Squad', err?.message || 'Please verify member capacity or try again.');
     } finally {
@@ -504,7 +504,7 @@ export default function CommunityLeaderboardScreen() {
                   activeOpacity={0.85}
                   onPress={() => {
                     triggerHaptic();
-                    router.push('/community/cell' as any);
+                    router.push('/spartan-squad' as any);
                   }}
                 >
                   <ThemedText style={styles.createCellCTAText}>Establish Accountability Squad</ThemedText>
@@ -586,7 +586,7 @@ export default function CommunityLeaderboardScreen() {
                             activeOpacity={0.8}
                             onPress={() => {
                               triggerHaptic();
-                              router.push('/community/cell' as any);
+                              router.push('/spartan-squad' as any);
                             }}
                           >
                             <ThemedText style={styles.viewCohortBtnText}>View Hub</ThemedText>

@@ -66,7 +66,7 @@ export const ALL_QUICK_ACTIONS: QuickActionDef[] = [
   { id: 'trigger-intel', title: 'Trigger Intel', subtitle: 'Trigger analytics', icon: 'flash-outline', route: '/trigger-intelligence', category: 'Analytics', color: '#F97316' },
   { id: 'leaderboard', title: 'Leaderboard', subtitle: 'Rankings & streaks', icon: 'trophy-outline', route: '/community/leaderboard', category: 'Community', color: '#F59E0B' },
   { id: 'community', title: 'Community', subtitle: 'Global Chat & DMs', icon: 'people-outline', route: '/community', category: 'Community', color: '#00E5FF' },
-  { id: 'spartan-cell', title: 'Spartan Cell', subtitle: '5-20 Man Squad Stakes', icon: 'shield-half-outline', route: '/community/cell', category: 'Community', color: '#00E5FF' },
+  { id: 'spartan-cell', title: 'Spartan Cell', subtitle: '5-20 Man Squad Stakes', icon: 'shield-half-outline', route: '/spartan-squad', category: 'Community', color: '#00E5FF' },
   { id: 'progress', title: 'Progress', subtitle: 'Milestones & analytics', icon: 'stats-chart-outline', route: '/progress', category: 'Analytics', color: '#00E5FF' },
   { id: 'battlefield', title: 'Battlefield', subtitle: 'Live 90s Urge Rescue', icon: 'flame-outline', route: '/emergency/battlefield', category: 'Core', color: '#A855F7' },
   { id: 'billing', title: 'Pro Upgrade', subtitle: 'Subscription & features', icon: 'card-outline', route: '/billing', category: 'Account', color: '#EAB308' },
@@ -1270,7 +1270,7 @@ export default function HomeScreen() {
                     activeOpacity={0.8}
                     onPress={() => {
                       triggerHaptic();
-                      router.push('/community/cell' as any);
+                      router.push('/spartan-squad' as any);
                     }}
                   >
                     <View style={styles.spartanWidgetHeader}>
