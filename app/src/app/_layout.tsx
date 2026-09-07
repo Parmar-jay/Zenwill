@@ -99,6 +99,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isEmailVerified, isOnboarded, isHydrated, segments, navigationState?.key, user?.email]);
 
+  // Manage persistent Realtime WebSocket connection lifecycle
+  useEffect(() => {
+    if (isAuthenticated) {
+      const { realtimeClient } = require('@/services/realtime-client');
+      realtimeClient.connect().catch(() => {});
+    } else {
+      const { realtimeClient } = require('@/services/realtime-client');
+      realtimeClient.disconnect();
+    }
+  }, [isAuthenticated]);
+
   return <>{children}</>;
 }
 

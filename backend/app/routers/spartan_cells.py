@@ -406,14 +406,19 @@ async def request_join_spartan_cell(
     await cell.save()
 
     # Real-time notification broadcast to cell members
-    await realtime_bus.broadcast_to_channel(
-        f"cell:{cell.id}",
-        {
-            "type": "JOIN_REQUEST_RECEIVED",
-            "cell_id": str(cell.id),
-            "applicant_name": user_name,
-        }
-    )
+    try:
+        summary = _cell_to_summary(cell)
+        await realtime_bus.broadcast_to_channel(
+            f"cell:{cell.id}",
+            {
+                "type": "JOIN_REQUEST_RECEIVED",
+                "cell_id": str(cell.id),
+                "applicant_name": user_name,
+                "data": summary.model_dump(),
+            }
+        )
+    except Exception:
+        pass
 
     return {
         "status": "pending",
@@ -428,22 +433,63 @@ async def cancel_join_request(
     payload: CancelJoinRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Cancel a pending squad join request."""
+    """Cancel a pending squad join request for a specific squad or all squads."""
     user_id_str = str(current_user.id).strip()
     user_email = (current_user.email or "").strip().lower()
 
-    or_clauses = [{"join_requests.user_id": user_id_str}]
-    if user_email:
-        or_clauses.append({"join_requests.user_email": user_email})
+    target_code = (payload.join_code or "").strip().upper()
+    target_cell_id = (payload.cell_id or "").strip()
 
-    cells = await SpartanCell.find({"$or": or_clauses}).to_list()
-    for c in cells:
+    cells_to_update = []
+
+    if target_code or target_cell_id:
+        pure_code = target_code.replace("SP-", "").replace("SP ", "").replace("SP", "").strip() if target_code else ""
+        query_conditions: List[Dict[str, Any]] = []
+        if target_cell_id:
+            query_conditions.extend([
+                {"id": target_cell_id},
+                {"_id": target_cell_id},
+            ])
+            from bson import ObjectId
+            if ObjectId.is_valid(target_cell_id):
+                query_conditions.append({"_id": ObjectId(target_cell_id)})
+        if target_code:
+            query_conditions.extend([
+                {"join_code": target_code},
+                {"join_code": f"SP-{target_code}"},
+                {"join_code": f"SP-{pure_code}"},
+                {"join_code": pure_code},
+            ])
+
+        specific_cell = await SpartanCell.find_one({"$or": query_conditions})
+        if specific_cell:
+            cells_to_update = [specific_cell]
+    else:
+        or_clauses = [{"join_requests.user_id": user_id_str}]
+        if user_email:
+            or_clauses.append({"join_requests.user_email": user_email})
+        cells_to_update = await SpartanCell.find({"$or": or_clauses}).to_list()
+
+    for c in cells_to_update:
         c.join_requests = [
             r for r in (c.join_requests or [])
             if r.get("user_id") != user_id_str and (not user_email or r.get("user_email") != user_email)
         ]
         c.updated_at = datetime.utcnow()
         await c.save()
+        try:
+            summary = _cell_to_summary(c)
+            await realtime_bus.broadcast_to_channel(
+                f"cell:{c.id}",
+                {
+                    "type": "CELL_UPDATED",
+                    "cell_id": str(c.id),
+                    "event": "join_request_cancelled",
+                    "data": summary.model_dump(),
+                }
+            )
+        except Exception:
+            pass
 
     return {"status": "success", "message": "Join request cancelled."}
 
@@ -522,14 +568,35 @@ async def respond_join_request(
         cell.join_requests = [r for r in reqs if r.get("id") != target_req.get("id") and r.get("user_id") != applicant_id]
         cell.updated_at = datetime.utcnow()
         await cell.save()
-        summary = _cell_to_summary(cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
+        updated_cell = await recalculate_cell_stats(cell)
+        summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
+
+        # Notify applicant over real-time socket
+        await realtime_bus.send_to_user(
+            applicant_id,
+            {
+                "type": "JOIN_REQUEST_REJECTED",
+                "cell_id": str(cell.id),
+                "cell_name": cell.name,
+            }
+        )
+        # Broadcast updated cell to cell members
+        await realtime_bus.broadcast_to_channel(
+            f"cell:{cell.id}",
+            {
+                "type": "CELL_UPDATED",
+                "cell_id": str(cell.id),
+                "event": "join_request_rejected",
+                "data": summary.model_dump(),
+            }
+        )
         return {"status": "rejected", "message": f"Join request from {applicant_name} was declined.", "data": summary.model_dump()}
 
     elif payload.action == "approve":
         if len(cell.member_ids or []) >= (cell.max_members or 20):
             raise HTTPException(status_code=400, detail="Squad has reached maximum capacity (20 warriors).")
 
-        # Check if the applicant has ALREADY joined another cell
+        # Check if the applicant has ALREADY joined another cell in the meantime
         applicant_in_cell_query = {
             "$or": [
                 {"member_ids": applicant_id},
@@ -567,10 +634,24 @@ async def respond_join_request(
             except Exception:
                 pass
 
-            raise HTTPException(
-                status_code=400,
-                detail=f"{applicant_name} has already joined another Spartan Cell ('{already_in_cell.name}'). Their petition has been automatically cleared from your queue."
+            updated_cell = await recalculate_cell_stats(cell)
+            summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
+
+            await realtime_bus.broadcast_to_channel(
+                f"cell:{cell.id}",
+                {
+                    "type": "CELL_UPDATED",
+                    "cell_id": str(cell.id),
+                    "event": "join_request_cleared",
+                    "data": summary.model_dump(),
+                }
             )
+
+            return {
+                "status": "already_joined",
+                "message": f"{applicant_name} has already joined another Spartan Cell ('{already_in_cell.name}'). Their petition has been cleared from your queue.",
+                "data": summary.model_dump()
+            }
 
         # 1. Clean up applicant's pending requests from ALL cells in MongoDB
         try:
@@ -621,6 +702,33 @@ async def respond_join_request(
         # 4. Recalculate cell stats
         updated_cell = await recalculate_cell_stats(cell)
         summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
+
+        # 5. Real-time notification directly to applicant
+        await realtime_bus.send_to_user(
+            applicant_id,
+            {
+                "type": "JOIN_REQUEST_APPROVED",
+                "cell_id": str(cell.id),
+                "cell_name": cell.name,
+                "data": summary.model_dump(),
+            }
+        )
+
+        # 6. Real-time broadcast to all squad members
+        await realtime_bus.broadcast_to_channel(
+            f"cell:{cell.id}",
+            {
+                "type": "CELL_UPDATED",
+                "cell_id": str(cell.id),
+                "event": "member_joined",
+                "user_id": applicant_id,
+                "user_name": applicant_name,
+                "data": summary.model_dump(),
+            }
+        )
+        await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+        await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
+
         return {"status": "approved", "message": f"{applicant_name} inducted into {cell.name}!", "data": summary.model_dump()}
 
     else:

@@ -281,21 +281,34 @@ export default function SpartanCellScreen() {
     setReviewingRequestId(requestId);
     setReviewAction(action);
     try {
-      await respondJoinRequest(myCell.id, requestId, action);
-      setNudgeNotice(
-        action === 'approve'
-          ? `✓ Approved ${applicantName}! Welcome to the squad.`
-          : `✕ Declined petition from ${applicantName}.`
-      );
-      setTimeout(() => setNudgeNotice(null), 4000);
+      const res = await respondJoinRequest(myCell.id, requestId, action);
+      if (res?.status === 'already_joined') {
+        setCustomDialog({
+          visible: true,
+          title: 'Applicant Already Enlisted',
+          message: res.message || `${applicantName} has already joined another Spartan Cell. Their petition has been cleared from your queue.`,
+          type: 'info',
+          confirmText: 'Understood',
+        });
+      } else {
+        setNudgeNotice(
+          action === 'approve'
+            ? `✓ Approved ${applicantName}! Welcome to the squad.`
+            : `✕ Declined petition from ${applicantName}.`
+        );
+        setTimeout(() => setNudgeNotice(null), 4000);
+      }
     } catch (err: any) {
+      const errorMsg = err?.response?.data?.detail || err?.detail || 'Failed to process request.';
+      const isAlreadyJoinedError = typeof errorMsg === 'string' && errorMsg.toLowerCase().includes('already joined another');
       setCustomDialog({
         visible: true,
-        title: 'Review Error',
-        message: err?.response?.data?.detail || err?.detail || 'Failed to process request.',
-        type: 'danger',
-        confirmText: 'OK',
+        title: isAlreadyJoinedError ? 'Applicant Already Enlisted' : 'Review Notice',
+        message: errorMsg,
+        type: isAlreadyJoinedError ? 'info' : 'danger',
+        confirmText: 'Understood',
       });
+      fetchMyCell({ showLoading: false }).catch(() => {});
     } finally {
       setReviewingRequestId(null);
       setReviewAction(null);
@@ -858,6 +871,15 @@ export default function SpartanCellScreen() {
                             <ThemedText style={styles.memberNameText} numberOfLines={1}>
                               {member.name}
                             </ThemedText>
+                            {member.is_leader ? (
+                              <View style={styles.leaderBadge}>
+                                <ThemedText style={styles.leaderText}>Leader</ThemedText>
+                              </View>
+                            ) : isCoLeaderMember ? (
+                              <View style={styles.coLeaderBadge}>
+                                <ThemedText style={styles.coLeaderText}>Co-Leader</ThemedText>
+                              </View>
+                            ) : null}
                             {isCurrentUser && (
                               <View style={styles.youBadge}>
                                 <ThemedText style={styles.youBadgeText}>You</ThemedText>
@@ -1301,73 +1323,84 @@ export default function SpartanCellScreen() {
                 <View style={styles.memberActionDivider} />
 
                 {/* Leader Actions */}
-                {isLeader && (
-                  <>
-                    {selectedMember.is_co_leader ? (
-                      <TouchableOpacity
-                        style={styles.actionRowBtn}
-                        activeOpacity={0.8}
-                        onPress={() => handleDemoteCoLeader(selectedMember)}
-                        disabled={memberActionLoading}
-                      >
-                        <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                          <Ionicons name="shield-outline" size={18} color="#F59E0B" />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <ThemedText style={[styles.actionBtnTitle, { color: '#F59E0B' }]}>
-                            Demote from Co-Leader
-                          </ThemedText>
-                          <ThemedText style={styles.actionBtnDesc}>
-                            Remove petition review and moderation privileges
-                          </ThemedText>
-                        </View>
-                        {memberActionLoading && <ActivityIndicator size="small" color="#F59E0B" />}
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.actionRowBtn}
-                        activeOpacity={0.8}
-                        onPress={() => handlePromoteCoLeader(selectedMember)}
-                        disabled={memberActionLoading}
-                      >
-                        <View style={[styles.actionIconBox, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
-                          <Ionicons name="shield-half" size={18} color="#00E5FF" />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <ThemedText style={[styles.actionBtnTitle, { color: '#00E5FF' }]}>
-                            Promote to Co-Leader
-                          </ThemedText>
-                          <ThemedText style={styles.actionBtnDesc}>
-                            Grant petition review & member moderation rights
-                          </ThemedText>
-                        </View>
-                        {memberActionLoading && <ActivityIndicator size="small" color="#00E5FF" />}
-                      </TouchableOpacity>
-                    )}
-                  </>
-                )}
+                {(() => {
+                  const isSelectedMemberCoLeader = Boolean(
+                    selectedMember.is_co_leader ||
+                    (myCell?.co_leader_ids && (myCell.co_leader_ids.includes(selectedMember.user_id) || (selectedMember.name && myCell.co_leader_ids.includes(selectedMember.name))))
+                  );
 
-                {/* Kick / Exile Option: Leader can kick anyone except self, Co-Leader can kick regular members */}
-                {(isLeader || (!selectedMember.is_leader && !selectedMember.is_co_leader)) && (
-                  <TouchableOpacity
-                    style={[styles.actionRowBtn, styles.actionRowBtnDanger]}
-                    activeOpacity={0.8}
-                    onPress={() => handleKickMember(selectedMember)}
-                    disabled={memberActionLoading}
-                  >
-                    <View style={[styles.actionIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
-                      <Ionicons name="person-remove-outline" size={18} color="#EF4444" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText style={[styles.actionBtnTitle, { color: '#EF4444' }]}>
-                        Exile Member from Squad
-                      </ThemedText>
-                      <ThemedText style={styles.actionBtnDesc}>
-                        Remove member and revoke squad membership
-                      </ThemedText>
-                    </View>
-                  </TouchableOpacity>
-                )}
+                  return (
+                    <>
+                      {isLeader && (
+                        <>
+                          {isSelectedMemberCoLeader ? (
+                            <TouchableOpacity
+                              style={styles.actionRowBtn}
+                              activeOpacity={0.8}
+                              onPress={() => handleDemoteCoLeader(selectedMember)}
+                              disabled={memberActionLoading}
+                            >
+                              <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                                <Ionicons name="shield-outline" size={18} color="#F59E0B" />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <ThemedText style={[styles.actionBtnTitle, { color: '#F59E0B' }]}>
+                                  Demote from Co-Leader
+                                </ThemedText>
+                                <ThemedText style={styles.actionBtnDesc}>
+                                  Remove petition review and moderation privileges
+                                </ThemedText>
+                              </View>
+                              {memberActionLoading && <ActivityIndicator size="small" color="#F59E0B" />}
+                            </TouchableOpacity>
+                          ) : (
+                            <TouchableOpacity
+                              style={styles.actionRowBtn}
+                              activeOpacity={0.8}
+                              onPress={() => handlePromoteCoLeader(selectedMember)}
+                              disabled={memberActionLoading}
+                            >
+                              <View style={[styles.actionIconBox, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
+                                <Ionicons name="shield-half" size={18} color="#00E5FF" />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <ThemedText style={[styles.actionBtnTitle, { color: '#00E5FF' }]}>
+                                  Promote to Co-Leader
+                                </ThemedText>
+                                <ThemedText style={styles.actionBtnDesc}>
+                                  Grant petition review & member moderation rights
+                                </ThemedText>
+                              </View>
+                              {memberActionLoading && <ActivityIndicator size="small" color="#00E5FF" />}
+                            </TouchableOpacity>
+                          )}
+                        </>
+                      )}
+
+                      {/* Kick / Exile Option: Leader can kick anyone except self, Co-Leader can kick regular members */}
+                      {(isLeader || (!selectedMember.is_leader && !isSelectedMemberCoLeader)) && (
+                        <TouchableOpacity
+                          style={[styles.actionRowBtn, styles.actionRowBtnDanger]}
+                          activeOpacity={0.8}
+                          onPress={() => handleKickMember(selectedMember)}
+                          disabled={memberActionLoading}
+                        >
+                          <View style={[styles.actionIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                            <Ionicons name="person-remove-outline" size={18} color="#EF4444" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={[styles.actionBtnTitle, { color: '#EF4444' }]}>
+                              Exile Member from Squad
+                            </ThemedText>
+                            <ThemedText style={styles.actionBtnDesc}>
+                              Remove member and revoke squad membership
+                            </ThemedText>
+                          </View>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  );
+                })()}
 
                 <TouchableOpacity
                   style={styles.actionCancelBtn}
