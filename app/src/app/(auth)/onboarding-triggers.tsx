@@ -235,7 +235,7 @@ export default function AuthOnboardingTriggersScreen() {
                   <ThemedText style={styles.stepText}>Mind Triggers</ThemedText>
                   <ThemedText style={styles.title}>Understand Your Mind Triggers</ThemedText>
                   <ThemedText style={styles.subtitle}>
-                    Identifying what triggers your mind and cravings helps ZenWill protect you before temptation grows.
+                    Identifying what triggers your mind and cravings helps <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>Will</ThemedText> protect you before temptation grows.
                   </ThemedText>
                 </View>
 

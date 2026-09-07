@@ -19,6 +19,7 @@ class CellMember(BaseModel):
     status: str = "pending"  # "retained" | "relapsed" | "pending"
     today_checked_in: bool = False
     is_leader: bool = False
+    is_co_leader: bool = False
     is_online: bool = False
     joined_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -34,9 +35,15 @@ class SpartanCell(Document):
     leader_id: Indexed(str)
     leader_name: str = "Commander"
     
-    # Members (Leader + up to 19 warriors = 20 max)
+    # Co-leaders who have management rights (approve/reject requests, kick regular members)
+    co_leader_ids: List[str] = Field(default_factory=list)
+
+    # Members (Leader + Co-Leaders + warriors = 20 max)
     member_ids: List[str] = Field(default_factory=list)
     members: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Pending Join Requests awaiting approval from Leader / Co-Leader
+    join_requests: List[Dict[str, Any]] = Field(default_factory=list)
     
     # Collective Stats
     total_streak: int = 0

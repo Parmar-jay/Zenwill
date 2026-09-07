@@ -163,7 +163,9 @@ export default function BillingSingleScreen() {
 
           <View style={styles.headerTitleBox}>
             <ThemedText style={styles.headerCategory}>MEMBERSHIP & BILLING</ThemedText>
-            <ThemedText style={styles.headerTitleText}>ZenWill Pass</ThemedText>
+            <ThemedText style={styles.headerTitleText}>
+              <ThemedText style={{ color: '#FFFFFF' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF' }}>Will</ThemedText> Pass
+            </ThemedText>
           </View>
 
           <View style={{ width: 36 }} />
@@ -189,7 +191,9 @@ export default function BillingSingleScreen() {
                 <View style={styles.cardHeader}>
                   <View style={styles.crownPill}>
                     <Ionicons name="ribbon-outline" size={12} color="#F59E0B" />
-                    <ThemedText style={styles.crownText}>ZENWILL PREMIUM</ThemedText>
+                    <ThemedText style={styles.crownText}>
+                      <ThemedText style={{ color: '#FFFFFF', fontWeight: '800' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '800' }}>Will</ThemedText> PREMIUM
+                    </ThemedText>
                   </View>
                   <ThemedText style={styles.cardMainTitle}>Unlock Full Access</ThemedText>
                   <ThemedText style={styles.cardSubTitle}>

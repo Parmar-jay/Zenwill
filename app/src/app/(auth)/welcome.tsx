@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '@/store/auth-store';
 import { triggerGoogleAuth } from '@/services/google-auth';
+import { renderWithZenWill } from '@/components/zenwill-brand';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -113,7 +114,7 @@ export default function AuthWelcomeScreen() {
 
               <View style={styles.subheadingBox}>
                 <ThemedText style={styles.subheading}>
-                  {slide.subheading}
+                  {renderWithZenWill(slide.subheading)}
                 </ThemedText>
               </View>
             </Animated.View>

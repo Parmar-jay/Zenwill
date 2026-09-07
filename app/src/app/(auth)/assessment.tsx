@@ -226,7 +226,7 @@ export default function AuthAssessmentScreen() {
                   <ThemedText style={styles.stepText}>Self-Control Assessment</ThemedText>
                   <ThemedText style={styles.title}>Your Mental & Energy Check</ThemedText>
                   <ThemedText style={styles.subtitle}>
-                    Understanding your current stress, sleep, and self-control helps ZenWill give you the right tools at the right moment.
+                    Understanding your current stress, sleep, and self-control helps <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>Will</ThemedText> give you the right tools at the right moment.
                   </ThemedText>
                 </View>
 

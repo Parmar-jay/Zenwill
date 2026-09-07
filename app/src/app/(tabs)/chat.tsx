@@ -24,6 +24,7 @@ import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { useOnboardingStore } from '@/store/onboarding-store';
 import { useAuthStore } from '@/store/auth-store';
 import { PageEntrance } from '@/components/ui/smooth-loader';
+import { renderWithZenWill } from '@/components/zenwill-brand';
 
 const STORAGE_CHAT_KEY = '@zenwill_coach_continuous_messages_v2';
 const STORAGE_MEMORIES_KEY = '@zenwill_coach_memory_insights_v2';
@@ -405,7 +406,7 @@ export default function CoachChatScreen() {
                           item.sender === 'user' ? styles.userBubble : styles.aiBubble,
                         ]}
                       >
-                        <ThemedText style={styles.messageText}>{item.text}</ThemedText>
+                        <ThemedText style={styles.messageText}>{renderWithZenWill(item.text)}</ThemedText>
                       </View>
                     </View>
                   </View>

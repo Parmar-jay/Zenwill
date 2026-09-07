@@ -20,7 +20,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '../../components/themed-text';
 import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
-import { CellMemberItem, SpartanCellData } from '../../services/spartan-api';
+import { CellMemberItem, SpartanCellData, JoinRequestItem } from '../../services/spartan-api';
 import { communityApi } from '../../services/community-api';
 import { realtimeClient } from '../../services/realtime-client';
 
@@ -73,12 +73,20 @@ export default function SpartanCellScreen() {
   const {
     myCell,
     publicCells,
+    myPendingRequests,
     isLoadingCell,
     isNudging,
     fetchMyCell,
     fetchPublicCells,
+    fetchMyJoinRequests,
     createCell,
     joinCell,
+    requestJoinCell,
+    cancelJoinRequest,
+    respondJoinRequest,
+    promoteCoLeader,
+    demoteCoLeader,
+    kickMember,
     leaveCell,
     deleteCell,
     nudgeMember,
@@ -93,6 +101,13 @@ export default function SpartanCellScreen() {
   const [joiningCode, setJoiningCode] = useState<string | null>(null);
   const [isLeaving, setIsLeaving] = useState<boolean>(false);
   const [nudgeNotice, setNudgeNotice] = useState<string | null>(null);
+
+  // Review & member moderation states
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+  const [reviewAction, setReviewAction] = useState<'approve' | 'reject' | null>(null);
+  const [selectedMember, setSelectedMember] = useState<CellMemberItem | null>(null);
+  const [isMemberModalVisible, setIsMemberModalVisible] = useState<boolean>(false);
+  const [memberActionLoading, setMemberActionLoading] = useState<boolean>(false);
 
   const [customDialog, setCustomDialog] = useState<{
     visible: boolean;
@@ -115,9 +130,12 @@ export default function SpartanCellScreen() {
   }, []);
 
   const loadData = useCallback(async () => {
-    await fetchMyCell();
-    await fetchPublicCells();
-  }, []);
+    await Promise.allSettled([
+      fetchMyCell(),
+      fetchPublicCells(),
+      fetchMyJoinRequests(),
+    ]);
+  }, [fetchMyCell, fetchPublicCells, fetchMyJoinRequests]);
 
   useEffect(() => {
     loadData();
@@ -159,6 +177,14 @@ export default function SpartanCellScreen() {
     return myCell.leader_id === userIdStr || myCell.leader_id === user.email;
   }, [myCell, user]);
 
+  const isCoLeader = useMemo(() => {
+    if (!myCell || !user || isLeader) return false;
+    const userIdStr = String(user.id || '');
+    const coLeaderIds = myCell.co_leader_ids || [];
+    return coLeaderIds.includes(userIdStr) || (user.email && coLeaderIds.includes(user.email));
+  }, [myCell, user, isLeader]);
+
+  const hasManagementRights = isLeader || isCoLeader;
 
   const handleCreateCell = async () => {
     if (!newCellName.trim() || newCellName.trim().length < 3) {
@@ -190,7 +216,7 @@ export default function SpartanCellScreen() {
     }
   };
 
-  const handleJoinCell = async (codeToJoin?: string) => {
+  const handleRequestJoin = async (codeToJoin?: string) => {
     const raw = codeToJoin || joinCodeInput;
     if (!raw || raw.trim().length < 2) {
       setCustomDialog({
@@ -210,15 +236,23 @@ export default function SpartanCellScreen() {
     setActionLoading(true);
     setJoiningCode(cleanCode);
     try {
-      await joinCell(cleanCode);
+      const res = await requestJoinCell(cleanCode);
       setIsJoinModalVisible(false);
       setJoinCodeInput('');
+      setCustomDialog({
+        visible: true,
+        title: 'Petition Transmitted ⏳',
+        message: res.message || 'Your join petition has been submitted to squad leadership for verification.',
+        type: 'success',
+        confirmText: 'Awaiting Review',
+      });
+      fetchMyJoinRequests().catch(() => {});
       fetchPublicCells().catch(() => {});
     } catch (err: any) {
       setCustomDialog({
         visible: true,
-        title: 'Join Failed',
-        message: err?.response?.data?.detail || err?.detail || 'Invalid or expired cell code.',
+        title: 'Request Failed',
+        message: err?.response?.data?.detail || err?.detail || 'Could not send join petition.',
         type: 'danger',
         confirmText: 'Dismiss',
       });
@@ -226,6 +260,134 @@ export default function SpartanCellScreen() {
       setActionLoading(false);
       setJoiningCode(null);
     }
+  };
+
+  const handleCancelJoinRequest = (cellCodeOrId: string) => {
+    setCustomDialog({
+      visible: true,
+      title: 'Retract Join Petition',
+      message: 'Are you sure you want to cancel your pending request to join this squad?',
+      type: 'info',
+      confirmText: 'Retract Petition',
+      cancelText: 'Keep Waiting',
+      onConfirm: async () => {
+        triggerHaptic('medium');
+        setActionLoading(true);
+        try {
+          await cancelJoinRequest(cellCodeOrId);
+          setCustomDialog(null);
+          fetchMyJoinRequests().catch(() => {});
+        } catch {
+          setCustomDialog(null);
+        } finally {
+          setActionLoading(false);
+        }
+      },
+    });
+  };
+
+  const handleRespondRequest = async (requestId: string, action: 'approve' | 'reject', applicantName: string) => {
+    if (!myCell?.id) return;
+    triggerHaptic(action === 'approve' ? 'heavy' : 'medium');
+    setReviewingRequestId(requestId);
+    setReviewAction(action);
+    try {
+      await respondJoinRequest(myCell.id, requestId, action);
+      setNudgeNotice(
+        action === 'approve'
+          ? `✓ Approved ${applicantName}! Welcome to the squad.`
+          : `✕ Declined petition from ${applicantName}.`
+      );
+      setTimeout(() => setNudgeNotice(null), 4000);
+    } catch (err: any) {
+      setCustomDialog({
+        visible: true,
+        title: 'Review Error',
+        message: err?.response?.data?.detail || err?.detail || 'Failed to process request.',
+        type: 'danger',
+        confirmText: 'OK',
+      });
+    } finally {
+      setReviewingRequestId(null);
+      setReviewAction(null);
+    }
+  };
+
+  const handlePromoteCoLeader = async (member: CellMemberItem) => {
+    triggerHaptic('heavy');
+    setMemberActionLoading(true);
+    try {
+      await promoteCoLeader(member.user_id);
+      setIsMemberModalVisible(false);
+      setSelectedMember(null);
+      setNudgeNotice(`Promoted ${member.name} to Squad Co-Leader 🛡️`);
+      setTimeout(() => setNudgeNotice(null), 4000);
+    } catch (err: any) {
+      setCustomDialog({
+        visible: true,
+        title: 'Promotion Failed',
+        message: err?.response?.data?.detail || err?.detail || 'Could not appoint co-leader.',
+        type: 'danger',
+        confirmText: 'OK',
+      });
+    } finally {
+      setMemberActionLoading(false);
+    }
+  };
+
+  const handleDemoteCoLeader = async (member: CellMemberItem) => {
+    triggerHaptic('medium');
+    setMemberActionLoading(true);
+    try {
+      await demoteCoLeader(member.user_id);
+      setIsMemberModalVisible(false);
+      setSelectedMember(null);
+      setNudgeNotice(`Demoted ${member.name} to regular squad member.`);
+      setTimeout(() => setNudgeNotice(null), 4000);
+    } catch (err: any) {
+      setCustomDialog({
+        visible: true,
+        title: 'Demotion Failed',
+        message: err?.response?.data?.detail || err?.detail || 'Could not demote co-leader.',
+        type: 'danger',
+        confirmText: 'OK',
+      });
+    } finally {
+      setMemberActionLoading(false);
+    }
+  };
+
+  const handleKickMember = (member: CellMemberItem) => {
+    setCustomDialog({
+      visible: true,
+      title: `Exile ${member.name}?`,
+      message: `Are you sure you want to remove ${member.name} from the squad? Their streak will no longer count toward the collective total.`,
+      type: 'danger',
+      confirmText: 'Exile Member',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        triggerHaptic('heavy');
+        setMemberActionLoading(true);
+        try {
+          await kickMember(member.user_id);
+          setIsMemberModalVisible(false);
+          setSelectedMember(null);
+          setCustomDialog(null);
+          setNudgeNotice(`${member.name} has been exiled from the squad.`);
+          setTimeout(() => setNudgeNotice(null), 4000);
+        } catch (err: any) {
+          setCustomDialog({
+            visible: true,
+            title: 'Exile Failed',
+            message: err?.response?.data?.detail || err?.detail || 'Could not exile member.',
+            type: 'danger',
+            confirmText: 'OK',
+          });
+        } finally {
+          setMemberActionLoading(false);
+        }
+      },
+    });
   };
 
   const handleLeaveCell = () => {
@@ -532,6 +694,95 @@ export default function SpartanCellScreen() {
               </View>
             )}
 
+            {/* Join Petitions Review Section (Leader & Co-Leaders) */}
+            {hasManagementRights && myCell.join_requests && myCell.join_requests.length > 0 && (
+              <View style={styles.requestsSection}>
+                <View style={styles.requestsHeaderRow}>
+                  <View style={styles.requestsHeaderTitleGroup}>
+                    <View style={styles.requestsBadgeCount}>
+                      <ThemedText style={styles.requestsBadgeCountText}>
+                        {myCell.join_requests.length}
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={styles.requestsSectionTitle}>JOIN PETITIONS</ThemedText>
+                  </View>
+                  <ThemedText style={styles.requestsSubtitle}>Verification Required</ThemedText>
+                </View>
+
+                <View style={styles.requestsList}>
+                  {myCell.join_requests.map((req) => {
+                    const reqRank = getGamifiedRank(req.streak || 0);
+                    const isCurrentReviewing = reviewingRequestId === req.id;
+                    const applicantDisplayName = req.user_name || req.name || 'Applicant';
+                    return (
+                      <View key={req.id} style={styles.requestCard}>
+                        <View style={styles.requestLeft}>
+                          <View
+                            style={[
+                              styles.requestAvatarBox,
+                              {
+                                backgroundColor: `${reqRank.color}18`,
+                                borderColor: `${reqRank.color}45`,
+                              },
+                            ]}
+                          >
+                            <Text style={styles.requestAvatarEmoji}>{req.badge || reqRank.badge}</Text>
+                          </View>
+                          <View style={styles.requestInfo}>
+                            <ThemedText style={styles.requestName} numberOfLines={1}>
+                              {applicantDisplayName}
+                            </ThemedText>
+                            <View style={styles.requestDetailsRow}>
+                              <ThemedText style={styles.requestStreak}>🔥 {req.streak || 0}d streak</ThemedText>
+                              <ThemedText style={styles.requestRankTier}>• {req.rank_tier || reqRank.name}</ThemedText>
+                            </View>
+                          </View>
+                        </View>
+
+                        <View style={styles.requestActionsGroup}>
+                          {/* Wrong / Reject Button (X) */}
+                          <TouchableOpacity
+                            style={[
+                              styles.rejectReqBtn,
+                              isCurrentReviewing && reviewAction === 'reject' && styles.reqBtnLoading,
+                            ]}
+                            activeOpacity={0.75}
+                            disabled={isCurrentReviewing}
+                            onPress={() => handleRespondRequest(req.id, 'reject', applicantDisplayName)}
+                            accessibilityLabel={`Reject petition from ${applicantDisplayName}`}
+                          >
+                            {isCurrentReviewing && reviewAction === 'reject' ? (
+                              <ActivityIndicator size="small" color="#EF4444" />
+                            ) : (
+                              <Ionicons name="close-sharp" size={18} color="#EF4444" />
+                            )}
+                          </TouchableOpacity>
+
+                          {/* Right / Approve Button (Checkmark) */}
+                          <TouchableOpacity
+                            style={[
+                              styles.approveReqBtn,
+                              isCurrentReviewing && reviewAction === 'approve' && styles.reqBtnLoading,
+                            ]}
+                            activeOpacity={0.8}
+                            disabled={isCurrentReviewing}
+                            onPress={() => handleRespondRequest(req.id, 'approve', applicantDisplayName)}
+                            accessibilityLabel={`Approve petition from ${applicantDisplayName}`}
+                          >
+                            {isCurrentReviewing && reviewAction === 'approve' ? (
+                              <ActivityIndicator size="small" color="#FFFFFF" />
+                            ) : (
+                              <Ionicons name="checkmark-sharp" size={18} color="#FFFFFF" />
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
             {/* Squad Members Roster */}
             <View style={styles.rosterSection}>
               <View style={styles.rosterHeaderRow}>
@@ -558,6 +809,14 @@ export default function SpartanCellScreen() {
                     member.last_retain_status === 'relapsed' ||
                     memberStreak === 0;
                   const isRetained = !isRelapsed && (member.status === 'retained' || member.today_checked_in);
+
+                  const isCoLeaderMember = Boolean(
+                    member.is_co_leader ||
+                    (myCell?.co_leader_ids && (myCell.co_leader_ids.includes(member.user_id) || (member.name && myCell.co_leader_ids.includes(member.name))))
+                  );
+                  const canManageThisMember = hasManagementRights && !isCurrentUser && (
+                    isLeader || (!member.is_leader && !isCoLeaderMember)
+                  );
 
                   return (
                     <TouchableOpacity
@@ -607,11 +866,15 @@ export default function SpartanCellScreen() {
                                 <ThemedText style={styles.youBadgeText}>You</ThemedText>
                               </View>
                             )}
-                            {member.is_leader && (
+                            {member.is_leader ? (
                               <View style={styles.leaderBadge}>
-                                <ThemedText style={styles.leaderText}>Leader</ThemedText>
+                                <ThemedText style={styles.leaderText}>Leader 👑</ThemedText>
                               </View>
-                            )}
+                            ) : isCoLeaderMember ? (
+                              <View style={styles.coLeaderBadge}>
+                                <ThemedText style={styles.coLeaderText}>Co-Leader 🛡️</ThemedText>
+                              </View>
+                            ) : null}
                           </View>
                           <View style={styles.memberBadgesRow}>
                             <View style={[
@@ -632,44 +895,63 @@ export default function SpartanCellScreen() {
                         </View>
                       </View>
 
-                      <View style={styles.memberRightGroup}>
-                        <View style={[styles.streakBadge, isRelapsed && styles.streakBadgeRelapsed]}>
-                          <ThemedText style={[styles.streakText, isRelapsed && styles.streakTextRelapsed]}>
-                            🔥 {memberStreak}d
-                          </ThemedText>
+                      <View style={styles.memberRightWrapper}>
+                        <View style={styles.memberRightGroup}>
+                          <View style={[styles.streakBadge, isRelapsed && styles.streakBadgeRelapsed]}>
+                            <ThemedText style={[styles.streakText, isRelapsed && styles.streakTextRelapsed]}>
+                              🔥 {memberStreak}d
+                            </ThemedText>
+                          </View>
+
+                          <View style={styles.statusActionSlot}>
+                            {isRelapsed ? (
+                              <View style={styles.relapsedPill}>
+                                <Ionicons name="refresh-circle-outline" size={12} color="#EF4444" />
+                                <ThemedText style={styles.relapsedText}>Relapsed</ThemedText>
+                              </View>
+                            ) : isRetained ? (
+                              <View style={styles.checkedInPill}>
+                                <Ionicons name="shield-checkmark" size={11} color="#10B981" />
+                                <ThemedText style={styles.checkedInText}>Retained</ThemedText>
+                              </View>
+                            ) : isCurrentUser ? (
+                              <View style={styles.pendingSelfPill}>
+                                <Ionicons name="time-outline" size={11} color="#F59E0B" />
+                                <ThemedText style={styles.pendingSelfText}>Pending</ThemedText>
+                              </View>
+                            ) : (
+                              <TouchableOpacity
+                                style={styles.nudgeBtn}
+                                activeOpacity={0.7}
+                                onPress={(e) => {
+                                  e.stopPropagation?.();
+                                  handleNudge(member);
+                                }}
+                                disabled={isNudging}
+                              >
+                                <Ionicons name="notifications-outline" size={11} color="#EF4444" />
+                                <ThemedText style={styles.nudgeBtnText}>Remind</ThemedText>
+                              </TouchableOpacity>
+                            )}
+                          </View>
                         </View>
 
-                        <View style={styles.statusActionSlot}>
-                          {isRelapsed ? (
-                            <View style={styles.relapsedPill}>
-                              <Ionicons name="refresh-circle-outline" size={12} color="#EF4444" />
-                              <ThemedText style={styles.relapsedText}>Relapsed</ThemedText>
-                            </View>
-                          ) : isRetained ? (
-                            <View style={styles.checkedInPill}>
-                              <Ionicons name="shield-checkmark" size={11} color="#10B981" />
-                              <ThemedText style={styles.checkedInText}>Retained</ThemedText>
-                            </View>
-                          ) : isCurrentUser ? (
-                            <View style={styles.pendingSelfPill}>
-                              <Ionicons name="time-outline" size={11} color="#F59E0B" />
-                              <ThemedText style={styles.pendingSelfText}>Pending</ThemedText>
-                            </View>
-                          ) : (
-                            <TouchableOpacity
-                              style={styles.nudgeBtn}
-                              activeOpacity={0.7}
-                              onPress={(e) => {
-                                e.stopPropagation?.();
-                                handleNudge(member);
-                              }}
-                              disabled={isNudging}
-                            >
-                              <Ionicons name="notifications-outline" size={11} color="#EF4444" />
-                              <ThemedText style={styles.nudgeBtnText}>Remind</ThemedText>
-                            </TouchableOpacity>
-                          )}
-                        </View>
+                        {canManageThisMember && (
+                          <TouchableOpacity
+                            style={styles.memberManageBtn}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                            onPress={(e) => {
+                              e.stopPropagation?.();
+                              triggerHaptic('light');
+                              setSelectedMember(member);
+                              setIsMemberModalVisible(true);
+                            }}
+                            accessibilityLabel={`Manage ${member.name}`}
+                          >
+                            <Ionicons name="ellipsis-vertical" size={16} color="#94A3B8" />
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </TouchableOpacity>
                   );
@@ -807,44 +1089,63 @@ export default function SpartanCellScreen() {
                   </ThemedText>
                 </View>
               ) : (
-                publicCells.map((cell) => (
-                  <View key={cell.id} style={styles.publicCellCard}>
-                    <View style={styles.publicCellHeader}>
-                      <View style={{ flex: 1, marginRight: 8 }}>
-                        <ThemedText style={styles.publicCellName}>{cell.name}</ThemedText>
-                        <ThemedText style={styles.publicCellMotto}>{cell.motto}</ThemedText>
+                publicCells.map((cell) => {
+                  const isPending = myPendingRequests.includes(cell.id) || myPendingRequests.includes(cell.join_code);
+                  const isJoiningThis = joiningCode === cell.join_code;
+                  return (
+                    <View key={cell.id} style={styles.publicCellCard}>
+                      <View style={styles.publicCellHeader}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <ThemedText style={styles.publicCellName}>{cell.name}</ThemedText>
+                          <ThemedText style={styles.publicCellMotto}>{cell.motto}</ThemedText>
+                        </View>
+                        <View style={styles.publicStreakBadge}>
+                          <ThemedText style={styles.publicStreakText}>🔥 {cell.total_streak}d</ThemedText>
+                        </View>
                       </View>
-                      <View style={styles.publicStreakBadge}>
-                        <ThemedText style={styles.publicStreakText}>🔥 {cell.total_streak}d</ThemedText>
-                      </View>
-                    </View>
 
-                    <View style={styles.publicCellFooter}>
-                      <ThemedText style={styles.publicMembersCount}>
-                        {cell.member_count}/{cell.max_members} Members • Leader: {cell.leader_name}
-                      </ThemedText>
+                      <View style={styles.publicCellFooter}>
+                        <ThemedText style={styles.publicMembersCount}>
+                          {cell.member_count}/{cell.max_members} Members • Leader: {cell.leader_name}
+                        </ThemedText>
 
-                      <TouchableOpacity
-                        style={[
-                          styles.joinPublicBtn,
-                          joiningCode === cell.join_code && styles.joinPublicBtnLoading,
-                        ]}
-                        activeOpacity={0.8}
-                        onPress={() => handleJoinCell(cell.join_code)}
-                        disabled={actionLoading || !!joiningCode}
-                      >
-                        {joiningCode === cell.join_code ? (
-                          <View style={styles.btnLoadingRow}>
-                            <ActivityIndicator size="small" color="#00E5FF" />
-                            <ThemedText style={styles.joinPublicBtnText}>Joining...</ThemedText>
-                          </View>
+                        {isPending ? (
+                          <TouchableOpacity
+                            style={styles.pendingRequestBtn}
+                            activeOpacity={0.8}
+                            onPress={() => handleCancelJoinRequest(cell.join_code || cell.id)}
+                            disabled={actionLoading}
+                          >
+                            <Ionicons name="time-outline" size={13} color="#F59E0B" style={{ marginRight: 5 }} />
+                            <ThemedText style={styles.pendingRequestBtnText}>Pending Approval ⏳</ThemedText>
+                          </TouchableOpacity>
                         ) : (
-                          <ThemedText style={styles.joinPublicBtnText}>Join Squad</ThemedText>
+                          <TouchableOpacity
+                            style={[
+                              styles.joinPublicBtn,
+                              isJoiningThis && styles.joinPublicBtnLoading,
+                            ]}
+                            activeOpacity={0.8}
+                            onPress={() => handleRequestJoin(cell.join_code)}
+                            disabled={actionLoading || !!joiningCode}
+                          >
+                            {isJoiningThis ? (
+                              <View style={styles.btnLoadingRow}>
+                                <ActivityIndicator size="small" color="#00E5FF" />
+                                <ThemedText style={styles.joinPublicBtnText}>Submitting...</ThemedText>
+                              </View>
+                            ) : (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                <Ionicons name="paper-plane-outline" size={13} color="#00E5FF" />
+                                <ThemedText style={styles.joinPublicBtnText}>Join Squad</ThemedText>
+                              </View>
+                            )}
+                          </TouchableOpacity>
                         )}
-                      </TouchableOpacity>
+                      </View>
                     </View>
-                  </View>
-                ))
+                  );
+                })
               )}
             </View>
 
@@ -957,21 +1258,140 @@ export default function SpartanCellScreen() {
               <TouchableOpacity
                 style={[styles.submitModalBtn, (actionLoading || !!joiningCode) && styles.submitModalBtnLoading]}
                 activeOpacity={0.85}
-                onPress={() => handleJoinCell()}
+                onPress={() => handleRequestJoin()}
                 disabled={actionLoading || !!joiningCode}
               >
                 {actionLoading || !!joiningCode ? (
                   <View style={styles.btnLoadingRow}>
                     <ActivityIndicator size="small" color="#000000" />
-                    <ThemedText style={styles.submitModalBtnText}>Joining Squad...</ThemedText>
+                    <ThemedText style={styles.submitModalBtnText}>Submitting Petition...</ThemedText>
                   </View>
                 ) : (
-                  <ThemedText style={styles.submitModalBtnText}>Join Accountability Squad</ThemedText>
+                  <ThemedText style={styles.submitModalBtnText}>Request to Join Squad</ThemedText>
                 )}
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
+
+        {/* Modal: Member Management (Promote / Demote / Kick) */}
+        {selectedMember && (
+          <Modal
+            visible={isMemberModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => {
+              if (!memberActionLoading) setIsMemberModalVisible(false);
+            }}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.memberActionCard}>
+                <View style={styles.memberActionHeader}>
+                  <View style={styles.memberActionAvatarBox}>
+                    <Text style={{ fontSize: 24 }}>
+                      {getGamifiedRank(selectedMember.streak || 0).badge}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.memberActionName} numberOfLines={1}>
+                      {selectedMember.name}
+                    </ThemedText>
+                    <ThemedText style={styles.memberActionSub}>
+                      🔥 {selectedMember.streak || 0}d streak • {getGamifiedRank(selectedMember.streak || 0).name}
+                    </ThemedText>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setIsMemberModalVisible(false)}
+                    style={styles.modalCloseBtn}
+                    disabled={memberActionLoading}
+                  >
+                    <Ionicons name="close" size={20} color="#94A3B8" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.memberActionDivider} />
+
+                {/* Leader Actions */}
+                {isLeader && (
+                  <>
+                    {selectedMember.is_co_leader ? (
+                      <TouchableOpacity
+                        style={styles.actionRowBtn}
+                        activeOpacity={0.8}
+                        onPress={() => handleDemoteCoLeader(selectedMember)}
+                        disabled={memberActionLoading}
+                      >
+                        <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                          <Ionicons name="shield-outline" size={18} color="#F59E0B" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={[styles.actionBtnTitle, { color: '#F59E0B' }]}>
+                            Demote from Co-Leader
+                          </ThemedText>
+                          <ThemedText style={styles.actionBtnDesc}>
+                            Remove petition review and moderation privileges
+                          </ThemedText>
+                        </View>
+                        {memberActionLoading && <ActivityIndicator size="small" color="#F59E0B" />}
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.actionRowBtn}
+                        activeOpacity={0.8}
+                        onPress={() => handlePromoteCoLeader(selectedMember)}
+                        disabled={memberActionLoading}
+                      >
+                        <View style={[styles.actionIconBox, { backgroundColor: 'rgba(0, 229, 255, 0.15)' }]}>
+                          <Ionicons name="shield-half" size={18} color="#00E5FF" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={[styles.actionBtnTitle, { color: '#00E5FF' }]}>
+                            Promote to Co-Leader
+                          </ThemedText>
+                          <ThemedText style={styles.actionBtnDesc}>
+                            Grant petition review & member moderation rights
+                          </ThemedText>
+                        </View>
+                        {memberActionLoading && <ActivityIndicator size="small" color="#00E5FF" />}
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+
+                {/* Kick / Exile Option: Leader can kick anyone except self, Co-Leader can kick regular members */}
+                {(isLeader || (!selectedMember.is_leader && !selectedMember.is_co_leader)) && (
+                  <TouchableOpacity
+                    style={[styles.actionRowBtn, styles.actionRowBtnDanger]}
+                    activeOpacity={0.8}
+                    onPress={() => handleKickMember(selectedMember)}
+                    disabled={memberActionLoading}
+                  >
+                    <View style={[styles.actionIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
+                      <Ionicons name="person-remove-outline" size={18} color="#EF4444" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <ThemedText style={[styles.actionBtnTitle, { color: '#EF4444' }]}>
+                        Exile Member from Squad
+                      </ThemedText>
+                      <ThemedText style={styles.actionBtnDesc}>
+                        Remove member and revoke squad membership
+                      </ThemedText>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={styles.actionCancelBtn}
+                  activeOpacity={0.7}
+                  onPress={() => setIsMemberModalVisible(false)}
+                  disabled={memberActionLoading}
+                >
+                  <ThemedText style={styles.actionCancelBtnText}>Cancel</ThemedText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        )}
 
         {/* Custom Glassmorphic Dark Dialog */}
         {customDialog && customDialog.visible && (
@@ -2216,5 +2636,281 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#000000',
     letterSpacing: 0.2,
+  },
+  /* ── JOIN PETITIONS REVIEW SECTION ── */
+  requestsSection: {
+    backgroundColor: 'rgba(0, 229, 255, 0.04)',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.28)',
+    marginBottom: 16,
+    shadowColor: '#00E5FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  requestsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  requestsHeaderTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  requestsBadgeCount: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#00E5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestsBadgeCountText: {
+    fontSize: 11.5,
+    fontWeight: '900',
+    color: '#000000',
+  },
+  requestsSectionTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.8,
+  },
+  requestsSubtitle: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#00E5FF',
+    letterSpacing: 0.3,
+  },
+  requestsList: {
+    gap: 10,
+  },
+  requestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.09)',
+    borderRadius: 14,
+    padding: 11,
+  },
+  requestLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 10,
+  },
+  requestAvatarBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  requestAvatarEmoji: {
+    fontSize: 18,
+  },
+  requestInfo: {
+    flex: 1,
+  },
+  requestName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  requestDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  requestStreak: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#00E5FF',
+  },
+  requestRankTier: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  requestActionsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rejectReqBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: 'rgba(239, 68, 68, 0.14)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  approveReqBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: '#10B981',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  reqBtnLoading: {
+    opacity: 0.6,
+  },
+  /* ── CO-LEADER & MEMBER MODERATION ── */
+  coLeaderBadge: {
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+    borderWidth: 0.5,
+    borderColor: 'rgba(0, 229, 255, 0.45)',
+  },
+  coLeaderText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#00E5FF',
+  },
+  memberRightWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  memberManageBtn: {
+    width: 32,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /* ── PENDING REQUEST BUTTON ── */
+  pendingRequestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.5)',
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  pendingRequestBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#F59E0B',
+  },
+  /* ── MEMBER ACTION MODAL ── */
+  memberActionCard: {
+    width: '100%',
+    backgroundColor: '#0C1220',
+    borderRadius: 22,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  memberActionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  memberActionAvatarBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 229, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memberActionName: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  memberActionSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#CBD5E1',
+    marginTop: 2,
+  },
+  memberActionDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 14,
+  },
+  actionRowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginBottom: 10,
+  },
+  actionRowBtnDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  actionIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  actionBtnDesc: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  actionCancelBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    marginTop: 4,
+  },
+  actionCancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#94A3B8',
   },
 });

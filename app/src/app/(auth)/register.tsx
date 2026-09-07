@@ -121,7 +121,9 @@ export default function AuthRegisterScreen() {
             <View style={styles.contentContainer}>
               <View style={styles.titleSection}>
                 <ThemedText style={styles.stepText}>Account Creation</ThemedText>
-                <ThemedText style={styles.title}>Join ZenWill</ThemedText>
+                <ThemedText style={styles.title}>
+                  Join <ThemedText style={{ color: '#FFFFFF' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF' }}>Will</ThemedText>
+                </ThemedText>
                 <ThemedText style={styles.subtitle}>
                   Create your account to start tracking habits, breaking urges, and building mental strength.
                 </ThemedText>

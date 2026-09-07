@@ -512,7 +512,7 @@ export default function TriggerIntelligenceScreen() {
 
             <View style={styles.modalBodyTextWrap}>
               <ThemedText style={styles.modalBodyP}>
-                ZenWill's Trigger Intelligence engine synthesizes your <ThemedText style={{ color: '#00E5FF', fontWeight: '800' }}>100% real database records</ThemedText>:
+                <ThemedText style={{ color: '#FFFFFF', fontWeight: '800' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '800' }}>Will</ThemedText>'s Trigger Intelligence engine synthesizes your <ThemedText style={{ color: '#00E5FF', fontWeight: '800' }}>100% real database records</ThemedText>:
               </ThemedText>
               <ThemedText style={styles.modalBodyBullet}>
                 • <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Emergency Urge Logs</ThemedText>: Temporal clustering & after-urge notes

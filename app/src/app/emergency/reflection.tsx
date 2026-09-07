@@ -171,7 +171,7 @@ export default function EmergencyReflectionScreen() {
             <View style={{ flex: 1 }}>
               <ThemedText style={styles.victoryHeroTitle}>Urge Overcome Successfully!</ThemedText>
               <ThemedText style={styles.victoryHeroSub}>
-                Take 30 seconds to save what caused it. This helps ZenWill protect you earlier next time.
+                Take 30 seconds to save what caused it. This helps <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>Will</ThemedText> protect you earlier next time.
               </ThemedText>
             </View>
           </View>

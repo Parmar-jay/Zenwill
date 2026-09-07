@@ -10,6 +10,7 @@ interface SpartanState {
   activeBattle: BattleSessionData | null;
   cellLeaderboard: SpartanCellData[];
   publicCells: SpartanCellData[];
+  myPendingRequests: string[]; // List of cell_id / join_code strings
   isLoadingCell: boolean;
   isLoadingBattle: boolean;
   isNudging: boolean;
@@ -19,8 +20,15 @@ interface SpartanState {
   fetchActiveBattle: () => Promise<BattleSessionData | null>;
   fetchCellLeaderboard: () => Promise<void>;
   fetchPublicCells: () => Promise<void>;
+  fetchMyJoinRequests: () => Promise<void>;
   createCell: (name: string, motto?: string, isPublic?: boolean) => Promise<SpartanCellData>;
   joinCell: (code: string) => Promise<SpartanCellData>;
+  requestJoinCell: (code: string) => Promise<{ status: string; message: string; cell_id: string; join_code: string }>;
+  cancelJoinRequest: (codeOrCellId: string) => Promise<void>;
+  respondJoinRequest: (cellId: string, requestId: string, action: 'approve' | 'reject') => Promise<any>;
+  promoteCoLeader: (targetUserId: string) => Promise<SpartanCellData>;
+  demoteCoLeader: (targetUserId: string) => Promise<SpartanCellData>;
+  kickMember: (targetUserId: string) => Promise<SpartanCellData>;
   leaveCell: () => Promise<void>;
   deleteCell: () => Promise<void>;
   nudgeMember: (userId: string, userName: string) => Promise<string>;
@@ -42,6 +50,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   activeBattle: null,
   cellLeaderboard: [],
   publicCells: [],
+  myPendingRequests: [],
   isLoadingCell: false,
   isLoadingBattle: false,
   isNudging: false,
@@ -52,6 +61,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       activeBattle: null,
       cellLeaderboard: [],
       publicCells: [],
+      myPendingRequests: [],
       isLoadingCell: false,
       isLoadingBattle: false,
       isNudging: false,
@@ -206,6 +216,16 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     }
   },
 
+  fetchMyJoinRequests: async () => {
+    try {
+      const list = await spartanApi.getMyJoinRequests();
+      const keys = list.map((r) => r.join_code || r.cell_id).filter(Boolean);
+      set({ myPendingRequests: keys });
+    } catch {
+      // keep existing
+    }
+  },
+
   createCell: async (name: string, motto: string = 'We hold the line together.', isPublic: boolean = true) => {
     const seq = ++myCellFetchSeq;
     try {
@@ -241,6 +261,73 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
+      throw err;
+    }
+  },
+
+  requestJoinCell: async (code: string) => {
+    try {
+      const res = await spartanApi.requestJoinCell(code);
+      const clean = code.trim().toUpperCase();
+      set((state) => ({
+        myPendingRequests: Array.from(new Set([...state.myPendingRequests, clean, res.join_code, res.cell_id])),
+      }));
+      return res;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  cancelJoinRequest: async (codeOrCellId: string) => {
+    try {
+      await spartanApi.cancelJoinRequest(codeOrCellId);
+      const clean = codeOrCellId.trim().toUpperCase();
+      set((state) => ({
+        myPendingRequests: state.myPendingRequests.filter((k) => k !== clean && k !== codeOrCellId),
+      }));
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  respondJoinRequest: async (cellId: string, requestId: string, action: 'approve' | 'reject') => {
+    try {
+      const res = await spartanApi.respondJoinRequest(cellId, requestId, action);
+      if (res?.data) {
+        set({ myCell: res.data });
+      }
+      return res;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  promoteCoLeader: async (targetUserId: string) => {
+    try {
+      const cell = await spartanApi.promoteCoLeader(targetUserId);
+      set({ myCell: cell });
+      return cell;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  demoteCoLeader: async (targetUserId: string) => {
+    try {
+      const cell = await spartanApi.demoteCoLeader(targetUserId);
+      set({ myCell: cell });
+      return cell;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  kickMember: async (targetUserId: string) => {
+    try {
+      const cell = await spartanApi.kickMember(targetUserId);
+      set({ myCell: cell });
+      return cell;
+    } catch (err) {
       throw err;
     }
   },

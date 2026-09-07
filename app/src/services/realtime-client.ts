@@ -225,6 +225,41 @@ class RealtimeClient {
           ),
         });
       }
+    } else if (type === 'JOIN_REQUEST_APPROVED' && msg.data) {
+      // Applicant approved! Bind cell data and subscribe to cell channel
+      const store = useSpartanStore.getState();
+      const code = msg.join_code || msg.cell_id;
+      useSpartanStore.setState({
+        myCell: msg.data,
+        myPendingRequests: store.myPendingRequests.filter((k) => k !== code && k !== msg.cell_id),
+      });
+      if (msg.cell_id || msg.data.id) {
+        this.subscribe(`cell:${msg.cell_id || msg.data.id}`);
+      }
+    } else if (type === 'JOIN_REQUEST_REJECTED') {
+      const store = useSpartanStore.getState();
+      const code = msg.join_code || msg.cell_id;
+      useSpartanStore.setState({
+        myPendingRequests: store.myPendingRequests.filter((k) => k !== code && k !== msg.cell_id),
+      });
+    } else if (type === 'JOIN_REQUEST_SUBMITTED') {
+      const store = useSpartanStore.getState();
+      const key = msg.join_code || msg.cell_id;
+      if (key && !store.myPendingRequests.includes(key)) {
+        useSpartanStore.setState({
+          myPendingRequests: [...store.myPendingRequests, key],
+        });
+      }
+    } else if (type === 'MEMBER_KICKED') {
+      const myCell = useSpartanStore.getState().myCell;
+      if (myCell && (myCell.id === msg.cell_id || myCell.id === msg.data?.id)) {
+        useSpartanStore.setState({ myCell: null });
+        if (msg.cell_id) {
+          this.unsubscribe(`cell:${msg.cell_id}`);
+        }
+      }
+    } else if (type === 'PROMOTED_TO_CO_LEADER' && msg.data) {
+      useSpartanStore.setState({ myCell: msg.data });
     } else if (type === 'CELL_DELETED') {
       const myCell = useSpartanStore.getState().myCell;
       if (myCell && (myCell.id === msg.cell_id || myCell.id === msg.data?.id)) {

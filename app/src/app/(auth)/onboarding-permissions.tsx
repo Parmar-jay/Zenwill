@@ -157,7 +157,7 @@ export default function AuthOnboardingPermissionsScreen() {
                 <ThemedText style={styles.stepText}>Notifications Setup</ThemedText>
                 <ThemedText style={styles.title}>Turn On Notifications</ThemedText>
                 <ThemedText style={styles.subtitle}>
-                  Enable notifications on your phone so ZenWill can send you instant urge support, daily check-in reminders, and streak updates.
+                  Enable notifications on your phone so <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>Will</ThemedText> can send you instant urge support, daily check-in reminders, and streak updates.
                 </ThemedText>
               </View>
 

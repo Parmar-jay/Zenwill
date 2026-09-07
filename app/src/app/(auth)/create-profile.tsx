@@ -188,7 +188,7 @@ export default function AuthCreateProfileScreen() {
                   <ThemedText style={styles.stepText}>Create Profile</ThemedText>
                   <ThemedText style={styles.title}>Tell Us About Yourself</ThemedText>
                   <ThemedText style={styles.subtitle}>
-                    ZenWill personalises your impulse defense based on your identity, schedule, and personal goals.
+                    <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>Will</ThemedText> personalises your impulse defense based on your identity, schedule, and personal goals.
                   </ThemedText>
                 </View>
 

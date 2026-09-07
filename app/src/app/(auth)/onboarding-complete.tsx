@@ -198,7 +198,7 @@ export default function AuthOnboardingCompleteScreen() {
                   <ThemedText style={styles.heroTitleAccent}>Build Self-Control.</ThemedText>
                 </ThemedText>
                 <ThemedText style={styles.heroSubtitle}>
-                  Your setup is complete! Read your simple promise below and sign your name to enter ZenWill.
+                  Your setup is complete! Read your simple promise below and sign your name to enter <ThemedText style={{ color: '#FFFFFF', fontWeight: '700' }}>Zen</ThemedText><ThemedText style={{ color: '#00E5FF', fontWeight: '700' }}>Will</ThemedText>.
                 </ThemedText>
               </Animated.View>
 

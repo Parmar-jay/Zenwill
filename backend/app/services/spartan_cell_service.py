@@ -179,6 +179,12 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
             cell.leader_name = user.name or "Commander"
             cell.leader_id = str(user.id)
 
+        raw_co_leaders = getattr(cell, "co_leader_ids", []) or []
+        is_co_leader = not is_leader and (
+            str(user.id) in raw_co_leaders or
+            (user.email and user.email.lower() in [c.lower() for c in raw_co_leaders])
+        )
+
         user_display_name = user.name or (user.email.split("@")[0] if user.email else "Warrior")
 
         updated_members.append({
@@ -196,12 +202,23 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
             "retain_status": status,
             "today_checked_in": has_checked_in_today,
             "is_leader": is_leader,
+            "is_co_leader": is_co_leader,
             "is_online": True,
             "joined_at": datetime.utcnow().isoformat(),
         })
 
-    # Sort members: Leader first, then highest streak descending
-    updated_members.sort(key=lambda m: (not m["is_leader"], -m["streak"]))
+    # Filter canonical co-leader IDs (must be in members and not leader)
+    cell.co_leader_ids = [
+        cid for cid in (getattr(cell, "co_leader_ids", []) or [])
+        if cid in canonical_member_ids and cid != cell.leader_id
+    ]
+
+    # Ensure join_requests is initialized
+    if not hasattr(cell, "join_requests") or cell.join_requests is None:
+        cell.join_requests = []
+
+    # Sort members: Leader first, then Co-Leaders, then highest streak descending
+    updated_members.sort(key=lambda m: (not m["is_leader"], not m.get("is_co_leader", False), -m["streak"]))
 
     cell.member_ids = canonical_member_ids
     cell.total_streak = total_streak_accum

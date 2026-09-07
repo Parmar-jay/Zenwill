@@ -1,5 +1,18 @@
 import { api } from './api';
 
+export interface JoinRequestItem {
+  id: string;
+  user_id: string;
+  name?: string;
+  user_name: string;
+  user_email?: string;
+  streak: number;
+  xp?: number;
+  badge: string;
+  rank_tier: string;
+  created_at: string;
+}
+
 export interface CellMemberItem {
   user_id: string;
   name: string;
@@ -13,6 +26,7 @@ export interface CellMemberItem {
   status?: 'retained' | 'relapsed' | 'pending';
   today_checked_in: boolean;
   is_leader: boolean;
+  is_co_leader?: boolean;
   is_online: boolean;
   joined_at: string;
 }
@@ -33,6 +47,8 @@ export interface SpartanCellData {
   join_code: string;
   leader_id: string;
   leader_name: string;
+  co_leader_ids?: string[];
+  join_requests?: JoinRequestItem[];
   member_count: number;
   max_members: number;
   total_streak: number;
@@ -97,6 +113,34 @@ export const spartanApi = {
 
   async joinCell(joinCode: string): Promise<SpartanCellData> {
     return api.post<SpartanCellData>('/spartan-cells/join', { join_code: joinCode });
+  },
+
+  async requestJoinCell(joinCode: string): Promise<{ status: string; message: string; cell_id: string; join_code: string }> {
+    return api.post<{ status: string; message: string; cell_id: string; join_code: string }>('/spartan-cells/request-join', { join_code: joinCode });
+  },
+
+  async cancelJoinRequest(joinCodeOrCellId: string): Promise<{ status: string; message: string }> {
+    return api.post<{ status: string; message: string }>('/spartan-cells/cancel-join-request', { join_code: joinCodeOrCellId, cell_id: joinCodeOrCellId });
+  },
+
+  async respondJoinRequest(cellId: string, requestId: string, action: 'approve' | 'reject'): Promise<any> {
+    return api.post('/spartan-cells/respond-join-request', { cell_id: cellId, request_id: requestId, action });
+  },
+
+  async getMyJoinRequests(): Promise<Array<{ cell_id: string; join_code: string; name: string }>> {
+    return api.get<Array<{ cell_id: string; join_code: string; name: string }>>('/spartan-cells/my-requests');
+  },
+
+  async promoteCoLeader(targetUserId: string): Promise<SpartanCellData> {
+    return api.post<SpartanCellData>('/spartan-cells/promote-co-leader', { target_user_id: targetUserId });
+  },
+
+  async demoteCoLeader(targetUserId: string): Promise<SpartanCellData> {
+    return api.post<SpartanCellData>('/spartan-cells/demote-co-leader', { target_user_id: targetUserId });
+  },
+
+  async kickMember(targetUserId: string): Promise<SpartanCellData> {
+    return api.post<SpartanCellData>('/spartan-cells/kick-member', { target_user_id: targetUserId });
   },
 
   async getMyCell(): Promise<SpartanCellData | null> {
