@@ -283,6 +283,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       set((state) => ({
         myPendingRequests: Array.from(new Set([...state.myPendingRequests, clean, res.join_code, res.cell_id])),
       }));
+      get().fetchPublicCells().catch(() => {});
+      get().fetchMyJoinRequests().catch(() => {});
       return res;
     } catch (err) {
       throw err;
@@ -296,6 +298,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       set((state) => ({
         myPendingRequests: state.myPendingRequests.filter((k) => k !== clean && k !== codeOrCellId),
       }));
+      get().fetchPublicCells().catch(() => {});
+      get().fetchMyJoinRequests().catch(() => {});
     } catch (err) {
       throw err;
     }
@@ -307,6 +311,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       if (res?.data) {
         set({ myCell: res.data });
       }
+      get().fetchMyCell({ showLoading: false }).catch(() => {});
+      get().fetchPublicCells().catch(() => {});
       return res;
     } catch (err) {
       throw err;
