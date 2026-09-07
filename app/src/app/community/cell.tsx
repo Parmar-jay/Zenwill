@@ -75,6 +75,7 @@ export default function SpartanCellScreen() {
     publicCells,
     myPendingRequests,
     isLoadingCell,
+    hasLoadedInitialCell,
     isNudging,
     fetchMyCell,
     fetchPublicCells,
@@ -129,22 +130,22 @@ export default function SpartanCellScreen() {
     } catch {}
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (showLoading = false) => {
     await Promise.allSettled([
-      fetchMyCell(),
+      fetchMyCell({ showLoading }),
       fetchPublicCells(),
       fetchMyJoinRequests(),
     ]);
   }, [fetchMyCell, fetchPublicCells, fetchMyJoinRequests]);
 
   useEffect(() => {
-    loadData();
+    loadData(!hasLoadedInitialCell);
     realtimeClient.subscribe('public_cells');
 
     return () => {
       realtimeClient.unsubscribe('public_cells');
     };
-  }, [loadData]);
+  }, []);
 
   useEffect(() => {
     if (myCell?.id) {
@@ -157,18 +158,19 @@ export default function SpartanCellScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-      // Fast adaptive poll (3.5s) while screen is actively focused
+      // Quiet background refresh on screen focus
+      loadData(false);
+      // Fast adaptive poll (5s) while screen is actively focused without full reload
       const fastSyncTimer = setInterval(() => {
         if (!actionLoading && !joiningCode && !isLeaving) {
-          fetchMyCell().catch(() => {});
+          fetchMyCell({ showLoading: false }).catch(() => {});
         }
-      }, 3500);
+      }, 5000);
 
       return () => {
         clearInterval(fastSyncTimer);
       };
-    }, [loadData, actionLoading, joiningCode, isLeaving])
+    }, [actionLoading, joiningCode, isLeaving, loadData, fetchMyCell])
   );
 
   const isLeader = useMemo(() => {
@@ -546,7 +548,7 @@ export default function SpartanCellScreen() {
           </TouchableOpacity>
         </View>
 
-        {isLoadingCell && !myCell ? (
+        {isLoadingCell && !hasLoadedInitialCell && !myCell ? (
           <View style={styles.centerLoading}>
             <ActivityIndicator size="large" color="#00E5FF" />
             <ThemedText style={styles.loadingText}>Syncing Squad Discipline Matrix...</ThemedText>
@@ -1085,14 +1087,35 @@ export default function SpartanCellScreen() {
                 </View>
               ) : (
                 publicCells.map((cell) => {
-                  const isPending = myPendingRequests.includes(cell.id) || myPendingRequests.includes(cell.join_code);
+                  const isUserInCellRequests = (cell.join_requests || []).some((req: any) => {
+                    const reqUid = String(req.user_id || '').trim().toLowerCase();
+                    const reqEmail = String(req.user_email || req.email || '').trim().toLowerCase();
+                    const currentUid = String(user?.id || '').trim().toLowerCase();
+                    const currentEmail = String(user?.email || '').trim().toLowerCase();
+                    return (currentUid && reqUid === currentUid) || (currentEmail && reqEmail === currentEmail);
+                  });
+
+                  const isPending = isUserInCellRequests ||
+                    myPendingRequests.some((key) => {
+                      const k = String(key || '').trim().toLowerCase();
+                      return k === String(cell.id || '').trim().toLowerCase() ||
+                             k === String(cell.join_code || '').trim().toLowerCase();
+                    });
+
                   const isJoiningThis = joiningCode === cell.join_code;
                   return (
-                    <View key={cell.id} style={styles.publicCellCard}>
+                    <View key={cell.id} style={[styles.publicCellCard, isPending && styles.publicCellCardPending]}>
                       <View style={styles.publicCellHeader}>
                         <View style={{ flex: 1, marginRight: 8 }}>
-                          <ThemedText style={styles.publicCellName}>{cell.name}</ThemedText>
-                          <ThemedText style={styles.publicCellMotto}>{cell.motto}</ThemedText>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                            <ThemedText style={styles.publicCellName}>{cell.name}</ThemedText>
+                            {isPending && (
+                              <View style={styles.pendingBadgePill}>
+                                <ThemedText style={styles.pendingBadgePillText}>REQUEST PENDING</ThemedText>
+                              </View>
+                            )}
+                          </View>
+                          <ThemedText style={styles.publicCellMotto} numberOfLines={2}>{cell.motto}</ThemedText>
                         </View>
                         <View style={styles.publicStreakBadge}>
                           <ThemedText style={styles.publicStreakText}>🔥 {cell.total_streak}d</ThemedText>
@@ -2370,6 +2393,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.06)',
     marginBottom: 8,
+  },
+  publicCellCardPending: {
+    backgroundColor: 'rgba(245, 158, 11, 0.035)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+  },
+  pendingBadgePill: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  pendingBadgePillText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    color: '#F59E0B',
+    letterSpacing: 0.5,
   },
   publicCellHeader: {
     flexDirection: 'row',

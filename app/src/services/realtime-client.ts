@@ -198,13 +198,9 @@ class RealtimeClient {
       ));
 
       if (isCurrentUserDeparted) {
-        // ONLY clear myCell if this event targets the cell user is currently in!
-        // Never wipe a newly joined cell due to prior cell departure broadcasts!
-        if (isTargetingMyCell) {
-          useSpartanStore.setState({ myCell: null });
-          if (msg.cell_id) {
-            this.unsubscribe(`cell:${msg.cell_id}`);
-          }
+        useSpartanStore.setState({ myCell: null });
+        if (msg.cell_id) {
+          this.unsubscribe(`cell:${msg.cell_id}`);
         }
       } else if (isCurrentUserJoined) {
         // Current user joined this cell: immediately bind it to state
@@ -213,8 +209,23 @@ class RealtimeClient {
           this.subscribe(`cell:${msg.cell_id || msg.data?.id}`);
         }
       } else if (isTargetingMyCell) {
-        // Seamlessly update live stats, members, streaks, and shields in real time
-        useSpartanStore.setState({ myCell: msg.data });
+        // Verify current user is still an active member in this cell
+        const isStillMember = (msg.data.members || []).some((m: any) => {
+          const mUid = (m.user_id || '').trim().toLowerCase();
+          const mEmail = (m.email || '').trim().toLowerCase();
+          return (currentUserId && mUid === currentUserId.toLowerCase()) ||
+                 (currentUserEmail && mEmail === currentUserEmail);
+        });
+
+        if (!isStillMember) {
+          useSpartanStore.setState({ myCell: null });
+          if (msg.cell_id || msg.data?.id) {
+            this.unsubscribe(`cell:${msg.cell_id || msg.data?.id}`);
+          }
+        } else {
+          // Seamlessly update live stats, members, streaks, and shields in real time
+          useSpartanStore.setState({ myCell: msg.data });
+        }
       }
 
       // Update cell in leaderboard if visible

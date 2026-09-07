@@ -12,11 +12,12 @@ interface SpartanState {
   publicCells: SpartanCellData[];
   myPendingRequests: string[]; // List of cell_id / join_code strings
   isLoadingCell: boolean;
+  hasLoadedInitialCell: boolean;
   isLoadingBattle: boolean;
   isNudging: boolean;
 
   updateLocalMemberStreak: (userIdOrEmail: string, newStreak: number) => void;
-  fetchMyCell: () => Promise<SpartanCellData | null>;
+  fetchMyCell: (options?: { showLoading?: boolean }) => Promise<SpartanCellData | null>;
   fetchActiveBattle: () => Promise<BattleSessionData | null>;
   fetchCellLeaderboard: () => Promise<void>;
   fetchPublicCells: () => Promise<void>;
@@ -52,6 +53,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   publicCells: [],
   myPendingRequests: [],
   isLoadingCell: false,
+  hasLoadedInitialCell: false,
   isLoadingBattle: false,
   isNudging: false,
 
@@ -63,6 +65,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       publicCells: [],
       myPendingRequests: [],
       isLoadingCell: false,
+      hasLoadedInitialCell: false,
       isLoadingBattle: false,
       isNudging: false,
     });
@@ -127,19 +130,20 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     });
   },
 
-  fetchMyCell: async () => {
+  fetchMyCell: async (options?: { showLoading?: boolean }) => {
     const seq = ++myCellFetchSeq;
     try {
       const { TokenStorage } = require('../services/api');
       const token = await TokenStorage.getAccessToken();
       if (!token) {
         if (seq === myCellFetchSeq) {
-          set({ isLoadingCell: false });
+          set({ isLoadingCell: false, hasLoadedInitialCell: true });
         }
         return null;
       }
 
-      if (!get().myCell && !get().isLoadingCell) {
+      // ONLY set isLoadingCell: true if explicitly requested AND initial load hasn't completed yet
+      if (options?.showLoading && !get().hasLoadedInitialCell) {
         set({ isLoadingCell: true });
       }
       const cell = await spartanApi.getMyCell();
@@ -148,7 +152,48 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         return get().myCell;
       }
 
+      if (!cell) {
+        const priorId = get().myCell?.id;
+        if (priorId) {
+          try {
+            const { realtimeClient } = require('../services/realtime-client');
+            realtimeClient.unsubscribe(`cell:${priorId}`);
+          } catch {}
+        }
+        set({ myCell: null, isLoadingCell: false, hasLoadedInitialCell: true });
+        return null;
+      }
+
       if (cell && Array.isArray(cell.members)) {
+        const { useAuthStore } = require('./auth-store');
+        const authUser = useAuthStore.getState().user;
+        if (authUser) {
+          const userIds = new Set([
+            String(authUser.id || '').trim().toLowerCase(),
+            (authUser.email || '').trim().toLowerCase(),
+            (authUser.name || '').trim().toLowerCase(),
+          ].filter(Boolean));
+
+          const isMember = cell.members.some((m) => {
+            const mUid = (m.user_id || '').trim().toLowerCase();
+            const mEmail = (m.email || '').trim().toLowerCase();
+            const mName = (m.name || '').trim().toLowerCase();
+            return userIds.has(mUid) || userIds.has(mEmail) || userIds.has(mName);
+          });
+
+          if (!isMember) {
+            const priorId = get().myCell?.id;
+            if (priorId) {
+              try {
+                const { realtimeClient } = require('../services/realtime-client');
+                realtimeClient.unsubscribe(`cell:${priorId}`);
+              } catch {}
+            }
+            set({ myCell: null, isLoadingCell: false, hasLoadedInitialCell: true });
+            return null;
+          }
+        }
+
         const seen = new Set<string>();
         cell.members = cell.members.filter((m) => {
           const uid = (m.user_id || '').trim().toLowerCase();
@@ -165,7 +210,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
           cell.shield_status = 'cracked';
         }
       }
-      set({ myCell: cell, isLoadingCell: false });
+      set({ myCell: cell, isLoadingCell: false, hasLoadedInitialCell: true });
 
       // Automatically register real-time channel subscription for live updates
       if (cell?.id) {
@@ -178,7 +223,7 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       return cell;
     } catch {
       if (seq === myCellFetchSeq) {
-        set({ isLoadingCell: false });
+        set({ isLoadingCell: false, hasLoadedInitialCell: true });
       }
       return null;
     }
@@ -219,8 +264,8 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   fetchMyJoinRequests: async () => {
     try {
       const list = await spartanApi.getMyJoinRequests();
-      const keys = list.map((r) => r.join_code || r.cell_id).filter(Boolean);
-      set({ myPendingRequests: keys });
+      const keys = list.flatMap((r) => [r.join_code, r.cell_id, r.join_code?.toUpperCase(), r.join_code?.toLowerCase()].filter(Boolean));
+      set({ myPendingRequests: Array.from(new Set(keys as string[])) });
     } catch {
       // keep existing
     }

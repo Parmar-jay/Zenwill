@@ -96,6 +96,14 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     updated_members = []
     checked_in_count = 0
 
+    # If cell has no members remaining, delete the dissolved cell
+    if not cell.member_ids:
+        try:
+            await cell.delete()
+        except Exception:
+            pass
+        return cell
+
     # Ensure leader is a valid member and never resurrects departed users
     if cell.member_ids:
         leader_exists = any(str(m).strip().lower() == str(cell.leader_id).strip().lower() for m in cell.member_ids)

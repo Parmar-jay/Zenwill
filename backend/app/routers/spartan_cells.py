@@ -810,19 +810,46 @@ async def get_my_spartan_cell(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve current authenticated user's Spartan Cell with live recalculated stats."""
-    user_id_str = str(current_user.id)
-    cell = await SpartanCell.find_one({
-        "$or": [
-            {"member_ids": user_id_str},
-            {"member_ids": current_user.email},
-            {"leader_id": user_id_str},
-            {"leader_id": current_user.email},
-        ]
-    })
-    if not cell:
+    user_id_str = str(current_user.id).strip()
+    user_email = (current_user.email or "").strip().lower()
+    raw_email = (current_user.email or "").strip()
+    user_name = (current_user.name or "").strip().lower()
+
+    user_identifiers = {user_id_str.lower(), user_email}
+    if user_name:
+        user_identifiers.add(user_name)
+    if raw_email:
+        user_identifiers.add(raw_email.lower())
+
+    def is_user_in_cell(c: SpartanCell) -> bool:
+        if not c:
+            return False
+        # Strictly verify active membership in member_ids or members list
+        for m in (c.member_ids or []):
+            if m and str(m).strip().lower() in user_identifiers:
+                return True
+        for m in (c.members or []):
+            if isinstance(m, dict):
+                uid = str(m.get("user_id") or "").strip().lower()
+                em = str(m.get("email") or "").strip().lower()
+                if (uid and uid in user_identifiers) or (em and em in user_identifiers):
+                    return True
+        return False
+
+    all_cells = await SpartanCell.find_all().to_list()
+    active_cell = None
+    for c in all_cells:
+        if is_user_in_cell(c):
+            active_cell = c
+            break
+
+    if not active_cell:
         return None
 
-    updated_cell = await recalculate_cell_stats(cell)
+    updated_cell = await recalculate_cell_stats(active_cell)
+    if not is_user_in_cell(updated_cell):
+        return None
+
     return _cell_to_summary(updated_cell)
 
 
@@ -839,28 +866,48 @@ async def leave_spartan_cell(
     leaving_identifiers = {user_id_str.lower(), user_email}
     if user_name:
         leaving_identifiers.add(user_name)
+    if raw_email:
+        leaving_identifiers.add(raw_email.lower())
 
     def is_leaving_user(val) -> bool:
         if not val:
             return False
         return str(val).strip().lower() in leaving_identifiers
 
-    query = {
-        "$or": [
-            {"member_ids": user_id_str},
-            {"member_ids": user_email},
-            {"member_ids": raw_email},
-            {"leader_id": user_id_str},
-            {"leader_id": user_email},
-            {"leader_id": raw_email},
-            {"members.user_id": user_id_str},
-            {"members.email": user_email},
-        ]
-    }
+    def is_user_in_cell(c: SpartanCell) -> bool:
+        if not c:
+            return False
+        for m in (c.member_ids or []):
+            if m and str(m).strip().lower() in leaving_identifiers:
+                return True
+        for m in (c.members or []):
+            if isinstance(m, dict):
+                uid = str(m.get("user_id") or "").strip().lower()
+                em = str(m.get("email") or "").strip().lower()
+                if (uid and uid in leaving_identifiers) or (em and em in leaving_identifiers):
+                    return True
+        if c.leader_id and str(c.leader_id).strip().lower() in leaving_identifiers:
+            return True
+        return False
 
-    cells = await SpartanCell.find(query).to_list()
-    if not cells:
-        return {"status": "success", "message": "Not in any cell"}
+    all_cells = await SpartanCell.find_all().to_list()
+    cells = [c for c in all_cells if is_user_in_cell(c)]
+
+    # Direct database collection level purge
+    try:
+        motor_col = SpartanCell.get_motor_collection()
+        id_list = list(leaving_identifiers)
+        await motor_col.update_many(
+            {},
+            {
+                "$pull": {
+                    "member_ids": {"$in": id_list},
+                    "co_leader_ids": {"$in": id_list},
+                }
+            }
+        )
+    except Exception:
+        pass
 
     for cell in cells:
         # 1. Filter out leaving user from member_ids, co_leader_ids, members
@@ -868,13 +915,31 @@ async def leave_spartan_cell(
         cell.co_leader_ids = [cid for cid in (getattr(cell, "co_leader_ids", []) or []) if not is_leaving_user(cid)]
         cell.members = [
             m for m in (cell.members or [])
-            if not is_leaving_user(m.get("user_id")) and not is_leaving_user(m.get("email"))
+            if not is_leaving_user(m.get("user_id")) and not is_leaving_user(m.get("email")) and not is_leaving_user(m.get("name"))
         ]
+        if hasattr(cell, "join_requests") and cell.join_requests:
+            cell.join_requests = [
+                req for req in cell.join_requests
+                if not is_leaving_user(req.get("user_id")) and not is_leaving_user(req.get("user_email")) and not is_leaving_user(req.get("email"))
+            ]
 
         # 2. If no members left in the cell, disband it completely
         if not cell.member_ids:
             cell_id_str = str(cell.id)
-            await cell.delete()
+            try:
+                await cell.delete()
+            except Exception:
+                pass
+            try:
+                from bson import ObjectId
+                motor_col = SpartanCell.get_motor_collection()
+                del_query = [{"_id": cell.id}, {"id": str(cell.id)}]
+                if ObjectId.is_valid(str(cell.id)):
+                    del_query.append({"_id": ObjectId(str(cell.id))})
+                await motor_col.delete_many({"$or": del_query})
+            except Exception:
+                pass
+
             await realtime_bus.broadcast_to_channel(
                 f"cell:{cell_id_str}",
                 {"type": "CELL_DELETED", "cell_id": cell_id_str}
@@ -902,6 +967,19 @@ async def leave_spartan_cell(
                 }
             )
 
+    # Clean up any memberless orphan cells remaining in MongoDB
+    try:
+        motor_col = SpartanCell.get_motor_collection()
+        await motor_col.delete_many({
+            "$or": [
+                {"member_ids": {"$size": 0}},
+                {"member_ids": None},
+                {"member_ids": {"$exists": False}},
+            ]
+        })
+    except Exception:
+        pass
+
     # Broadcast direct message to leaving user's socket so their UI instantly unbinds
     await realtime_bus.send_to_user(
         user_id_str,
@@ -925,23 +1003,48 @@ async def delete_spartan_cell(
     user_id_str = str(current_user.id).strip()
     user_email = (current_user.email or "").strip().lower()
     raw_email = (current_user.email or "").strip()
+    user_name = (current_user.name or "").strip().lower()
 
-    or_clauses = [
-        {"leader_id": user_id_str},
-        {"leader_id": user_email},
-        {"leader_id": raw_email},
-        {"member_ids": user_id_str},
-        {"member_ids": user_email},
-        {"member_ids": raw_email},
-    ]
+    user_identifiers = {user_id_str.lower(), user_email}
+    if user_name:
+        user_identifiers.add(user_name)
+    if raw_email:
+        user_identifiers.add(raw_email.lower())
 
-    cells = await SpartanCell.find({"$or": or_clauses}).to_list()
-    if not cells:
-        return {"status": "success", "message": "No cell to disband."}
+    def is_user_in_cell(c: SpartanCell) -> bool:
+        if not c:
+            return False
+        for m in (c.member_ids or []):
+            if m and str(m).strip().lower() in user_identifiers:
+                return True
+        for m in (c.members or []):
+            if isinstance(m, dict):
+                uid = str(m.get("user_id") or "").strip().lower()
+                em = str(m.get("email") or "").strip().lower()
+                if (uid and uid in user_identifiers) or (em and em in user_identifiers):
+                    return True
+        if c.leader_id and str(c.leader_id).strip().lower() in user_identifiers:
+            return True
+        return False
+
+    all_cells = await SpartanCell.find_all().to_list()
+    cells = [c for c in all_cells if is_user_in_cell(c)]
 
     for cell in cells:
         cell_id_str = str(cell.id)
-        await cell.delete()
+        try:
+            await cell.delete()
+        except Exception:
+            pass
+        try:
+            from bson import ObjectId
+            motor_col = SpartanCell.get_motor_collection()
+            del_query = [{"_id": cell.id}, {"id": str(cell.id)}]
+            if ObjectId.is_valid(str(cell.id)):
+                del_query.append({"_id": ObjectId(str(cell.id))})
+            await motor_col.delete_many({"$or": del_query})
+        except Exception:
+            pass
 
         await realtime_bus.broadcast_to_channel(
             f"cell:{cell_id_str}",

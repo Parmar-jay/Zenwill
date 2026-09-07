@@ -15,6 +15,7 @@ export interface JoinRequestItem {
 
 export interface CellMemberItem {
   user_id: string;
+  email?: string | null;
   name: string;
   streak: number;
   xp?: number;
@@ -144,7 +145,7 @@ export const spartanApi = {
   },
 
   async getMyCell(): Promise<SpartanCellData | null> {
-    return api.get<SpartanCellData | null>('/spartan-cells/my-cell');
+    return api.get<SpartanCellData | null>('/spartan-cells/my-cell', { noCache: true });
   },
 
   async leaveCell(): Promise<{ status: string; message: string }> {
