@@ -96,15 +96,20 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
     updated_members = []
     checked_in_count = 0
 
-    # Ensure leader_id is resolved and present
-    if cell.leader_id:
-        leader_user = await get_user_safely(cell.leader_id)
-        if leader_user:
-            cell.leader_id = str(leader_user.id)
-            if leader_user.name:
+    # Ensure leader is a valid member and never resurrects departed users
+    if cell.member_ids:
+        leader_exists = any(str(m).strip().lower() == str(cell.leader_id).strip().lower() for m in cell.member_ids)
+        if not leader_exists:
+            cell.leader_id = str(cell.member_ids[0])
+            leader_user = await get_user_safely(cell.leader_id)
+            if leader_user and leader_user.name:
                 cell.leader_name = leader_user.name
-        if cell.leader_id not in cell.member_ids:
-            cell.member_ids.append(cell.leader_id)
+        else:
+            leader_user = await get_user_safely(cell.leader_id)
+            if leader_user:
+                cell.leader_id = str(leader_user.id)
+                if leader_user.name:
+                    cell.leader_name = leader_user.name
 
     seen_user_ids = set()
     canonical_member_ids = []

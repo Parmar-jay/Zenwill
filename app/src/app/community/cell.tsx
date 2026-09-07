@@ -394,7 +394,9 @@ export default function SpartanCellScreen() {
     setCustomDialog({
       visible: true,
       title: 'Leave Accountability Squad',
-      message: 'Are you sure you want to depart this squad? Your streak will no longer contribute to the collective total.',
+      message: isLeader && dedupedMembers.length > 1
+        ? 'As Leader, departing this squad will transfer leadership to the next highest-streak warrior. Your streak will no longer contribute to the collective total.'
+        : 'Are you sure you want to depart this squad? Your streak will no longer contribute to the collective total.',
       type: 'danger',
       confirmText: 'Leave Squad',
       cancelText: 'Cancel',
@@ -402,11 +404,14 @@ export default function SpartanCellScreen() {
         triggerHaptic('heavy');
         setActionLoading(true);
         setIsLeaving(true);
+        // Immediately unbind myCell so the index view is displayed right away
+        useSpartanStore.setState({ myCell: null });
         try {
           await leaveCell();
           fetchPublicCells().catch(() => {});
+          fetchMyJoinRequests().catch(() => {});
         } catch (err: any) {
-          // silent fallback
+          useSpartanStore.setState({ myCell: null });
         } finally {
           setActionLoading(false);
           setIsLeaving(false);
@@ -428,27 +433,17 @@ export default function SpartanCellScreen() {
         triggerHaptic('heavy');
         setActionLoading(true);
         setIsLeaving(true);
+        useSpartanStore.setState({ myCell: null });
         try {
           await deleteCell();
           fetchPublicCells().catch(() => {});
-          setCustomDialog({
-            visible: true,
-            title: 'Cell Disbanded',
-            message: 'The accountability cell has been dissolved.',
-            type: 'info',
-            confirmText: 'OK',
-          });
+          fetchMyJoinRequests().catch(() => {});
         } catch (err: any) {
-          setCustomDialog({
-            visible: true,
-            title: 'Error',
-            message: err?.response?.data?.detail || err?.detail || 'Could not disband cell.',
-            type: 'danger',
-            confirmText: 'Dismiss',
-          });
+          useSpartanStore.setState({ myCell: null });
         } finally {
           setActionLoading(false);
           setIsLeaving(false);
+          setCustomDialog(null);
         }
       },
     });
@@ -959,36 +954,36 @@ export default function SpartanCellScreen() {
               </View>
             </View>
 
-            {/* Action Buttons: Leader Disband vs Member Depart */}
+            {/* Action Buttons: Leave Squad (available for all) & Leader Disband */}
             <View style={styles.cellFooterActions}>
-              {isLeader ? (
+              <TouchableOpacity
+                style={[styles.leaveBtn, (isLeaving || actionLoading) && styles.leaveBtnLoading]}
+                activeOpacity={0.7}
+                onPress={handleLeaveCell}
+                disabled={actionLoading || isLeaving}
+              >
+                {isLeaving ? (
+                  <View style={styles.btnLoadingRow}>
+                    <ActivityIndicator size="small" color="#EF4444" />
+                    <ThemedText style={[styles.leaveBtnText, { color: '#EF4444' }]}>Departing Squad...</ThemedText>
+                  </View>
+                ) : (
+                  <>
+                    <Ionicons name="exit-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
+                    <ThemedText style={styles.leaveBtnText}>Leave Accountability Squad</ThemedText>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {isLeader && (
                 <TouchableOpacity
                   style={styles.disbandBtn}
                   activeOpacity={0.7}
                   onPress={handleDeleteCell}
-                  disabled={actionLoading}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#EF4444" style={{ marginRight: 6 }} />
-                  <ThemedText style={styles.disbandBtnText}>Disband Accountability Cell (Leader)</ThemedText>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.leaveBtn, (isLeaving || actionLoading) && styles.leaveBtnLoading]}
-                  activeOpacity={0.7}
-                  onPress={handleLeaveCell}
                   disabled={actionLoading || isLeaving}
                 >
-                  {isLeaving ? (
-                    <View style={styles.btnLoadingRow}>
-                      <ActivityIndicator size="small" color="#EF4444" />
-                      <ThemedText style={[styles.leaveBtnText, { color: '#EF4444' }]}>Leaving Squad...</ThemedText>
-                    </View>
-                  ) : (
-                    <>
-                      <Ionicons name="exit-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
-                      <ThemedText style={styles.leaveBtnText}>Leave Accountability Cell</ThemedText>
-                    </>
-                  )}
+                  <Ionicons name="trash-outline" size={15} color="#94A3B8" style={{ marginRight: 6 }} />
+                  <ThemedText style={styles.disbandBtnText}>Disband Squad (Leader)</ThemedText>
                 </TouchableOpacity>
               )}
             </View>
@@ -2088,35 +2083,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.35)',
-  },
-  disbandBtnText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#EF4444',
-  },
-  leaveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderRadius: 14,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  leaveBtnLoading: {
-    borderColor: 'rgba(239, 68, 68, 0.45)',
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-  },
-  leaveBtnText: {
-    fontSize: 13,
+  disbandBtnText: {
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#94A3B8',
+  },
+  leaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+    marginBottom: 8,
+  },
+  leaveBtnLoading: {
+    borderColor: 'rgba(239, 68, 68, 0.65)',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  leaveBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#EF4444',
   },
   unaffiliatedHero: {
     alignItems: 'center',

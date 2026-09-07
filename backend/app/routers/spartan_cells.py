@@ -830,69 +830,87 @@ async def get_my_spartan_cell(
 async def leave_spartan_cell(
     current_user: User = Depends(get_current_user),
 ):
-    """Leave current Spartan Cell. If leader, transfers leadership to highest streak warrior or dissolves empty cell."""
-    user_id_str = str(current_user.id)
+    """Leave current Spartan Cell. If leader, transfers leadership to next warrior or dissolves empty cell."""
+    user_id_str = str(current_user.id).strip()
     user_email = (current_user.email or "").strip().lower()
+    raw_email = (current_user.email or "").strip()
+    user_name = (current_user.name or "").strip().lower()
+
+    leaving_identifiers = {user_id_str.lower(), user_email}
+    if user_name:
+        leaving_identifiers.add(user_name)
+
+    def is_leaving_user(val) -> bool:
+        if not val:
+            return False
+        return str(val).strip().lower() in leaving_identifiers
 
     query = {
         "$or": [
             {"member_ids": user_id_str},
+            {"member_ids": user_email},
+            {"member_ids": raw_email},
             {"leader_id": user_id_str},
+            {"leader_id": user_email},
+            {"leader_id": raw_email},
+            {"members.user_id": user_id_str},
+            {"members.email": user_email},
         ]
     }
-    if user_email:
-        query["$or"].extend([
-            {"member_ids": user_email},
-            {"member_ids": current_user.email},
-            {"leader_id": user_email},
-            {"leader_id": current_user.email},
-        ])
 
-    cell = await SpartanCell.find_one(query)
-    if not cell:
+    cells = await SpartanCell.find(query).to_list()
+    if not cells:
         return {"status": "success", "message": "Not in any cell"}
 
-    cell.member_ids = [
-        m for m in cell.member_ids
-        if m != user_id_str and (not user_email or (m.lower() != user_email and m != current_user.email))
-    ]
+    for cell in cells:
+        # 1. Filter out leaving user from member_ids, co_leader_ids, members
+        cell.member_ids = [m for m in (cell.member_ids or []) if not is_leaving_user(m)]
+        cell.co_leader_ids = [cid for cid in (getattr(cell, "co_leader_ids", []) or []) if not is_leaving_user(cid)]
+        cell.members = [
+            m for m in (cell.members or [])
+            if not is_leaving_user(m.get("user_id")) and not is_leaving_user(m.get("email"))
+        ]
 
-    if not cell.member_ids:
-        cell_id_str = str(cell.id)
-        await cell.delete()
-        await realtime_bus.broadcast_to_channel(
-            f"cell:{cell_id_str}",
-            {"type": "CELL_DELETED", "cell_id": cell_id_str}
-        )
-        await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
-        await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
-        return {"status": "success", "message": "Spartan Cell disbanded as last warrior departed."}
+        # 2. If no members left in the cell, disband it completely
+        if not cell.member_ids:
+            cell_id_str = str(cell.id)
+            await cell.delete()
+            await realtime_bus.broadcast_to_channel(
+                f"cell:{cell_id_str}",
+                {"type": "CELL_DELETED", "cell_id": cell_id_str}
+            )
+        else:
+            # 3. If the leaving user was the leader, promote the first remaining member
+            if is_leaving_user(cell.leader_id) or not any(str(m).strip().lower() == str(cell.leader_id).strip().lower() for m in cell.member_ids):
+                next_leader_id = cell.member_ids[0]
+                next_leader = await get_user_safely(next_leader_id)
+                cell.leader_id = str(next_leader.id) if next_leader else str(next_leader_id)
+                cell.leader_name = next_leader.name if next_leader and next_leader.name else "Commander"
 
-    # If leader left, promote next member
-    is_leaving_user_leader = (
-        cell.leader_id == user_id_str or
-        (user_email and (cell.leader_id.lower() == user_email or cell.leader_id == current_user.email))
-    )
-    if is_leaving_user_leader:
-        next_leader_id = cell.member_ids[0]
-        next_leader = await get_user_safely(next_leader_id)
-        cell.leader_id = str(next_leader.id) if next_leader else next_leader_id
-        cell.leader_name = next_leader.name if next_leader and next_leader.name else "Commander"
+            updated_cell = await recalculate_cell_stats(cell)
+            summary = _cell_to_summary(updated_cell)
 
-    updated_cell = await recalculate_cell_stats(cell)
-    summary = _cell_to_summary(updated_cell)
+            await realtime_bus.broadcast_to_channel(
+                f"cell:{cell.id}",
+                {
+                    "type": "CELL_UPDATED",
+                    "cell_id": str(cell.id),
+                    "event": "member_left",
+                    "user_id": user_id_str,
+                    "user_email": current_user.email,
+                    "data": summary.model_dump(),
+                }
+            )
 
-    await realtime_bus.broadcast_to_channel(
-        f"cell:{cell.id}",
+    # Broadcast direct message to leaving user's socket so their UI instantly unbinds
+    await realtime_bus.send_to_user(
+        user_id_str,
         {
-            "type": "CELL_UPDATED",
-            "cell_id": str(cell.id),
-            "event": "member_left",
+            "type": "CELL_LEFT",
             "user_id": user_id_str,
-            "user_email": current_user.email,
-            "data": summary.model_dump(),
         }
     )
+
     await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
     await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
 
@@ -903,39 +921,45 @@ async def leave_spartan_cell(
 async def delete_spartan_cell(
     current_user: User = Depends(get_current_user),
 ):
-    """Allows the cell commander/leader to completely disband and delete the Spartan Cell."""
-    user_id_str = str(current_user.id)
+    """Allows the cell commander/leader or sole member to completely disband and delete the Spartan Cell."""
+    user_id_str = str(current_user.id).strip()
     user_email = (current_user.email or "").strip().lower()
+    raw_email = (current_user.email or "").strip()
 
-    leader_or = [{"leader_id": user_id_str}]
-    if user_email:
-        leader_or.extend([{"leader_id": user_email}, {"leader_id": current_user.email}])
+    or_clauses = [
+        {"leader_id": user_id_str},
+        {"leader_id": user_email},
+        {"leader_id": raw_email},
+        {"member_ids": user_id_str},
+        {"member_ids": user_email},
+        {"member_ids": raw_email},
+    ]
 
-    cell = await SpartanCell.find_one({"$or": leader_or})
-    if not cell:
-        member_or = [{"member_ids": user_id_str}]
-        if user_email:
-            member_or.extend([{"member_ids": user_email}, {"member_ids": current_user.email}])
-        cell = await SpartanCell.find_one({"$or": member_or})
-        is_leader = cell and (
-            cell.leader_id == user_id_str or
-            (user_email and (cell.leader_id.lower() == user_email or cell.leader_id == current_user.email))
+    cells = await SpartanCell.find({"$or": or_clauses}).to_list()
+    if not cells:
+        return {"status": "success", "message": "No cell to disband."}
+
+    for cell in cells:
+        cell_id_str = str(cell.id)
+        await cell.delete()
+
+        await realtime_bus.broadcast_to_channel(
+            f"cell:{cell_id_str}",
+            {"type": "CELL_DELETED", "cell_id": cell_id_str}
         )
-        if not cell or not is_leader:
-            raise HTTPException(status_code=403, detail="Only the Spartan Cell Commander can delete this cell.")
 
-    cell_id_str = str(cell.id)
-    cell_name = cell.name
-    await cell.delete()
-
-    await realtime_bus.broadcast_to_channel(
-        f"cell:{cell_id_str}",
-        {"type": "CELL_DELETED", "cell_id": cell_id_str}
+    await realtime_bus.send_to_user(
+        user_id_str,
+        {
+            "type": "CELL_LEFT",
+            "user_id": user_id_str,
+        }
     )
+
     await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
     await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
 
-    return {"status": "success", "message": f"Spartan Cell '{cell_name}' has been disbanded."}
+    return {"status": "success", "message": "Spartan Cell has been disbanded."}
 
 
 @router.get("/leaderboard", response_model=List[SpartanCellSummary])

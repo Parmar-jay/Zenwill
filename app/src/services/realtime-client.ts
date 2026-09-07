@@ -262,12 +262,18 @@ class RealtimeClient {
       useSpartanStore.setState({ myCell: msg.data });
     } else if (type === 'CELL_DELETED') {
       const myCell = useSpartanStore.getState().myCell;
-      if (myCell && (myCell.id === msg.cell_id || myCell.id === msg.data?.id)) {
+      if (!msg.cell_id || (myCell && (myCell.id === msg.cell_id || myCell.id === msg.data?.id))) {
         useSpartanStore.setState({ myCell: null });
         if (msg.cell_id) {
           this.unsubscribe(`cell:${msg.cell_id}`);
         }
       }
+    } else if (type === 'CELL_LEFT') {
+      const myCell = useSpartanStore.getState().myCell;
+      if (myCell?.id) {
+        this.unsubscribe(`cell:${myCell.id}`);
+      }
+      useSpartanStore.setState({ myCell: null });
     } else if (type === 'PUBLIC_CELLS_CHANGED') {
       useSpartanStore.getState().fetchPublicCells().catch(() => {});
     } else if (type === 'LEADERBOARD_UPDATED') {

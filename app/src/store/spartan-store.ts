@@ -335,18 +335,20 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   leaveCell: async () => {
     const seq = ++myCellFetchSeq;
     const priorId = get().myCell?.id;
+    set({ myCell: null, isLoadingCell: false });
+    if (priorId) {
+      try {
+        const { realtimeClient } = require('../services/realtime-client');
+        realtimeClient.unsubscribe(`cell:${priorId}`);
+      } catch {}
+    }
     try {
       await spartanApi.leaveCell();
-      if (priorId) {
-        try {
-          const { realtimeClient } = require('../services/realtime-client');
-          realtimeClient.unsubscribe(`cell:${priorId}`);
-        } catch {}
-      }
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
       set({ myCell: null, isLoadingCell: false });
     } catch (err) {
-      set({ isLoadingCell: false });
+      myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
+      set({ myCell: null, isLoadingCell: false });
       throw err;
     }
   },
@@ -354,18 +356,20 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   deleteCell: async () => {
     const seq = ++myCellFetchSeq;
     const priorId = get().myCell?.id;
+    set({ myCell: null, isLoadingCell: false });
+    if (priorId) {
+      try {
+        const { realtimeClient } = require('../services/realtime-client');
+        realtimeClient.unsubscribe(`cell:${priorId}`);
+      } catch {}
+    }
     try {
       await spartanApi.deleteCell();
-      if (priorId) {
-        try {
-          const { realtimeClient } = require('../services/realtime-client');
-          realtimeClient.unsubscribe(`cell:${priorId}`);
-        } catch {}
-      }
       myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
       set({ myCell: null, isLoadingCell: false });
     } catch (err) {
-      set({ isLoadingCell: false });
+      myCellFetchSeq = Math.max(myCellFetchSeq, seq + 1);
+      set({ myCell: null, isLoadingCell: false });
       throw err;
     }
   },
