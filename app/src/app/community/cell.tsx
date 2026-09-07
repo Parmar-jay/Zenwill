@@ -100,7 +100,6 @@ export default function SpartanCellScreen() {
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [joiningCode, setJoiningCode] = useState<string | null>(null);
   const [isLeaving, setIsLeaving] = useState<boolean>(false);
-  const [nudgeNotice, setNudgeNotice] = useState<string | null>(null);
 
   // Review & member moderation states
   const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
@@ -225,16 +224,9 @@ export default function SpartanCellScreen() {
     setActionLoading(true);
     setJoiningCode(cleanCode);
     try {
-      const res = await requestJoinCell(cleanCode);
+      await requestJoinCell(cleanCode);
       setIsJoinModalVisible(false);
       setJoinCodeInput('');
-      setCustomDialog({
-        visible: true,
-        title: 'Petition Transmitted ⏳',
-        message: res.message || 'Your join petition has been submitted to squad leadership for verification.',
-        type: 'success',
-        confirmText: 'Awaiting Review',
-      });
       fetchMyJoinRequests().catch(() => {});
       fetchPublicCells().catch(() => {});
     } catch (err: any) {
@@ -252,27 +244,13 @@ export default function SpartanCellScreen() {
   };
 
   const handleCancelJoinRequest = (cellCodeOrId: string) => {
-    setCustomDialog({
-      visible: true,
-      title: 'Retract Join Petition',
-      message: 'Are you sure you want to cancel your pending request to join this squad?',
-      type: 'info',
-      confirmText: 'Retract Petition',
-      cancelText: 'Keep Waiting',
-      onConfirm: async () => {
-        triggerHaptic('medium');
-        setActionLoading(true);
-        try {
-          await cancelJoinRequest(cellCodeOrId);
-          setCustomDialog(null);
-          fetchMyJoinRequests().catch(() => {});
-        } catch {
-          setCustomDialog(null);
-        } finally {
-          setActionLoading(false);
-        }
-      },
-    });
+    triggerHaptic('medium');
+    setActionLoading(true);
+    cancelJoinRequest(cellCodeOrId)
+      .catch(() => {})
+      .finally(() => {
+        setActionLoading(false);
+      });
   };
 
   const handleRespondRequest = async (requestId: string, action: 'approve' | 'reject', applicantName: string) => {
@@ -290,13 +268,6 @@ export default function SpartanCellScreen() {
           type: 'info',
           confirmText: 'Understood',
         });
-      } else {
-        setNudgeNotice(
-          action === 'approve'
-            ? `✓ Approved ${applicantName}! Welcome to the squad.`
-            : `✕ Declined petition from ${applicantName}.`
-        );
-        setTimeout(() => setNudgeNotice(null), 4000);
       }
     } catch (err: any) {
       const errorMsg = err?.response?.data?.detail || err?.detail || 'Failed to process request.';
@@ -322,8 +293,6 @@ export default function SpartanCellScreen() {
       await promoteCoLeader(member.user_id);
       setIsMemberModalVisible(false);
       setSelectedMember(null);
-      setNudgeNotice(`Promoted ${member.name} to Squad Co-Leader 🛡️`);
-      setTimeout(() => setNudgeNotice(null), 4000);
     } catch (err: any) {
       setCustomDialog({
         visible: true,
@@ -344,8 +313,6 @@ export default function SpartanCellScreen() {
       await demoteCoLeader(member.user_id);
       setIsMemberModalVisible(false);
       setSelectedMember(null);
-      setNudgeNotice(`Demoted ${member.name} to regular squad member.`);
-      setTimeout(() => setNudgeNotice(null), 4000);
     } catch (err: any) {
       setCustomDialog({
         visible: true,
@@ -375,8 +342,6 @@ export default function SpartanCellScreen() {
           setIsMemberModalVisible(false);
           setSelectedMember(null);
           setCustomDialog(null);
-          setNudgeNotice(`${member.name} has been exiled from the squad.`);
-          setTimeout(() => setNudgeNotice(null), 4000);
         } catch (err: any) {
           setCustomDialog({
             visible: true,
@@ -456,15 +421,11 @@ export default function SpartanCellScreen() {
     const reminderText = `🛡️ Streak Reminder: Hey brother, please complete your daily streak check-in today to hold the line for our Squad!`;
     try {
       // 1. Send backend nudge (creates DM in MongoDB)
-      const msg = await nudgeMember(member.user_id, member.name);
+      await nudgeMember(member.user_id, member.name);
       // 2. Also dispatch via communityApi for instant client sync
       communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => {});
-      setNudgeNotice(msg || `Streak reminder sent to ${member.name}'s DM!`);
-      setTimeout(() => setNudgeNotice(null), 4000);
     } catch {
       communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => {});
-      setNudgeNotice(`Streak reminder sent to ${member.name}'s DM!`);
-      setTimeout(() => setNudgeNotice(null), 4000);
     }
   };
 
@@ -683,13 +644,7 @@ export default function SpartanCellScreen() {
               </View>
             </View>
 
-            {/* Notification Notice */}
-            {nudgeNotice && (
-              <View style={styles.nudgeNoticeBox}>
-                <Ionicons name="checkmark-circle" size={15} color="#10B981" />
-                <ThemedText style={styles.nudgeNoticeText}>{nudgeNotice}</ThemedText>
-              </View>
-            )}
+
 
             {/* Join Petitions Review Section (Leader & Co-Leaders) */}
             {hasManagementRights && myCell.join_requests && myCell.join_requests.length > 0 && (

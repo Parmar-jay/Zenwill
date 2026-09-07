@@ -870,26 +870,39 @@ async def kick_member(
         cell.leader_id == caller_id or
         (caller_email and (cell.leader_id.lower() == caller_email or cell.leader_id == current_user.email))
     )
-    co_leaders = [str(cid).lower() for cid in (getattr(cell, "co_leader_ids", []) or [])]
+    co_leaders = [str(cid).strip().lower() for cid in (getattr(cell, "co_leader_ids", []) or [])]
+    for pm in (cell.members or []):
+        if isinstance(pm, dict) and pm.get("is_co_leader"):
+            if pm.get("user_id"): co_leaders.append(str(pm["user_id"]).strip().lower())
+            if pm.get("email"): co_leaders.append(str(pm["email"]).strip().lower())
+
     is_co_leader = caller_id.lower() in co_leaders or (caller_email and caller_email in co_leaders)
 
     if not is_leader and not is_co_leader:
         raise HTTPException(status_code=403, detail="Only the Squad Leader or appointed Co-Leaders have authority to kick members.")
 
-    target_is_leader = cell.leader_id == target_id
+    target_is_leader = (cell.leader_id == target_id or (caller_email and cell.leader_id.lower() == target_id.lower()))
     target_is_co_leader = target_id.lower() in co_leaders
     if is_co_leader and (target_is_leader or target_is_co_leader):
         raise HTTPException(status_code=403, detail="Co-Leaders cannot kick the Squad Leader or fellow Co-Leaders.")
 
-    if target_id not in cell.member_ids:
-        target_user = await get_user_safely(target_id)
-        if target_user and str(target_user.id) in cell.member_ids:
-            target_id = str(target_user.id)
-        else:
-            raise HTTPException(status_code=404, detail="Warrior is not a member of this squad.")
+    target_user = await get_user_safely(target_id)
+    target_clean_ids = {target_id.lower()}
+    if target_user:
+        target_clean_ids.add(str(target_user.id).lower())
+        if target_user.email:
+            target_clean_ids.add(target_user.email.lower())
 
-    cell.member_ids = [m for m in cell.member_ids if m != target_id]
-    cell.co_leader_ids = [cid for cid in (cell.co_leader_ids or []) if cid != target_id]
+    is_in_cell = any(str(m).lower() in target_clean_ids for m in cell.member_ids)
+    if not is_in_cell:
+        raise HTTPException(status_code=404, detail="Warrior is not a member of this squad.")
+
+    cell.member_ids = [m for m in cell.member_ids if str(m).lower() not in target_clean_ids]
+    cell.co_leader_ids = [cid for cid in (cell.co_leader_ids or []) if str(cid).lower() not in target_clean_ids]
+    cell.members = [
+        m for m in (cell.members or [])
+        if str(m.get("user_id", "")).lower() not in target_clean_ids and str(m.get("email", "")).lower() not in target_clean_ids
+    ]
     updated_cell = await recalculate_cell_stats(cell)
     summary = _cell_to_summary(updated_cell, requesting_user_id=caller_id, requesting_user_email=caller_email)
 

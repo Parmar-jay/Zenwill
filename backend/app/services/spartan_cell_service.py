@@ -192,10 +192,10 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
             cell.leader_name = user.name or "Commander"
             cell.leader_id = str(user.id)
 
-        raw_co_leaders = getattr(cell, "co_leader_ids", []) or []
+        raw_co_leaders = [str(cid).strip().lower() for cid in (getattr(cell, "co_leader_ids", []) or [])]
         is_co_leader = not is_leader and (
-            str(user.id) in raw_co_leaders or
-            (user.email and user.email.lower() in [c.lower() for c in raw_co_leaders])
+            str(user.id).lower() in raw_co_leaders or
+            (user.email and user.email.lower() in raw_co_leaders)
         )
 
         user_display_name = user.name or (user.email.split("@")[0] if user.email else "Warrior")
@@ -221,10 +221,11 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
         })
 
     # Filter canonical co-leader IDs (must be in members and not leader)
-    cell.co_leader_ids = [
-        cid for cid in (getattr(cell, "co_leader_ids", []) or [])
-        if cid in canonical_member_ids and cid != cell.leader_id
-    ]
+    valid_co_leaders = set()
+    for m in updated_members:
+        if m.get("is_co_leader") and not m.get("is_leader"):
+            valid_co_leaders.add(m["user_id"])
+    cell.co_leader_ids = list(valid_co_leaders)
 
     # Ensure join_requests is initialized
     if not hasattr(cell, "join_requests") or cell.join_requests is None:
