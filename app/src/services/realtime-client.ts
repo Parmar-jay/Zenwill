@@ -178,26 +178,19 @@ class RealtimeClient {
       const currentUserId = authUser?.id ? String(authUser.id) : null;
       const currentUserEmail = authUser?.email ? authUser.email.trim().toLowerCase() : null;
 
-      // Check if current user is actually a member or leader of this cell
-      const members: any[] = Array.isArray(msg.data.members) ? msg.data.members : [];
-      const isUserInCell = members.some((m) => {
-        const mid = m.user_id ? String(m.user_id) : '';
-        const memail = m.email ? String(m.email).trim().toLowerCase() : '';
-        return (currentUserId && mid === currentUserId) || (currentUserEmail && memail === currentUserEmail);
-      }) || (currentUserId && String(msg.data.leader_id) === currentUserId) || (currentUserEmail && msg.data.leader_id?.toLowerCase() === currentUserEmail);
+      // Check if this event explicitly signifies that the current user departed
+      const isCurrentUserDeparted = msg.event === 'member_left' && (
+        (currentUserId && msg.user_id && String(msg.user_id) === currentUserId) ||
+        (currentUserEmail && msg.user_email && String(msg.user_email).trim().toLowerCase() === currentUserEmail)
+      );
 
       const myCell = spartan.myCell;
       const isTargetingMyCell = myCell && (myCell.id === msg.cell_id || myCell.id === msg.data.id || myCell.join_code === msg.data.join_code);
 
-      if (isTargetingMyCell) {
-        if (isUserInCell) {
-          useSpartanStore.setState({ myCell: msg.data });
-        } else {
-          // Current user left or was removed from this cell!
-          useSpartanStore.setState({ myCell: null });
-        }
-      } else if (isUserInCell) {
-        // User joined this cell
+      if (isCurrentUserDeparted) {
+        useSpartanStore.setState({ myCell: null });
+      } else if (isTargetingMyCell) {
+        // Seamlessly update live stats, members, streaks, and shields in real time
         useSpartanStore.setState({ myCell: msg.data });
       }
 
@@ -211,7 +204,7 @@ class RealtimeClient {
       }
     } else if (type === 'CELL_DELETED') {
       const myCell = useSpartanStore.getState().myCell;
-      if (myCell && myCell.id === msg.cell_id) {
+      if (myCell && (myCell.id === msg.cell_id || myCell.id === msg.data?.id)) {
         useSpartanStore.setState({ myCell: null });
       }
     } else if (type === 'PUBLIC_CELLS_CHANGED') {

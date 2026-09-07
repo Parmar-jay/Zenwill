@@ -183,6 +183,7 @@ async def recalculate_cell_stats(cell: SpartanCell) -> SpartanCell:
 
         updated_members.append({
             "user_id": str(user.id),
+            "email": user.email if user and user.email else None,
             "name": user_display_name,
             "streak": user_streak,
             "xp": user_points,

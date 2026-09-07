@@ -35,6 +35,8 @@ interface SpartanState {
   resetSpartanStore: () => void;
 }
 
+let myCellFetchSeq = 0;
+
 export const useSpartanStore = create<SpartanState>((set, get) => ({
   myCell: null,
   activeBattle: null,
@@ -116,11 +118,14 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   },
 
   fetchMyCell: async () => {
+    const seq = ++myCellFetchSeq;
     try {
       const { TokenStorage } = require('../services/api');
       const token = await TokenStorage.getAccessToken();
       if (!token) {
-        set({ isLoadingCell: false });
+        if (seq === myCellFetchSeq) {
+          set({ isLoadingCell: false });
+        }
         return null;
       }
 
@@ -128,6 +133,11 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         set({ isLoadingCell: true });
       }
       const cell = await spartanApi.getMyCell();
+      // If a newer join/leave/create took place while this fetch was in flight, discard this result!
+      if (seq !== myCellFetchSeq) {
+        return get().myCell;
+      }
+
       if (cell && Array.isArray(cell.members)) {
         const seen = new Set<string>();
         cell.members = cell.members.filter((m) => {
@@ -157,7 +167,9 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
       return cell;
     } catch {
-      set({ isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ isLoadingCell: false });
+      }
       return null;
     }
   },
@@ -195,10 +207,13 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   },
 
   createCell: async (name: string, motto: string = 'We hold the line together.', isPublic: boolean = true) => {
+    const seq = ++myCellFetchSeq;
     set({ isLoadingCell: true });
     try {
       const cell = await spartanApi.createCell(name, motto, isPublic);
-      set({ myCell: cell, isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ myCell: cell, isLoadingCell: false });
+      }
       if (cell?.id) {
         try {
           const { realtimeClient } = require('../services/realtime-client');
@@ -207,16 +222,21 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       }
       return cell;
     } catch (err) {
-      set({ isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ isLoadingCell: false });
+      }
       throw err;
     }
   },
 
   joinCell: async (code: string) => {
+    const seq = ++myCellFetchSeq;
     set({ isLoadingCell: true });
     try {
       const cell = await spartanApi.joinCell(code);
-      set({ myCell: cell, isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ myCell: cell, isLoadingCell: false });
+      }
       if (cell?.id) {
         try {
           const { realtimeClient } = require('../services/realtime-client');
@@ -225,12 +245,15 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
       }
       return cell;
     } catch (err) {
-      set({ isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ isLoadingCell: false });
+      }
       throw err;
     }
   },
 
   leaveCell: async () => {
+    const seq = ++myCellFetchSeq;
     const priorId = get().myCell?.id;
     set({ isLoadingCell: true });
     try {
@@ -241,14 +264,19 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
           realtimeClient.unsubscribe(`cell:${priorId}`);
         } catch {}
       }
-      set({ myCell: null, isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ myCell: null, isLoadingCell: false });
+      }
     } catch (err) {
-      set({ isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ isLoadingCell: false });
+      }
       throw err;
     }
   },
 
   deleteCell: async () => {
+    const seq = ++myCellFetchSeq;
     const priorId = get().myCell?.id;
     set({ isLoadingCell: true });
     try {
@@ -259,9 +287,13 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
           realtimeClient.unsubscribe(`cell:${priorId}`);
         } catch {}
       }
-      set({ myCell: null, isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ myCell: null, isLoadingCell: false });
+      }
     } catch (err) {
-      set({ isLoadingCell: false });
+      if (seq === myCellFetchSeq) {
+        set({ isLoadingCell: false });
+      }
       throw err;
     }
   },

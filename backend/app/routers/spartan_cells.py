@@ -122,6 +122,7 @@ async def create_spartan_cell(
 
     leader_member = {
         "user_id": user_id_str,
+        "email": current_user.email,
         "name": user_name,
         "streak": user_streak,
         "xp": current_user.total_points or 100,
