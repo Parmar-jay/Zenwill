@@ -79,7 +79,11 @@ class SpartanCellSummary(BaseModel):
     members: List[Dict[str, Any]] = []
 
 
-def _cell_to_summary(c: SpartanCell) -> SpartanCellSummary:
+def _cell_to_summary(
+    c: SpartanCell,
+    requesting_user_id: Optional[str] = None,
+    requesting_user_email: Optional[str] = None,
+) -> SpartanCellSummary:
     seen = set()
     deduped_members = []
     for m in (c.members or []):
@@ -90,6 +94,28 @@ def _cell_to_summary(c: SpartanCell) -> SpartanCellSummary:
         elif not uid:
             deduped_members.append(m)
 
+    raw_reqs = getattr(c, "join_requests", []) or []
+    visible_reqs = []
+
+    if requesting_user_id or requesting_user_email:
+        req_id_str = str(requesting_user_id or "").strip().lower()
+        req_email_str = str(requesting_user_email or "").strip().lower()
+
+        leader_id_str = str(c.leader_id or "").strip().lower()
+        co_leaders = [str(cid).strip().lower() for cid in (getattr(c, "co_leader_ids", []) or [])]
+
+        is_leader = (
+            (req_id_str and req_id_str == leader_id_str) or
+            (req_email_str and req_email_str == leader_id_str)
+        )
+        is_co_leader = (
+            (req_id_str and req_id_str in co_leaders) or
+            (req_email_str and req_email_str in co_leaders)
+        )
+
+        if is_leader or is_co_leader:
+            visible_reqs = raw_reqs
+
     return SpartanCellSummary(
         id=str(c.id),
         name=c.name,
@@ -98,7 +124,7 @@ def _cell_to_summary(c: SpartanCell) -> SpartanCellSummary:
         leader_id=c.leader_id,
         leader_name=c.leader_name,
         co_leader_ids=getattr(c, "co_leader_ids", []) or [],
-        join_requests=getattr(c, "join_requests", []) or [],
+        join_requests=visible_reqs,
         member_count=len(deduped_members),
         max_members=c.max_members,
         total_streak=c.total_streak,
@@ -180,7 +206,7 @@ async def create_spartan_cell(
     )
     await cell.insert()
     updated_cell = await recalculate_cell_stats(cell)
-    summary = _cell_to_summary(updated_cell)
+    summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=current_user.email)
 
     # Broadcast real-time creation event
     await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
@@ -214,7 +240,7 @@ async def join_spartan_cell(
 
     if user_id_str in cell.member_ids or (current_user.email and current_user.email in cell.member_ids):
         # Already member
-        return _cell_to_summary(await recalculate_cell_stats(cell))
+        return _cell_to_summary(await recalculate_cell_stats(cell), requesting_user_id=user_id_str, requesting_user_email=current_user.email)
 
     # Check maximum capacity
     if len(cell.member_ids or []) >= (cell.max_members or 20):
@@ -275,7 +301,7 @@ async def join_spartan_cell(
     if user_id_str not in cell.member_ids:
         cell.member_ids.append(user_id_str)
     updated_cell = await recalculate_cell_stats(cell)
-    summary = _cell_to_summary(updated_cell)
+    summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=current_user.email)
 
     # Sub-second real-time broadcast to all members in this cell!
     await realtime_bus.broadcast_to_channel(
@@ -301,11 +327,11 @@ async def request_join_spartan_cell(
     payload: RequestJoinCellRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Submit an official Join Request to the Leader & Co-Leaders of a Spartan Cell."""
+    """Submit an official Join Request to the Leader & Co-Leaders of a Spartan Cell. Users can apply to N cells while unattached."""
     user_id_str = str(current_user.id).strip()
     user_email = (current_user.email or "").strip().lower()
 
-    # 1. Check if user is already in a squad cell
+    # 1. Check if user is already an active member of ANY squad cell
     existing = await SpartanCell.find_one({
         "$or": [
             {"member_ids": user_id_str},
@@ -342,26 +368,19 @@ async def request_join_spartan_cell(
     if len(cell.member_ids or []) >= (cell.max_members or 20):
         raise HTTPException(status_code=400, detail="This Accountability Squad has reached maximum member capacity (20 warriors).")
 
-    # 2. Check if user ALREADY has a pending join request in ANY squad cell
-    existing_request_cell = await SpartanCell.find_one({
-        "$or": [
-            {"join_requests.user_id": user_id_str},
-            {"join_requests.user_email": user_email},
-        ]
-    })
-    if existing_request_cell:
-        if str(existing_request_cell.id) == str(cell.id) or existing_request_cell.join_code == cell.join_code:
+    # 2. Check if user already submitted a join request to THIS specific cell
+    if hasattr(cell, "join_requests") and cell.join_requests:
+        already_requested = any(
+            r.get("user_id") == user_id_str or (user_email and r.get("user_email") == user_email)
+            for r in cell.join_requests
+        )
+        if already_requested:
             return {
                 "status": "pending",
-                "message": f"Your join request is already pending review by the Commander of '{cell.name}'.",
+                "message": f"Your join request is already pending review by the leadership of '{cell.name}'.",
                 "cell_id": str(cell.id),
                 "join_code": cell.join_code,
             }
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"You already have a pending join petition for '{existing_request_cell.name}'. Please cancel your existing petition before applying to another squad."
-            )
 
     if not hasattr(cell, "join_requests") or cell.join_requests is None:
         cell.join_requests = []
@@ -385,11 +404,20 @@ async def request_join_spartan_cell(
     cell.join_requests.append(req_item)
     cell.updated_at = datetime.utcnow()
     await cell.save()
-    summary = _cell_to_summary(cell)
+
+    # Real-time notification broadcast to cell members
+    await realtime_bus.broadcast_to_channel(
+        f"cell:{cell.id}",
+        {
+            "type": "JOIN_REQUEST_RECEIVED",
+            "cell_id": str(cell.id),
+            "applicant_name": user_name,
+        }
+    )
 
     return {
         "status": "pending",
-        "message": f"Join request sent! The Commander of '{cell.name}' will review your admission.",
+        "message": f"Join request sent! The leadership of '{cell.name}' will review your admission.",
         "cell_id": str(cell.id),
         "join_code": cell.join_code,
     }
@@ -448,7 +476,7 @@ async def respond_join_request(
     payload: RespondJoinRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Leader or Co-Leader approves (right) or rejects (wrong) an incoming squad join request."""
+    """Leader or Co-Leader approves or rejects an incoming squad join request."""
     user_id_str = str(current_user.id).strip()
     user_email = (current_user.email or "").strip().lower()
 
@@ -494,12 +522,55 @@ async def respond_join_request(
         cell.join_requests = [r for r in reqs if r.get("id") != target_req.get("id") and r.get("user_id") != applicant_id]
         cell.updated_at = datetime.utcnow()
         await cell.save()
-        summary = _cell_to_summary(cell)
+        summary = _cell_to_summary(cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
         return {"status": "rejected", "message": f"Join request from {applicant_name} was declined.", "data": summary.model_dump()}
 
     elif payload.action == "approve":
         if len(cell.member_ids or []) >= (cell.max_members or 20):
             raise HTTPException(status_code=400, detail="Squad has reached maximum capacity (20 warriors).")
+
+        # Check if the applicant has ALREADY joined another cell
+        applicant_in_cell_query = {
+            "$or": [
+                {"member_ids": applicant_id},
+                {"leader_id": applicant_id},
+            ]
+        }
+        if applicant_email:
+            applicant_in_cell_query["$or"].extend([
+                {"member_ids": applicant_email},
+                {"leader_id": applicant_email},
+            ])
+        already_in_cell = await SpartanCell.find_one(applicant_in_cell_query)
+
+        if already_in_cell and str(already_in_cell.id) != str(cell.id):
+            # Remove applicant's petition from target cell
+            cell.join_requests = [
+                r for r in (cell.join_requests or [])
+                if r.get("id") != target_req.get("id") and r.get("user_id") != applicant_id and (not applicant_email or r.get("user_email") != applicant_email)
+            ]
+            cell.updated_at = datetime.utcnow()
+            await cell.save()
+
+            # Clean up applicant's pending requests from all other cells as well
+            try:
+                applicant_clauses = [{"join_requests.user_id": applicant_id}]
+                if applicant_email:
+                    applicant_clauses.append({"join_requests.user_email": applicant_email})
+                all_requested_cells = await SpartanCell.find({"$or": applicant_clauses}).to_list()
+                for arc in all_requested_cells:
+                    arc.join_requests = [
+                        r for r in (arc.join_requests or [])
+                        if r.get("user_id") != applicant_id and (not applicant_email or r.get("user_email") != applicant_email)
+                    ]
+                    await arc.save()
+            except Exception:
+                pass
+
+            raise HTTPException(
+                status_code=400,
+                detail=f"{applicant_name} has already joined another Spartan Cell ('{already_in_cell.name}'). Their petition has been automatically cleared from your queue."
+            )
 
         # 1. Clean up applicant's pending requests from ALL cells in MongoDB
         try:
@@ -547,9 +618,9 @@ async def respond_join_request(
             if r.get("id") != target_req.get("id") and r.get("user_id") != applicant_id and (not applicant_email or r.get("user_email") != applicant_email)
         ]
 
-        # 4. Recalculate cell stats (which builds applicant member dict into cell.members)
+        # 4. Recalculate cell stats
         updated_cell = await recalculate_cell_stats(cell)
-        summary = _cell_to_summary(updated_cell)
+        summary = _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
         return {"status": "approved", "message": f"{applicant_name} inducted into {cell.name}!", "data": summary.model_dump()}
 
     else:
@@ -592,7 +663,7 @@ async def promote_co_leader(
         cell.co_leader_ids.append(target_id)
 
     updated_cell = await recalculate_cell_stats(cell)
-    summary = _cell_to_summary(updated_cell)
+    summary = _cell_to_summary(updated_cell, requesting_user_id=caller_id, requesting_user_email=caller_email)
 
     await realtime_bus.send_to_user(
         target_id,
@@ -624,6 +695,7 @@ async def demote_co_leader(
 ):
     """Leader revokes Co-Leader status from a squad member."""
     caller_id = str(current_user.id)
+    caller_email = (current_user.email or "").strip().lower()
     target_id = payload.target_user_id.strip()
 
     cell = await SpartanCell.find_one({
@@ -637,7 +709,7 @@ async def demote_co_leader(
 
     cell.co_leader_ids = [cid for cid in (getattr(cell, "co_leader_ids", []) or []) if cid != target_id]
     updated_cell = await recalculate_cell_stats(cell)
-    summary = _cell_to_summary(updated_cell)
+    summary = _cell_to_summary(updated_cell, requesting_user_id=caller_id, requesting_user_email=caller_email)
 
     await realtime_bus.send_to_user(
         target_id,
@@ -711,7 +783,7 @@ async def kick_member(
     cell.member_ids = [m for m in cell.member_ids if m != target_id]
     cell.co_leader_ids = [cid for cid in (cell.co_leader_ids or []) if cid != target_id]
     updated_cell = await recalculate_cell_stats(cell)
-    summary = _cell_to_summary(updated_cell)
+    summary = _cell_to_summary(updated_cell, requesting_user_id=caller_id, requesting_user_email=caller_email)
 
     # Real-time event directly to kicked user
     await realtime_bus.send_to_user(
@@ -785,7 +857,7 @@ async def get_my_spartan_cell(
     if not is_user_in_cell(updated_cell):
         return None
 
-    return _cell_to_summary(updated_cell)
+    return _cell_to_summary(updated_cell, requesting_user_id=user_id_str, requesting_user_email=user_email)
 
 
 @router.post("/leave")
