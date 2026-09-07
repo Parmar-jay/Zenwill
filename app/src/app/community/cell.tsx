@@ -120,16 +120,8 @@ export default function SpartanCellScreen() {
   useEffect(() => {
     loadData();
     realtimeClient.subscribe('public_cells');
-    const unsub = realtimeClient.on('CELL_UPDATED', (payload) => {
-      if (payload?.data) {
-        useSpartanStore.setState({ myCell: payload.data });
-      } else {
-        fetchMyCell().catch(() => {});
-      }
-    });
 
     return () => {
-      unsub();
       realtimeClient.unsubscribe('public_cells');
     };
   }, [loadData]);
@@ -181,13 +173,6 @@ export default function SpartanCellScreen() {
       await createCell(newCellName.trim(), newCellMotto.trim());
       setIsCreateModalVisible(false);
       setNewCellName('');
-      setCustomDialog({
-        visible: true,
-        title: 'Accountability Cell Formed',
-        message: 'Your accountability cell has been established. Share your join code with fellow members to begin building collective retention!',
-        type: 'success',
-        confirmText: 'View Dashboard',
-      });
     } catch (err: any) {
       setCustomDialog({
         visible: true,
@@ -223,13 +208,6 @@ export default function SpartanCellScreen() {
       await joinCell(cleanCode);
       setIsJoinModalVisible(false);
       setJoinCodeInput('');
-      setCustomDialog({
-        visible: true,
-        title: 'Squad Joined',
-        message: 'You are now an active member of this Accountability Squad. Your daily retention now strengthens the collective squad shield.',
-        type: 'success',
-        confirmText: 'Enter Squad',
-      });
     } catch (err: any) {
       setCustomDialog({
         visible: true,

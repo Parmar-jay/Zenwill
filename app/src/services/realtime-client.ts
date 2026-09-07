@@ -6,6 +6,7 @@
 import { BASE_URL, TokenStorage } from './api';
 import { useSpartanStore } from '../store/spartan-store';
 import { useUnreadStore } from '../store/unread-store';
+import { useAuthStore } from '../store/auth-store';
 
 export type RealtimeEventCallback = (payload: any) => void;
 
@@ -173,10 +174,33 @@ class RealtimeClient {
     // 1. Dispatch to Spartan Store for instant sub-second UI updates
     if (type === 'CELL_UPDATED' && msg.data) {
       const spartan = useSpartanStore.getState();
+      const authUser = useAuthStore.getState().user;
+      const currentUserId = authUser?.id ? String(authUser.id) : null;
+      const currentUserEmail = authUser?.email ? authUser.email.trim().toLowerCase() : null;
+
+      // Check if current user is actually a member or leader of this cell
+      const members: any[] = Array.isArray(msg.data.members) ? msg.data.members : [];
+      const isUserInCell = members.some((m) => {
+        const mid = m.user_id ? String(m.user_id) : '';
+        const memail = m.email ? String(m.email).trim().toLowerCase() : '';
+        return (currentUserId && mid === currentUserId) || (currentUserEmail && memail === currentUserEmail);
+      }) || (currentUserId && String(msg.data.leader_id) === currentUserId) || (currentUserEmail && msg.data.leader_id?.toLowerCase() === currentUserEmail);
+
       const myCell = spartan.myCell;
-      if (myCell && (myCell.id === msg.cell_id || myCell.id === msg.data.id || myCell.join_code === msg.data.join_code)) {
+      const isTargetingMyCell = myCell && (myCell.id === msg.cell_id || myCell.id === msg.data.id || myCell.join_code === msg.data.join_code);
+
+      if (isTargetingMyCell) {
+        if (isUserInCell) {
+          useSpartanStore.setState({ myCell: msg.data });
+        } else {
+          // Current user left or was removed from this cell!
+          useSpartanStore.setState({ myCell: null });
+        }
+      } else if (isUserInCell) {
+        // User joined this cell
         useSpartanStore.setState({ myCell: msg.data });
       }
+
       // Update cell in leaderboard if visible
       if (spartan.cellLeaderboard.some((c) => c.id === msg.cell_id || c.id === msg.data.id)) {
         useSpartanStore.setState({

@@ -193,21 +193,56 @@ async def join_spartan_cell(
         return _cell_to_summary(await recalculate_cell_stats(cell))
 
     # Remove user from any prior cell (if not the target cell)
-    prior_cells = await SpartanCell.find({
+    user_email = (current_user.email or "").strip().lower()
+    prior_query = {
         "$or": [
             {"member_ids": user_id_str},
-            {"member_ids": current_user.email},
+            {"leader_id": user_id_str},
         ]
-    }).to_list()
+    }
+    if user_email:
+        prior_query["$or"].extend([
+            {"member_ids": user_email},
+            {"member_ids": current_user.email},
+            {"leader_id": user_email},
+            {"leader_id": current_user.email},
+        ])
+    prior_cells = await SpartanCell.find(prior_query).to_list()
     for pc in prior_cells:
         if str(pc.id) != str(cell.id):
-            pc.member_ids = [m for m in pc.member_ids if m != user_id_str and m != current_user.email]
+            pc.member_ids = [
+                m for m in pc.member_ids
+                if m != user_id_str and (not user_email or (m.lower() != user_email and m != current_user.email))
+            ]
             if not pc.member_ids:
                 await pc.delete()
+                await realtime_bus.broadcast_to_channel(
+                    f"cell:{pc.id}",
+                    {"type": "CELL_DELETED", "cell_id": str(pc.id)}
+                )
             else:
-                if pc.leader_id == user_id_str or pc.leader_id == current_user.email:
-                    pc.leader_id = pc.member_ids[0]
-                await recalculate_cell_stats(pc)
+                is_pc_leader = (
+                    pc.leader_id == user_id_str or
+                    (user_email and (pc.leader_id.lower() == user_email or pc.leader_id == current_user.email))
+                )
+                if is_pc_leader:
+                    next_leader_id = pc.member_ids[0]
+                    next_leader = await get_user_safely(next_leader_id)
+                    pc.leader_id = str(next_leader.id) if next_leader else next_leader_id
+                    pc.leader_name = next_leader.name if next_leader and next_leader.name else "Commander"
+                updated_pc = await recalculate_cell_stats(pc)
+                summary_pc = _cell_to_summary(updated_pc)
+                await realtime_bus.broadcast_to_channel(
+                    f"cell:{pc.id}",
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(pc.id),
+                        "event": "member_left",
+                        "user_id": user_id_str,
+                        "user_email": current_user.email,
+                        "data": summary_pc.model_dump(),
+                    }
+                )
 
     if user_id_str not in cell.member_ids:
         cell.member_ids.append(user_id_str)
@@ -222,6 +257,7 @@ async def join_spartan_cell(
             "cell_id": str(cell.id),
             "event": "member_joined",
             "user_id": user_id_str,
+            "user_email": current_user.email,
             "user_name": current_user.name or "Warrior",
             "data": summary.model_dump(),
         }
@@ -259,28 +295,52 @@ async def leave_spartan_cell(
 ):
     """Leave current Spartan Cell. If leader, transfers leadership to highest streak warrior or dissolves empty cell."""
     user_id_str = str(current_user.id)
-    cell = await SpartanCell.find_one({"member_ids": user_id_str})
+    user_email = (current_user.email or "").strip().lower()
+
+    query = {
+        "$or": [
+            {"member_ids": user_id_str},
+            {"leader_id": user_id_str},
+        ]
+    }
+    if user_email:
+        query["$or"].extend([
+            {"member_ids": user_email},
+            {"member_ids": current_user.email},
+            {"leader_id": user_email},
+            {"leader_id": current_user.email},
+        ])
+
+    cell = await SpartanCell.find_one(query)
     if not cell:
         return {"status": "success", "message": "Not in any cell"}
 
-    cell.member_ids = [m for m in cell.member_ids if m != user_id_str]
+    cell.member_ids = [
+        m for m in cell.member_ids
+        if m != user_id_str and (not user_email or (m.lower() != user_email and m != current_user.email))
+    ]
 
     if not cell.member_ids:
+        cell_id_str = str(cell.id)
         await cell.delete()
         await realtime_bus.broadcast_to_channel(
-            f"cell:{cell.id}",
-            {"type": "CELL_DELETED", "cell_id": str(cell.id)}
+            f"cell:{cell_id_str}",
+            {"type": "CELL_DELETED", "cell_id": cell_id_str}
         )
         await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
         await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
         return {"status": "success", "message": "Spartan Cell disbanded as last warrior departed."}
 
     # If leader left, promote next member
-    if cell.leader_id == user_id_str:
+    is_leaving_user_leader = (
+        cell.leader_id == user_id_str or
+        (user_email and (cell.leader_id.lower() == user_email or cell.leader_id == current_user.email))
+    )
+    if is_leaving_user_leader:
         next_leader_id = cell.member_ids[0]
         next_leader = await get_user_safely(next_leader_id)
-        cell.leader_id = next_leader_id
-        cell.leader_name = next_leader.name if next_leader else "Commander"
+        cell.leader_id = str(next_leader.id) if next_leader else next_leader_id
+        cell.leader_name = next_leader.name if next_leader and next_leader.name else "Commander"
 
     updated_cell = await recalculate_cell_stats(cell)
     summary = _cell_to_summary(updated_cell)
@@ -292,6 +352,7 @@ async def leave_spartan_cell(
             "cell_id": str(cell.id),
             "event": "member_left",
             "user_id": user_id_str,
+            "user_email": current_user.email,
             "data": summary.model_dump(),
         }
     )
@@ -307,10 +368,23 @@ async def delete_spartan_cell(
 ):
     """Allows the cell commander/leader to completely disband and delete the Spartan Cell."""
     user_id_str = str(current_user.id)
-    cell = await SpartanCell.find_one({"$or": [{"leader_id": user_id_str}, {"leader_id": current_user.email}]})
+    user_email = (current_user.email or "").strip().lower()
+
+    leader_or = [{"leader_id": user_id_str}]
+    if user_email:
+        leader_or.extend([{"leader_id": user_email}, {"leader_id": current_user.email}])
+
+    cell = await SpartanCell.find_one({"$or": leader_or})
     if not cell:
-        cell = await SpartanCell.find_one({"member_ids": user_id_str})
-        if not cell or (cell.leader_id != user_id_str and cell.leader_id != current_user.email):
+        member_or = [{"member_ids": user_id_str}]
+        if user_email:
+            member_or.extend([{"member_ids": user_email}, {"member_ids": current_user.email}])
+        cell = await SpartanCell.find_one({"$or": member_or})
+        is_leader = cell and (
+            cell.leader_id == user_id_str or
+            (user_email and (cell.leader_id.lower() == user_email or cell.leader_id == current_user.email))
+        )
+        if not cell or not is_leader:
             raise HTTPException(status_code=403, detail="Only the Spartan Cell Commander can delete this cell.")
 
     cell_id_str = str(cell.id)
