@@ -87,6 +87,7 @@ export class OmSoundManager {
   private webAudio: any = null;
   private isPlaying: boolean = false;
   private isMuted: boolean = false;
+  private defaultVolume: number = 1.0; // 100% full volume by default
   private currentTune: MeditationTune = MEDITATION_TUNES[0];
 
   static getInstance(): OmSoundManager {
@@ -171,7 +172,7 @@ export class OmSoundManager {
               }
             };
           }
-          this.webAudio.volume = this.isMuted ? 0 : 0.85;
+          this.webAudio.volume = this.isMuted ? 0 : this.defaultVolume;
           await this.webAudio.play().catch(() => { });
         }
         return;
@@ -203,7 +204,7 @@ export class OmSoundManager {
           }
         }
 
-        this.audioPlayer.volume = this.isMuted ? 0 : 0.85;
+        this.audioPlayer.volume = this.isMuted ? 0 : this.defaultVolume;
         this.audioPlayer.play();
       } catch (nativeErr) {
         console.log('[OmSoundManager Native Player Info]:', nativeErr);
@@ -239,14 +240,31 @@ export class OmSoundManager {
     return this.isPlaying;
   }
 
+  getVolume(): number {
+    return this.isMuted ? 0 : this.defaultVolume;
+  }
+
+  setVolume(volume: number): void {
+    const clamped = Math.max(0, Math.min(1, volume));
+    this.defaultVolume = clamped;
+    if (!this.isMuted) {
+      if (Platform.OS === 'web' && this.webAudio) {
+        this.webAudio.volume = clamped;
+      }
+      if (this.audioPlayer) {
+        this.audioPlayer.volume = clamped;
+      }
+    }
+  }
+
   async setMuted(muted: boolean): Promise<void> {
     this.isMuted = muted;
     try {
       if (Platform.OS === 'web' && this.webAudio) {
-        this.webAudio.volume = muted ? 0 : 0.85;
+        this.webAudio.volume = muted ? 0 : this.defaultVolume;
       }
       if (this.audioPlayer) {
-        this.audioPlayer.volume = muted ? 0 : 0.85;
+        this.audioPlayer.volume = muted ? 0 : this.defaultVolume;
       }
     } catch (_) { }
   }
