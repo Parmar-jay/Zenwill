@@ -67,8 +67,10 @@ export default function TabsProfileScreen() {
   const [selfControl, setSelfControl] = useState<SelfControl | ''>(onboarding.selfControl || '');
 
   const fetchLiveProfile = async () => {
+    if (!useAuthStore.getState().isAuthenticated) return;
     try {
       await useHabitStore.getState().syncFromDatabase();
+      if (!useAuthStore.getState().isAuthenticated) return;
       const userProf = await profileApi.getMe();
       if (userProf) {
         if (userProf.name) {
@@ -102,7 +104,7 @@ export default function TabsProfileScreen() {
         }
       }
     } catch (e) {
-      console.log('Error fetching live profile:', e);
+      // Silent catch on unauthenticated or network drop
     }
   };
 

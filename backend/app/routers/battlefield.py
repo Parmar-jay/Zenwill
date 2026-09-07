@@ -300,7 +300,22 @@ async def send_battle_message(
 
     # 4. Fetch fresh session to return full accurate state
     updated_session = await BattleSession.find_one({"_id": session_id}) or session
-    return format_battle_response(updated_session, user_id_str)
+    formatted_resp = format_battle_response(updated_session, user_id_str)
+
+    try:
+        from app.services.realtime_bus import realtime_bus
+        await realtime_bus.broadcast_to_channel(
+            "battlefield",
+            {
+                "type": "BATTLE_UPDATED",
+                "session_id": session_id,
+                "data": formatted_resp.model_dump(),
+            }
+        )
+    except Exception:
+        pass
+
+    return formatted_resp
 
 
 @router.post("/heartbeat", response_model=BattleSessionResponse)
@@ -351,7 +366,22 @@ async def send_battle_reaction_rune(
     session.messages = session.messages[-150:]
 
     await session.save()
-    return format_battle_response(session, user_id_str)
+    formatted_resp = format_battle_response(session, user_id_str)
+
+    try:
+        from app.services.realtime_bus import realtime_bus
+        await realtime_bus.broadcast_to_channel(
+            "battlefield",
+            {
+                "type": "BATTLE_UPDATED",
+                "session_id": session_id,
+                "data": formatted_resp.model_dump(),
+            }
+        )
+    except Exception:
+        pass
+
+    return formatted_resp
 
 
 @router.post("/new-session", response_model=BattleSessionResponse)

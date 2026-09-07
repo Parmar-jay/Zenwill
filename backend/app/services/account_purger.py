@@ -100,7 +100,30 @@ async def purge_user_data_permanently(user: User) -> bool:
         except Exception:
             pass
 
-        # 12. Finally, delete the User document itself
+        # 12. Remove from any Spartan Cells and recalculate
+        try:
+            from app.models.spartan_cell import SpartanCell
+            from app.services.spartan_cell_service import recalculate_cell_stats
+            cells = await SpartanCell.find({
+                "$or": [
+                    {"member_ids": user_id_str},
+                    {"member_ids": email_str},
+                    {"leader_id": user_id_str},
+                    {"leader_id": email_str},
+                ]
+            }).to_list()
+            for c in cells:
+                c.member_ids = [m for m in c.member_ids if m != user_id_str and m != email_str]
+                if not c.member_ids:
+                    await c.delete()
+                else:
+                    if c.leader_id == user_id_str or c.leader_id == email_str:
+                        c.leader_id = c.member_ids[0]
+                    await recalculate_cell_stats(c)
+        except Exception:
+            pass
+
+        # 13. Finally, delete the User document itself
         await user.delete()
         print(f"[ZenWill Account Purger] User {user_id_str} ({email_str}) permanently purged from all MongoDB collections.")
         return True

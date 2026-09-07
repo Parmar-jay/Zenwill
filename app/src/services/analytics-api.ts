@@ -279,6 +279,10 @@ export const getCachedRecommendations = (): UserRecommendations | null => {
   return memoryCachedRecommendations;
 };
 
+export const clearAnalyticsCache = () => {
+  memoryCachedRecommendations = null;
+};
+
 export const analyticsApi = {
   getWeeklyInsights(): Promise<WeeklyInsights> {
     return api.get<WeeklyInsights>('/analytics/weekly');

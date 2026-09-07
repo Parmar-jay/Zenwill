@@ -250,7 +250,21 @@ async def recalculate_user_cell_streak(user_id_str: str) -> None:
         
         cells = await SpartanCell.find({"$or": query_clauses}).to_list()
         for cell in cells:
-            await recalculate_cell_stats(cell)
+            updated = await recalculate_cell_stats(cell)
+            try:
+                from app.services.realtime_bus import realtime_bus
+                from app.routers.spartan_cells import _cell_to_summary
+                await realtime_bus.broadcast_to_channel(
+                    f"cell:{cell.id}",
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(cell.id),
+                        "event": "member_streak_updated",
+                        "data": _cell_to_summary(updated).model_dump(),
+                    }
+                )
+            except Exception:
+                pass
     except Exception as e:
         print(f"[SpartanCellRecalculate Error] {e}")
 
@@ -313,7 +327,21 @@ async def broadcast_cell_relapse_support(user_id_str: str, user_name: Optional[s
                 if len(cell.broadcasts) > 20:
                     cell.broadcasts = cell.broadcasts[-20:]
 
-            await recalculate_cell_stats(cell)
+            updated = await recalculate_cell_stats(cell)
+            try:
+                from app.services.realtime_bus import realtime_bus
+                from app.routers.spartan_cells import _cell_to_summary
+                await realtime_bus.broadcast_to_channel(
+                    f"cell:{cell.id}",
+                    {
+                        "type": "CELL_UPDATED",
+                        "cell_id": str(cell.id),
+                        "event": "member_relapsed",
+                        "data": _cell_to_summary(updated).model_dump(),
+                    }
+                )
+            except Exception:
+                pass
 
             # 2. Send supporting DirectMessage to every fellow squad member
             for m_id in cell.member_ids:
@@ -336,6 +364,21 @@ async def broadcast_cell_relapse_support(user_id_str: str, user_name: Optional[s
                         created_at=now_dt,
                     )
                     await dm.insert()
+                    try:
+                        from app.services.realtime_bus import realtime_bus
+                        await realtime_bus.send_to_user(
+                            fellow_id,
+                            {
+                                "type": "DM_RECEIVED",
+                                "sender_id": "system_spartan_cell",
+                                "sender_name": "🛡️ Spartan Cell Brotherhood",
+                                "message": dm.content,
+                                "message_type": "relapse_support_alert",
+                            }
+                        )
+                        await realtime_bus.send_to_user(fellow_id, {"type": "UNREAD_COUNT_CHANGED"})
+                    except Exception:
+                        pass
 
             # 3. Send encouraging recovery message to the relapsed user
             if user:
@@ -353,6 +396,21 @@ async def broadcast_cell_relapse_support(user_id_str: str, user_name: Optional[s
                     created_at=now_dt,
                 )
                 await user_dm.insert()
+                try:
+                    from app.services.realtime_bus import realtime_bus
+                    await realtime_bus.send_to_user(
+                        str(user.id),
+                        {
+                            "type": "DM_RECEIVED",
+                            "sender_id": "system_spartan_cell",
+                            "sender_name": "🛡️ Spartan Cell Brotherhood",
+                            "message": user_dm.content,
+                            "message_type": "relapse_recovery_support",
+                        }
+                    )
+                    await realtime_bus.send_to_user(str(user.id), {"type": "UNREAD_COUNT_CHANGED"})
+                except Exception:
+                    pass
     except Exception as e:
         print(f"[SpartanCellRelapseBroadcast Error]: {e}")
 

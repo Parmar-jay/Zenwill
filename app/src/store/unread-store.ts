@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { communityApi } from '../services/community-api';
+import { TokenStorage } from '../services/api';
 
 interface UnreadState {
   unreadCount: number;
@@ -11,6 +12,7 @@ interface UnreadState {
 
   fetchUnreadCount: () => Promise<number>;
   clearUnreadCount: () => void;
+  resetUnreadStore: () => void;
   startRealtimePolling: () => () => void;
 }
 
@@ -27,6 +29,11 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
 
   fetchUnreadCount: async () => {
     try {
+      const token = await TokenStorage.getAccessToken();
+      if (!token) {
+        return get().unreadCount;
+      }
+
       const data = await communityApi.getDmUnreadCount();
       const count = typeof data?.unread_count === 'number' ? data.unread_count : 0;
       set({
@@ -51,14 +58,39 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
     });
   },
 
+  resetUnreadStore: () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+    pollSubscribersCount = 0;
+    set({
+      unreadCount: 0,
+      latestSenderName: null,
+      latestSenderId: null,
+      latestMessage: null,
+      latestCreatedAt: null,
+      isPolling: false,
+    });
+  },
+
   startRealtimePolling: () => {
     pollSubscribersCount++;
     get().fetchUnreadCount();
 
     if (!pollingInterval) {
-      pollingInterval = setInterval(() => {
+      pollingInterval = setInterval(async () => {
+        const token = await TokenStorage.getAccessToken();
+        if (!token) {
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+          }
+          set({ isPolling: false });
+          return;
+        }
         get().fetchUnreadCount();
-      }, 12000); // 12-second optimized polling for smooth network performance and battery efficiency
+      }, 12000);
       set({ isPolling: true });
     }
 

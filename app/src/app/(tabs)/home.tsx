@@ -219,13 +219,15 @@ export default function HomeScreen() {
   const { unreadCount, latestSenderName, latestSenderId, startRealtimePolling } = useUnreadStore();
 
   useEffect(() => {
+    if (!useAuthStore.getState().isAuthenticated) return;
     const unsub = startRealtimePolling();
     return () => unsub();
   }, [startRealtimePolling]);
 
   useEffect(() => {
+    if (!useAuthStore.getState().isAuthenticated) return;
     checkAndResetMidnight();
-    useHabitStore.getState().syncFromDatabase();
+    useHabitStore.getState().syncFromDatabase().catch(() => { });
     useDailyMissionStore.getState().syncWithBackend().catch(() => { });
     useSpartanStore.getState().fetchMyCell().catch(() => { });
     useSpartanStore.getState().fetchActiveBattle().catch(() => { });
@@ -235,6 +237,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
+      if (!useAuthStore.getState().isAuthenticated) return;
       const now = Date.now();
       if (now - lastFocusSyncRef.current < 5000) {
         return;
@@ -242,7 +245,7 @@ export default function HomeScreen() {
       lastFocusSyncRef.current = now;
 
       checkAndResetMidnight();
-      useHabitStore.getState().syncFromDatabase();
+      useHabitStore.getState().syncFromDatabase().catch(() => { });
       useDailyMissionStore.getState().syncWithBackend().catch(() => { });
       useSpartanStore.getState().fetchMyCell().catch(() => { });
       useSpartanStore.getState().fetchActiveBattle().catch(() => { });

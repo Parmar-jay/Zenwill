@@ -351,3 +351,10 @@ export interface DirectMessageUnreadInfo {
   latest_message?: string | null;
   latest_created_at?: string | null;
 }
+
+export const clearCommunityCache = () => {
+  memoryCachedMessages = [];
+  memoryCachedDmConversations = [];
+  memoryDeletedConvIds.clear();
+  memoryCachedDmHistories.clear();
+};

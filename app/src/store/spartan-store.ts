@@ -32,6 +32,7 @@ interface SpartanState {
   battleHeartbeat: () => Promise<BattleSessionData | null>;
   startNewBattleSession: () => Promise<BattleSessionData | null>;
   completeBattle: (sessionId: string) => Promise<void>;
+  resetSpartanStore: () => void;
 }
 
 export const useSpartanStore = create<SpartanState>((set, get) => ({
@@ -42,6 +43,18 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   isLoadingCell: false,
   isLoadingBattle: false,
   isNudging: false,
+
+  resetSpartanStore: () => {
+    set({
+      myCell: null,
+      activeBattle: null,
+      cellLeaderboard: [],
+      publicCells: [],
+      isLoadingCell: false,
+      isLoadingBattle: false,
+      isNudging: false,
+    });
+  },
 
   updateLocalMemberStreak: (userIdOrEmail: string, newStreak: number) => {
     set((state) => {
@@ -104,6 +117,13 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   fetchMyCell: async () => {
     try {
+      const { TokenStorage } = require('../services/api');
+      const token = await TokenStorage.getAccessToken();
+      if (!token) {
+        set({ isLoadingCell: false });
+        return null;
+      }
+
       if (!get().myCell) {
         set({ isLoadingCell: true });
       }
@@ -126,6 +146,15 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
         }
       }
       set({ myCell: cell, isLoadingCell: false });
+
+      // Automatically register real-time channel subscription for live updates
+      if (cell?.id) {
+        try {
+          const { realtimeClient } = require('../services/realtime-client');
+          realtimeClient.subscribe(`cell:${cell.id}`);
+        } catch {}
+      }
+
       return cell;
     } catch {
       set({ isLoadingCell: false });
@@ -135,6 +164,10 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   fetchActiveBattle: async () => {
     try {
+      const { TokenStorage } = require('../services/api');
+      const token = await TokenStorage.getAccessToken();
+      if (!token) return null;
+
       const battle = await spartanApi.getActiveBattleSession();
       set({ activeBattle: battle });
       return battle;
@@ -166,6 +199,12 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     try {
       const cell = await spartanApi.createCell(name, motto, isPublic);
       set({ myCell: cell, isLoadingCell: false });
+      if (cell?.id) {
+        try {
+          const { realtimeClient } = require('../services/realtime-client');
+          realtimeClient.subscribe(`cell:${cell.id}`);
+        } catch {}
+      }
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -178,6 +217,12 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
     try {
       const cell = await spartanApi.joinCell(code);
       set({ myCell: cell, isLoadingCell: false });
+      if (cell?.id) {
+        try {
+          const { realtimeClient } = require('../services/realtime-client');
+          realtimeClient.subscribe(`cell:${cell.id}`);
+        } catch {}
+      }
       return cell;
     } catch (err) {
       set({ isLoadingCell: false });
@@ -186,9 +231,16 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   },
 
   leaveCell: async () => {
+    const priorId = get().myCell?.id;
     set({ isLoadingCell: true });
     try {
       await spartanApi.leaveCell();
+      if (priorId) {
+        try {
+          const { realtimeClient } = require('../services/realtime-client');
+          realtimeClient.unsubscribe(`cell:${priorId}`);
+        } catch {}
+      }
       set({ myCell: null, isLoadingCell: false });
     } catch (err) {
       set({ isLoadingCell: false });
@@ -197,9 +249,16 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
   },
 
   deleteCell: async () => {
+    const priorId = get().myCell?.id;
     set({ isLoadingCell: true });
     try {
       await spartanApi.deleteCell();
+      if (priorId) {
+        try {
+          const { realtimeClient } = require('../services/realtime-client');
+          realtimeClient.unsubscribe(`cell:${priorId}`);
+        } catch {}
+      }
       set({ myCell: null, isLoadingCell: false });
     } catch (err) {
       set({ isLoadingCell: false });

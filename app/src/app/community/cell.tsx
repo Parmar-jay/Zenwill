@@ -22,6 +22,7 @@ import { useSpartanStore } from '../../store/spartan-store';
 import { useAuthStore } from '../../store/auth-store';
 import { CellMemberItem, SpartanCellData } from '../../services/spartan-api';
 import { communityApi } from '../../services/community-api';
+import { realtimeClient } from '../../services/realtime-client';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -118,11 +119,41 @@ export default function SpartanCellScreen() {
 
   useEffect(() => {
     loadData();
+    realtimeClient.subscribe('public_cells');
+    const unsub = realtimeClient.on('CELL_UPDATED', (payload) => {
+      if (payload?.data) {
+        useSpartanStore.setState({ myCell: payload.data });
+      } else {
+        fetchMyCell().catch(() => {});
+      }
+    });
+
+    return () => {
+      unsub();
+      realtimeClient.unsubscribe('public_cells');
+    };
   }, [loadData]);
+
+  useEffect(() => {
+    if (myCell?.id) {
+      realtimeClient.subscribe(`cell:${myCell.id}`);
+      return () => {
+        realtimeClient.unsubscribe(`cell:${myCell.id}`);
+      };
+    }
+  }, [myCell?.id]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
+      // Fast adaptive poll (3.5s) while screen is actively focused
+      const fastSyncTimer = setInterval(() => {
+        fetchMyCell().catch(() => {});
+      }, 3500);
+
+      return () => {
+        clearInterval(fastSyncTimer);
+      };
     }, [loadData])
   );
 

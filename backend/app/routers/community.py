@@ -661,6 +661,25 @@ async def send_direct_message(
     )
     await new_dm.insert()
 
+    try:
+        from app.services.realtime_bus import realtime_bus
+        dm_event = {
+            "type": "DM_RECEIVED",
+            "message": {
+                "id": str(new_dm.id),
+                "sender_id": new_dm.sender_id,
+                "sender_name": new_dm.sender_name,
+                "receiver_id": new_dm.receiver_id,
+                "content": new_dm.content,
+                "message_type": new_dm.message_type,
+                "created_at": new_dm.created_at.isoformat(),
+            },
+        }
+        await realtime_bus.send_to_user(target_id, dm_event)
+        await realtime_bus.send_to_user(target_id, {"type": "UNREAD_COUNT_CHANGED"})
+    except Exception:
+        pass
+
     return DirectMessageResponse(
         id=str(new_dm.id),
         sender_id=new_dm.sender_id,

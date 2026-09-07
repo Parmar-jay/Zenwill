@@ -24,6 +24,7 @@ import * as Haptics from 'expo-haptics';
 import { journalApi, JournalEntry } from '@/services/journal-api';
 import { useDailyMissionStore } from '@/store/daily-mission-store';
 import { useHabitStore } from '@/store/habit-store';
+import { useAuthStore } from '@/store/auth-store';
 import { PageEntrance } from '@/components/ui/smooth-loader';
 
 
@@ -89,6 +90,10 @@ export default function JournalIndexScreen() {
 
   // Load real database data
   const loadData = async () => {
+    if (!useAuthStore.getState().isAuthenticated) {
+      setIsLoading(false);
+      return;
+    }
     try {
       setIsLoading(true);
       const [userEntriesData, communityData] = await Promise.all([

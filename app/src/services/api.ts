@@ -28,6 +28,13 @@ const REFRESH_KEY = 'zenwill_refresh_token';
 
 let memoryAccessToken: string | null = null;
 let memoryRefreshToken: string | null = null;
+let isLoggingOut = false;
+
+export const setApiLoggingOut = (val: boolean) => {
+    isLoggingOut = val;
+};
+
+export const isApiLoggingOut = () => isLoggingOut;
 
 // Pre-hydrate memory tokens from AsyncStorage immediately
 AsyncStorage.getItem(TOKEN_KEY).then((token) => {
@@ -39,18 +46,21 @@ AsyncStorage.getItem(REFRESH_KEY).then((token) => {
 
 export const TokenStorage = {
     async getAccessToken(): Promise<string | null> {
+        if (isLoggingOut) return null;
         if (memoryAccessToken) return memoryAccessToken;
         const token = await AsyncStorage.getItem(TOKEN_KEY);
         if (token) memoryAccessToken = token;
         return token;
     },
     async getRefreshToken(): Promise<string | null> {
+        if (isLoggingOut) return null;
         if (memoryRefreshToken) return memoryRefreshToken;
         const token = await AsyncStorage.getItem(REFRESH_KEY);
         if (token) memoryRefreshToken = token;
         return token;
     },
     async setTokens(access: string, refresh: string): Promise<void> {
+        isLoggingOut = false;
         memoryAccessToken = access;
         memoryRefreshToken = refresh;
         await AsyncStorage.multiSet([
@@ -59,13 +69,16 @@ export const TokenStorage = {
         ]);
     },
     async setAccessToken(access: string): Promise<void> {
+        isLoggingOut = false;
         memoryAccessToken = access;
         await AsyncStorage.setItem(TOKEN_KEY, access);
     },
     async clearTokens(): Promise<void> {
         memoryAccessToken = null;
         memoryRefreshToken = null;
-        await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY]);
+        try {
+            await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY]);
+        } catch {}
     },
 };
 
@@ -97,6 +110,13 @@ export function invalidateApiCache(pathPrefix?: string) {
             memoryCache.delete(key);
         }
     }
+}
+
+export function clearAllApiMemory() {
+    memoryAccessToken = null;
+    memoryRefreshToken = null;
+    memoryCache.clear();
+    inFlightRequests.clear();
 }
 
 // ── Core Fetch Wrapper ─────────────────────────────────────────────────────
@@ -133,6 +153,10 @@ async function executeFetch<T>(
     requiresAuth: boolean = true,
     timeoutMs: number = 12000
 ): Promise<T> {
+    if (isLoggingOut) {
+        throw { detail: 'Session signed out', status: 401, isLoggedOut: true, silent: true };
+    }
+
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const url = `${BASE_URL}${normalizedPath}`;
     const headers: Record<string, string> = {
@@ -141,7 +165,11 @@ async function executeFetch<T>(
 
     if (requiresAuth) {
         const token = await TokenStorage.getAccessToken();
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (!token) {
+            // Unauthenticated: Avoid doomed calls to backend that cause 401 error popups
+            throw { detail: 'Unauthenticated session', status: 401, isLoggedOut: true, silent: true };
+        }
+        headers['Authorization'] = `Bearer ${token}`;
     }
 
     const controller = new AbortController();
@@ -169,7 +197,7 @@ async function executeFetch<T>(
     }
 
     // Auto-refresh on 401
-    if (response.status === 401 && requiresAuth) {
+    if (response.status === 401 && requiresAuth && !isLoggingOut) {
         if (!isRefreshing) {
             isRefreshing = true;
             const newToken = await refreshAccessToken();
@@ -186,6 +214,7 @@ async function executeFetch<T>(
                     const { useAuthStore } = require('../store/auth-store');
                     useAuthStore.getState().logout();
                 } catch {}
+                throw { detail: 'Session expired', status: 401, isLoggedOut: true, silent: true };
             }
         }
     }
@@ -252,6 +281,10 @@ async function request<T>(
             return data;
         })
         .catch((err) => {
+            // Never return stale data if user is signing out / unauthenticated
+            if (err?.isLoggedOut || err?.silent) {
+                throw err;
+            }
             // Stale-if-error: If network failed or timed out, gracefully return stale cached data if available
             const fallback = memoryCache.get(cacheKey);
             if (fallback && fallback.data) {
@@ -276,6 +309,9 @@ export const api = {
     put: <T>(path: string, body?: any, options?: RequestOptions) => request<T>('PUT', path, body, true, options),
     delete: <T>(path: string, options?: RequestOptions) => request<T>('DELETE', path, undefined, true, options),
     invalidateCache: invalidateApiCache,
+    clearAll: clearAllApiMemory,
+    setLoggingOut: setApiLoggingOut,
+    isLoggingOut: isApiLoggingOut,
     BASE_URL,
 };
 

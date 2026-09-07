@@ -14,6 +14,7 @@ from app.services.spartan_cell_service import (
     get_rank_badge_for_streak,
     get_user_safely,
 )
+from app.services.realtime_bus import realtime_bus
 
 router = APIRouter(prefix="/spartan-cells", tags=["Spartan Cells"])
 
@@ -155,8 +156,13 @@ async def create_spartan_cell(
     )
     await cell.insert()
     updated_cell = await recalculate_cell_stats(cell)
+    summary = _cell_to_summary(updated_cell)
 
-    return _cell_to_summary(updated_cell)
+    # Broadcast real-time creation event
+    await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+    await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
+
+    return summary
 
 
 @router.post("/join", response_model=SpartanCellSummary)
@@ -206,8 +212,24 @@ async def join_spartan_cell(
     if user_id_str not in cell.member_ids:
         cell.member_ids.append(user_id_str)
     updated_cell = await recalculate_cell_stats(cell)
+    summary = _cell_to_summary(updated_cell)
 
-    return _cell_to_summary(updated_cell)
+    # Sub-second real-time broadcast to all members in this cell!
+    await realtime_bus.broadcast_to_channel(
+        f"cell:{cell.id}",
+        {
+            "type": "CELL_UPDATED",
+            "cell_id": str(cell.id),
+            "event": "member_joined",
+            "user_id": user_id_str,
+            "user_name": current_user.name or "Warrior",
+            "data": summary.model_dump(),
+        }
+    )
+    await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+    await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
+
+    return summary
 
 
 @router.get("/my-cell", response_model=Optional[SpartanCellSummary])
@@ -245,6 +267,12 @@ async def leave_spartan_cell(
 
     if not cell.member_ids:
         await cell.delete()
+        await realtime_bus.broadcast_to_channel(
+            f"cell:{cell.id}",
+            {"type": "CELL_DELETED", "cell_id": str(cell.id)}
+        )
+        await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+        await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
         return {"status": "success", "message": "Spartan Cell disbanded as last warrior departed."}
 
     # If leader left, promote next member
@@ -254,7 +282,22 @@ async def leave_spartan_cell(
         cell.leader_id = next_leader_id
         cell.leader_name = next_leader.name if next_leader else "Commander"
 
-    await recalculate_cell_stats(cell)
+    updated_cell = await recalculate_cell_stats(cell)
+    summary = _cell_to_summary(updated_cell)
+
+    await realtime_bus.broadcast_to_channel(
+        f"cell:{cell.id}",
+        {
+            "type": "CELL_UPDATED",
+            "cell_id": str(cell.id),
+            "event": "member_left",
+            "user_id": user_id_str,
+            "data": summary.model_dump(),
+        }
+    )
+    await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+    await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
+
     return {"status": "success", "message": "Successfully departed Spartan Cell."}
 
 
@@ -270,8 +313,17 @@ async def delete_spartan_cell(
         if not cell or (cell.leader_id != user_id_str and cell.leader_id != current_user.email):
             raise HTTPException(status_code=403, detail="Only the Spartan Cell Commander can delete this cell.")
 
+    cell_id_str = str(cell.id)
     cell_name = cell.name
     await cell.delete()
+
+    await realtime_bus.broadcast_to_channel(
+        f"cell:{cell_id_str}",
+        {"type": "CELL_DELETED", "cell_id": cell_id_str}
+    )
+    await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+    await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
+
     return {"status": "success", "message": f"Spartan Cell '{cell_name}' has been disbanded."}
 
 
@@ -322,6 +374,19 @@ async def nudge_cell_member(
             created_at=datetime.utcnow(),
         )
         await new_dm.insert()
+
+        # Real-time sub-second delivery to target member's socket
+        await realtime_bus.send_to_user(
+            target_id,
+            {
+                "type": "DM_RECEIVED",
+                "sender_id": sender_id_str,
+                "sender_name": sender_name,
+                "message": dm_content,
+                "message_type": "system_reminder",
+            }
+        )
+        await realtime_bus.send_to_user(target_id, {"type": "UNREAD_COUNT_CHANGED"})
     except Exception as e:
         print(f"[SpartanCell Nudge DM Error]: {e}")
 
@@ -362,6 +427,19 @@ async def send_strength_to_member(
             created_at=datetime.utcnow(),
         )
         await new_dm.insert()
+
+        # Real-time sub-second delivery to target member's socket
+        await realtime_bus.send_to_user(
+            target_id,
+            {
+                "type": "DM_RECEIVED",
+                "sender_id": sender_id_str,
+                "sender_name": sender_name,
+                "message": msg_content,
+                "message_type": "brotherhood_strength",
+            }
+        )
+        await realtime_bus.send_to_user(target_id, {"type": "UNREAD_COUNT_CHANGED"})
     except Exception as e:
         print(f"[SpartanCell SendStrength Error]: {e}")
 

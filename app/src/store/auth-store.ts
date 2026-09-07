@@ -133,6 +133,10 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
+          try {
+            const { realtimeClient } = require('@/services/realtime-client');
+            realtimeClient.connect().catch(() => {});
+          } catch (e) {}
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Login failed' });
           throw err;
@@ -184,6 +188,10 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
+          try {
+            const { realtimeClient } = require('@/services/realtime-client');
+            realtimeClient.connect().catch(() => {});
+          } catch (e) {}
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Invalid or expired OTP code' });
           throw err;
@@ -213,6 +221,10 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
+          try {
+            const { realtimeClient } = require('@/services/realtime-client');
+            realtimeClient.connect().catch(() => {});
+          } catch (e) {}
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Google authentication failed' });
           throw err;
@@ -220,25 +232,33 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
+        // 1. Flag API client as signing out to immediately suppress any background fetches
+        try {
+          const { api } = require('@/services/api');
+          api.setLoggingOut(true);
+        } catch (e) {}
+
+        // 2. Disconnect real-time WebSocket connection
+        try {
+          const { realtimeClient } = require('@/services/realtime-client');
+          realtimeClient.disconnect();
+        } catch (e) {}
+
+        // 3. Clear auth tokens from memory and storage
         try {
           await authApi.logout();
-        } catch (e) {
-          // Ignore network failure on logout
-        }
+        } catch (e) {}
+
+        // 4. Reset all domain stores
+        try {
+          const { useSpartanStore } = require('@/store/spartan-store');
+          useSpartanStore.getState().resetSpartanStore();
+        } catch (e) {}
 
         try {
-          await AsyncStorage.multiRemove([
-            'zenwill-auth-storage',
-            'zenwill-daily-missions-storage',
-            'zenwill-habit-storage',
-            'zenwill-onboarding-profile',
-            'zenwill_access_token',
-            'zenwill_refresh_token',
-            '@zenwill_meditation_stats',
-          ]);
-        } catch (e) {
-          // Ignore storage removal errors
-        }
+          const { useUnreadStore } = require('@/store/unread-store');
+          useUnreadStore.getState().resetUnreadStore();
+        } catch (e) {}
 
         try {
           useDailyMissionStore.getState().resetMissions();
@@ -252,6 +272,33 @@ export const useAuthStore = create<AuthState>()(
           useOnboardingStore.getState().resetProfile();
         } catch (e) {}
 
+        // 5. Clear all in-memory domain caches
+        try {
+          const { clearCommunityCache } = require('@/services/community-api');
+          clearCommunityCache();
+        } catch (e) {}
+
+        try {
+          const { clearAnalyticsCache } = require('@/services/analytics-api');
+          clearAnalyticsCache();
+        } catch (e) {}
+
+        try {
+          const { meditationApi } = require('@/services/meditation-api');
+          await meditationApi.clearCache();
+        } catch (e) {}
+
+        try {
+          const { api } = require('@/services/api');
+          api.clearAll();
+        } catch (e) {}
+
+        // 6. Thoroughly wipe all local storage persistence so zero user data/metadata remains
+        try {
+          await AsyncStorage.clear();
+        } catch (e) {}
+
+        // 7. Reset auth store state to pristine unauthenticated
         set({
           isAuthenticated: false,
           isEmailVerified: false,
@@ -264,6 +311,12 @@ export const useAuthStore = create<AuthState>()(
           draftName: '',
           draftPassword: '',
         });
+
+        // 8. Restore API loggingOut state
+        try {
+          const { api } = require('@/services/api');
+          api.setLoggingOut(false);
+        } catch (e) {}
       },
 
       completeOnboarding: () => {
@@ -303,6 +356,10 @@ export const useAuthStore = create<AuthState>()(
         if (state?.isAuthenticated) {
           useDailyMissionStore.getState().syncWithBackend().catch(() => {});
           useHabitStore.getState().syncFromDatabase().catch(() => {});
+          try {
+            const { realtimeClient } = require('@/services/realtime-client');
+            realtimeClient.connect().catch(() => {});
+          } catch (e) {}
         }
       },
     }
