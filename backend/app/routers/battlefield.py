@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 import uuid
+import time
 
 from app.models.user import User
 from app.models.battle_session import BattleSession
@@ -45,21 +46,22 @@ class BattleSessionResponse(BaseModel):
     is_joined: bool = False
 
 
-EPOCH_SECONDS = 900  # 15 minutes
+# Constant: 15-Minute Global Battlefield Countdown (900 seconds)
+EPOCH_SECONDS = 900
 
 
 def get_current_epoch_info():
     """
     Computes global wall-clock 15-minute epoch cycle (runs continuously in background).
     Users entering or sending messages never alter the timer.
+    Uses time.time() UTC timestamp to prevent local timezone skew.
     """
-    now = datetime.utcnow()
-    now_ts = int(now.timestamp())
+    now_ts = int(time.time())
     epoch_number = now_ts // EPOCH_SECONDS
     seconds_into_epoch = now_ts % EPOCH_SECONDS
     time_remaining = EPOCH_SECONDS - seconds_into_epoch
-    epoch_start = datetime.utcfromtimestamp(epoch_number * EPOCH_SECONDS)
-    epoch_expires = datetime.utcfromtimestamp((epoch_number + 1) * EPOCH_SECONDS)
+    epoch_start = datetime.fromtimestamp(epoch_number * EPOCH_SECONDS, tz=timezone.utc).replace(tzinfo=None)
+    epoch_expires = datetime.fromtimestamp((epoch_number + 1) * EPOCH_SECONDS, tz=timezone.utc).replace(tzinfo=None)
     return epoch_number, time_remaining, epoch_start, epoch_expires
 
 
@@ -69,10 +71,11 @@ async def purge_old_battlefield_epochs(current_epoch_number: int):
     Ensures that every 15 minutes the old chat is wiped cleanly from the database.
     """
     try:
+        now = datetime.fromtimestamp(time.time(), tz=timezone.utc).replace(tzinfo=None)
         await BattleSession.find({
             "$or": [
                 {"session_number": {"$ne": current_epoch_number}},
-                {"expires_at": {"$lte": datetime.utcnow()}},
+                {"expires_at": {"$lte": now}},
             ]
         }).delete()
     except Exception as e:
@@ -139,7 +142,7 @@ async def get_or_create_battle_session(current_user: User, auto_join: bool = Tru
         participant_found = False
         updated_participants = []
         for p in (session.participants or []):
-            if p.get("user_id") == user_id_str or p.get("name") == user_name:
+            if str(p.get("user_id", "")).strip().lower() == user_id_str.lower():
                 participant_found = True
                 p["last_active_at"] = now.isoformat()
                 p["streak"] = user_streak
@@ -151,8 +154,38 @@ async def get_or_create_battle_session(current_user: User, auto_join: bool = Tru
             if user_id_str not in (session.participant_ids or []):
                 session.participant_ids = (session.participant_ids or []) + [user_id_str]
 
-        session.participants = updated_participants
-        await session.save()
+            join_msg = {
+                "id": str(uuid.uuid4()),
+                "user_id": "system",
+                "user_name": "⚔️ Spartan Commander",
+                "user_streak": 0,
+                "text": f"🛡️ {user_name} joined the Shield Wall!",
+                "is_system": True,
+                "created_at": now.isoformat() + "Z",
+            }
+            session.messages = (session.messages or []) + [join_msg]
+            session.messages = session.messages[-200:]
+            session.participants = updated_participants
+            await session.save()
+
+            try:
+                from app.services.realtime_bus import realtime_bus
+                formatted_resp = format_battle_response(session, user_id_str)
+                await realtime_bus.broadcast_to_channel(
+                    "battlefield",
+                    {
+                        "type": "WARRIOR_JOINED",
+                        "session_id": str(session.id),
+                        "participant": initiator_participant,
+                        "message": join_msg,
+                        "data": formatted_resp.model_dump(),
+                    }
+                )
+            except Exception as broadcast_err:
+                print(f"[Battlefield WS Error] Failed to broadcast join: {broadcast_err}")
+        else:
+            session.participants = updated_participants
+            await session.save()
 
     return session
 
@@ -304,6 +337,16 @@ async def send_battle_message(
 
     try:
         from app.services.realtime_bus import realtime_bus
+        # Fast-path instant message event for sub-millisecond reflection
+        await realtime_bus.broadcast_to_channel(
+            "battlefield",
+            {
+                "type": "BATTLE_MESSAGE_RECEIVED",
+                "session_id": session_id,
+                "message": msg,
+                "data": formatted_resp.model_dump(),
+            }
+        )
         await realtime_bus.broadcast_to_channel(
             "battlefield",
             {
@@ -323,11 +366,32 @@ async def battle_heartbeat(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Lightweight heartbeat endpoint called every few seconds to refresh active warriors presence,
-    retrieve incoming messages, and sync the countdown timer.
+    Lightweight heartbeat endpoint called to refresh active warrior presence and retrieve latest session state.
+    Uses targeted atomic Mongo update to prevent document write contention.
     """
-    session = await get_or_create_battle_session(current_user)
-    return format_battle_response(session, str(current_user.id))
+    now = datetime.utcnow()
+    user_id_str = str(current_user.id)
+    epoch_number, _, _, _ = get_current_epoch_info()
+
+    session = await BattleSession.find_one(
+        BattleSession.session_number == epoch_number,
+        BattleSession.status == "active",
+    )
+    if not session:
+        session = await get_or_create_battle_session(current_user, auto_join=True)
+        return format_battle_response(session, user_id_str)
+
+    # Lightweight atomic update of last_active_at without full document rewrite
+    await BattleSession.get_pymongo_collection().update_one(
+        {"_id": str(session.id), "participants.user_id": user_id_str},
+        {"$set": {"participants.$.last_active_at": now.isoformat()}}
+    )
+    for p in (session.participants or []):
+        if p.get("user_id") == user_id_str:
+            p["last_active_at"] = now.isoformat()
+            break
+
+    return format_battle_response(session, user_id_str)
 
 
 @router.post("/react/{session_id}", response_model=BattleSessionResponse)
@@ -360,7 +424,7 @@ async def send_battle_reaction_rune(
         "user_streak": user_streak,
         "text": payload.rune,
         "is_system": False,
-        "created_at": now.isoformat(),
+        "created_at": now.isoformat() + "Z",
     }
     session.messages.append(msg)
     session.messages = session.messages[-150:]
@@ -370,6 +434,15 @@ async def send_battle_reaction_rune(
 
     try:
         from app.services.realtime_bus import realtime_bus
+        await realtime_bus.broadcast_to_channel(
+            "battlefield",
+            {
+                "type": "BATTLE_MESSAGE_RECEIVED",
+                "session_id": session_id,
+                "message": msg,
+                "data": formatted_resp.model_dump(),
+            }
+        )
         await realtime_bus.broadcast_to_channel(
             "battlefield",
             {
@@ -490,24 +563,59 @@ async def leave_battle_session(
     Removes the user from active participants list when they leave the battlefield
     (either by pressing Back or tapping Done).
     """
+    now = datetime.utcnow()
     user_id_str = str(current_user.id).strip().lower()
-    user_name = (current_user.name or "").strip().lower()
+    raw_user_id = str(current_user.id)
+    display_user_name = current_user.name or "Brother Warrior"
+    user_name_lower = display_user_name.strip().lower()
 
     sessions = await BattleSession.find(
         BattleSession.status == "active",
     ).to_list()
 
     for session in sessions:
-        session.participant_ids = [
-            pid for pid in (session.participant_ids or [])
-            if str(pid).strip().lower() != user_id_str
-        ]
-        session.participants = [
-            p for p in (session.participants or [])
-            if str(p.get("user_id", "")).strip().lower() != user_id_str
-            and (not user_name or str(p.get("name", "")).strip().lower() != user_name)
-        ]
-        await session.save()
+        was_present = any(
+            str(p.get("user_id", "")).strip().lower() == user_id_str
+            for p in (session.participants or [])
+        )
+        if was_present:
+            session.participant_ids = [
+                pid for pid in (session.participant_ids or [])
+                if str(pid).strip().lower() != user_id_str
+            ]
+            session.participants = [
+                p for p in (session.participants or [])
+                if str(p.get("user_id", "")).strip().lower() != user_id_str
+            ]
+            leave_msg = {
+                "id": str(uuid.uuid4()),
+                "user_id": "system",
+                "user_name": "⚔️ Spartan Commander",
+                "user_streak": 0,
+                "text": f"⚔️ {display_user_name} stepped back from the front line.",
+                "is_system": True,
+                "created_at": now.isoformat() + "Z",
+            }
+            session.messages = (session.messages or []) + [leave_msg]
+            session.messages = session.messages[-200:]
+            await session.save()
+
+            try:
+                from app.services.realtime_bus import realtime_bus
+                formatted_resp = format_battle_response(session, raw_user_id)
+                await realtime_bus.broadcast_to_channel(
+                    "battlefield",
+                    {
+                        "type": "WARRIOR_LEFT",
+                        "session_id": str(session.id),
+                        "user_id": raw_user_id,
+                        "user_name": display_user_name,
+                        "message": leave_msg,
+                        "data": formatted_resp.model_dump(),
+                    }
+                )
+            except Exception as broadcast_err:
+                print(f"[Battlefield WS Error] Failed to broadcast leave: {broadcast_err}")
 
     return {"status": "success", "message": "Left battlefield"}
 

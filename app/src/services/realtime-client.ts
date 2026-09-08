@@ -321,6 +321,73 @@ class RealtimeClient {
         this.schedulePublicCellsFetch();
         break;
       }
+      case 'BATTLE_MESSAGE_RECEIVED': {
+        if (data.data) {
+          useSpartanStore.setState({ activeBattle: data.data });
+        } else if (data.message) {
+          useSpartanStore.setState((state) => {
+            if (!state.activeBattle) return state;
+            const currentMsgs = state.activeBattle.messages || [];
+            const exists = currentMsgs.some((m) => m.id === data.message.id);
+            if (exists) return state;
+            return {
+              activeBattle: {
+                ...state.activeBattle,
+                messages: [...currentMsgs, data.message].slice(-150),
+              },
+            };
+          });
+        }
+        break;
+      }
+      case 'WARRIOR_JOINED': {
+        if (data.data) {
+          useSpartanStore.setState({ activeBattle: data.data });
+        } else if (data.participant) {
+          useSpartanStore.setState((state) => {
+            if (!state.activeBattle) return state;
+            const currentParts = state.activeBattle.participants || [];
+            const pId = String(data.participant.user_id || '').toLowerCase();
+            const exists = currentParts.some((p) => String(p.user_id || '').toLowerCase() === pId);
+            const nextParts = exists
+              ? currentParts.map((p) => (String(p.user_id || '').toLowerCase() === pId ? { ...p, ...data.participant } : p))
+              : [...currentParts, data.participant];
+            const nextMsgs = data.message ? [...(state.activeBattle.messages || []), data.message].slice(-150) : state.activeBattle.messages;
+            return {
+              activeBattle: {
+                ...state.activeBattle,
+                participants: nextParts,
+                messages: nextMsgs,
+                participant_count: nextParts.length,
+              },
+            };
+          });
+        }
+        break;
+      }
+      case 'WARRIOR_LEFT': {
+        if (data.data) {
+          useSpartanStore.setState({ activeBattle: data.data });
+        } else if (data.user_id) {
+          useSpartanStore.setState((state) => {
+            if (!state.activeBattle) return state;
+            const lId = String(data.user_id).toLowerCase();
+            const nextParts = (state.activeBattle.participants || []).filter(
+              (p) => String(p.user_id || '').toLowerCase() !== lId
+            );
+            const nextMsgs = data.message ? [...(state.activeBattle.messages || []), data.message].slice(-150) : state.activeBattle.messages;
+            return {
+              activeBattle: {
+                ...state.activeBattle,
+                participants: nextParts,
+                messages: nextMsgs,
+                participant_count: nextParts.length,
+              },
+            };
+          });
+        }
+        break;
+      }
       case 'BATTLE_UPDATED': {
         if (data.data) {
           useSpartanStore.setState({ activeBattle: data.data });

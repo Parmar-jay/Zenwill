@@ -25,6 +25,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { BreathingParticles } from '../../components/BreathingParticles';
 import { OmSoundManager } from '../../utils/audio-player';
 import { BattleMessageItem, BattleParticipant, spartanApi } from '../../services/spartan-api';
+import { realtimeClient } from '../../services/realtime-client';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -109,6 +110,53 @@ export default function SpartanBattlefieldScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
 
+  // ── Merge Server Messages in Strict Chronological Order ──
+  const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
+    if (isExitingRef.current) return;
+    if (!serverMsgs || !Array.isArray(serverMsgs)) return;
+    const cleanServer = serverMsgs.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+
+    setMessages((prev) => {
+      const now = Date.now();
+      const inFlight = prev.filter((p) => {
+        if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
+        const parts = p.id.split('-');
+        const createdTimestamp = Number(parts[1]) || 0;
+        const isRecent = now - createdTimestamp < 15000;
+        const isAlreadyInServer = cleanServer.some(
+          (sm) =>
+            sm.text === p.text &&
+            ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
+             (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
+        );
+        return isRecent && !isAlreadyInServer;
+      });
+
+      const seen = new Set<string>();
+      const combined: BattleMessageItem[] = [];
+
+      for (const sm of cleanServer) {
+        const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(sm);
+        }
+      }
+
+      for (const ifm of inFlight) {
+        const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(ifm);
+        }
+      }
+
+      memoryBattlefieldMessages = combined;
+      AsyncStorage.setItem(BATTLEFIELD_STORAGE_KEY, JSON.stringify(combined.slice(-100))).catch(() => {});
+      return combined;
+    });
+  }, []);
+
   // ── 1. Smooth Fluid Keyboard Listeners ──
   useEffect(() => {
     const showSub = Keyboard.addListener(
@@ -148,13 +196,16 @@ export default function SpartanBattlefieldScreen() {
       })
       .catch(() => {});
 
-    // 2. Initialize battlefield session in background
+    // 2. Initialize battlefield session with instant join registration
     const initBattlefield = async () => {
       try {
         fetchMyCell().catch(() => {});
         let battle = await spartanApi.getActiveBattleSession();
         if (!battle || battle.status !== 'active') {
           battle = await triggerBattleHorn('Global Sanctum');
+        } else {
+          // Immediately join active session to register presence and broadcast join to brothers
+          battle = await spartanApi.joinBattleSession(battle.id).catch(() => battle);
         }
         if (isMounted && battle) {
           useSpartanStore.setState({ activeBattle: battle });
@@ -172,15 +223,56 @@ export default function SpartanBattlefieldScreen() {
 
     initBattlefield();
 
-    // 3. Heartbeat every 4s to sync active warriors and live incoming messages
+    // 3. Direct sub-millisecond WebSocket subscriptions for instant messages, joins, and leaves
+    const unsubMsg = realtimeClient.on('BATTLE_MESSAGE_RECEIVED', (data) => {
+      if (!isMounted || isExitingRef.current) return;
+      if (data.message) {
+        mergeServerMessages([data.message]);
+        requestAnimationFrame(() => scrollViewRef.current?.scrollToEnd({ animated: true }));
+      } else if (data.data?.messages) {
+        mergeServerMessages(data.data.messages);
+      }
+    });
+
+    const unsubJoined = realtimeClient.on('WARRIOR_JOINED', (data) => {
+      if (!isMounted || isExitingRef.current) return;
+      if (data.message) {
+        mergeServerMessages([data.message]);
+      }
+      if (data.data) {
+        useSpartanStore.setState({ activeBattle: data.data });
+      }
+    });
+
+    const unsubLeft = realtimeClient.on('WARRIOR_LEFT', (data) => {
+      if (!isMounted || isExitingRef.current) return;
+      if (data.message) {
+        mergeServerMessages([data.message]);
+      }
+      if (data.data) {
+        useSpartanStore.setState({ activeBattle: data.data });
+      }
+    });
+
+    const unsubUpdated = realtimeClient.on('BATTLE_UPDATED', (data) => {
+      if (!isMounted || isExitingRef.current) return;
+      if (data.data?.messages) {
+        mergeServerMessages(data.data.messages);
+      }
+      if (data.data) {
+        useSpartanStore.setState({ activeBattle: data.data });
+      }
+    });
+
+    // 4. Lightweight 10s passive liveness keeper (WebSockets handle instant messages & presence)
     const pollInterval = setInterval(async () => {
       if (!isMounted || isExitingRef.current) return;
       try {
         await battleHeartbeat();
       } catch (e) {}
-    }, 4000);
+    }, 10000);
 
-    // 4. Sound loop keeper
+    // 5. Sound loop keeper
     const soundInterval = setInterval(() => {
       if (
         soundManagerRef.current &&
@@ -193,13 +285,17 @@ export default function SpartanBattlefieldScreen() {
 
     return () => {
       isMounted = false;
+      unsubMsg();
+      unsubJoined();
+      unsubLeft();
+      unsubUpdated();
       clearInterval(pollInterval);
       clearInterval(soundInterval);
       if (soundManagerRef.current) {
         soundManagerRef.current.stopAndUnload().catch(() => {});
       }
     };
-  }, [triggerBattleHorn, battleHeartbeat, fetchMyCell]);
+  }, [triggerBattleHorn, battleHeartbeat, fetchMyCell, mergeServerMessages]);
 
   const handleToggleMute = useCallback(() => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
@@ -290,53 +386,7 @@ export default function SpartanBattlefieldScreen() {
     setInputText(text);
   };
 
-  // ── 5. Merge Server Messages in Strict Chronological Order ──
-  const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
-    if (isExitingRef.current) return;
-    if (!serverMsgs || !Array.isArray(serverMsgs)) return;
-    const cleanServer = serverMsgs.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
 
-    setMessages((prev) => {
-      const now = Date.now();
-      // Only keep in-flight messages that were sent in the active screen session within the last 15 seconds
-      const inFlight = prev.filter((p) => {
-        if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
-        const parts = p.id.split('-');
-        const createdTimestamp = Number(parts[1]) || 0;
-        const isRecent = now - createdTimestamp < 15000;
-        const isAlreadyInServer = cleanServer.some(
-          (sm) =>
-            sm.text === p.text &&
-            ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
-             (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
-        );
-        return isRecent && !isAlreadyInServer;
-      });
-
-      const seen = new Set<string>();
-      const combined: BattleMessageItem[] = [];
-
-      for (const sm of cleanServer) {
-        const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(sm);
-        }
-      }
-
-      for (const ifm of inFlight) {
-        const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(ifm);
-        }
-      }
-
-      memoryBattlefieldMessages = combined;
-      AsyncStorage.setItem(BATTLEFIELD_STORAGE_KEY, JSON.stringify(combined.slice(-100))).catch(() => {});
-      return combined;
-    });
-  }, []);
 
   // Sync with activeBattle in store
   useEffect(() => {
