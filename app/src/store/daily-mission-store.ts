@@ -19,12 +19,14 @@ export interface DayRecord {
 }
 
 export interface DailyMissionState {
+  userId: string | null;
   currentDate: string; // YYYY-MM-DD
   todayTasks: DailyTasks;
   totalPoints: number; // Non-reversible total streak points
   history: Record<string, DayRecord>; // Key: YYYY-MM-DD
 
   // Actions
+  initUser: (userId: string) => void;
   completeTask: (taskKey: keyof DailyTasks) => void;
   checkAndResetMidnight: () => void;
   getWeeklyStats: () => Array<{ dayName: string; dateStr: string; percent: number; points: number }>;
@@ -45,6 +47,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const useDailyMissionStore = create<DailyMissionState>()(
   persist(
     (set, get) => ({
+      userId: null,
       currentDate: getTodayStr(),
       todayTasks: {
         checkin: false,
@@ -55,6 +58,26 @@ export const useDailyMissionStore = create<DailyMissionState>()(
       },
       totalPoints: 0,
       history: {},
+
+      initUser: (userId: string) => {
+        const currentUserId = get().userId;
+        if (currentUserId !== userId) {
+          set({
+            userId,
+            currentDate: getTodayStr(),
+            todayTasks: {
+              checkin: false,
+              meditation: false,
+              journal: false,
+              coach: false,
+              rescue: false,
+            },
+            totalPoints: 0,
+            history: {},
+          });
+        }
+        get().syncWithBackend().catch(() => {});
+      },
 
       checkAndResetMidnight: () => {
         const today = getTodayStr();
@@ -212,99 +235,78 @@ export const useDailyMissionStore = create<DailyMissionState>()(
         try {
           get().checkAndResetMidnight();
           const today = getTodayStr();
-          const state = get();
-          const updated = { ...state.todayTasks };
-          let changed = false;
 
-          // 1. Direct authoritative status from backend database (cross-verifying all collections)
-          const statusRes = await missionsApi.getTodayTasksStatus().catch(() => null);
-          if (statusRes && statusRes.tasks) {
-            if (statusRes.tasks.checkin !== undefined && statusRes.tasks.checkin !== updated.checkin) {
-              updated.checkin = Boolean(statusRes.tasks.checkin);
-              changed = true;
-            }
-            if (statusRes.tasks.meditation !== undefined && statusRes.tasks.meditation !== updated.meditation) {
-              updated.meditation = Boolean(statusRes.tasks.meditation);
-              changed = true;
-            }
-            if (statusRes.tasks.journal !== undefined && statusRes.tasks.journal !== updated.journal) {
-              updated.journal = Boolean(statusRes.tasks.journal);
-              changed = true;
-            }
-            if (statusRes.tasks.coach !== undefined && statusRes.tasks.coach !== updated.coach) {
-              updated.coach = Boolean(statusRes.tasks.coach);
-              changed = true;
-            }
-            if (statusRes.tasks.rescue !== undefined && statusRes.tasks.rescue !== updated.rescue) {
-              updated.rescue = Boolean(statusRes.tasks.rescue);
-              changed = true;
-            }
+          // Ensure store strictly matches current authenticated user
+          let authUser: any = null;
+          try {
+            const { useAuthStore } = require('./auth-store');
+            authUser = useAuthStore.getState().user;
+          } catch (e) {}
+
+          const authUserId = authUser?.id ? String(authUser.id) : null;
+
+          if (!authUserId) {
+            // Unauthenticated state: wipe any tasks to prevent cross-user leakage
+            set({
+              userId: null,
+              todayTasks: {
+                checkin: false,
+                meditation: false,
+                journal: false,
+                coach: false,
+                rescue: false,
+              },
+            });
+            return;
           }
 
-          // 2. Fetch todays missions from backend DB to reconcile category states
-          const backendMissions = await missionsApi.getTodaysMissions().catch(() => null);
-          if (backendMissions && Array.isArray(backendMissions)) {
-            const checkinCats = ['checkin', 'morning'];
-            const calmCats = ['calm', 'meditation', 'sleep'];
-            const focusCats = ['focus', 'journal', 'reflection'];
-            const purposeCats = ['purpose', 'coach', 'connection'];
-            const rescueCats = ['exercise', 'rescue', 'emergency'];
-
-            backendMissions.forEach((bm) => {
-              if (bm.is_completed) {
-                const c = (bm.category || '').toLowerCase();
-                if (checkinCats.includes(c) && !updated.checkin) { updated.checkin = true; changed = true; }
-                if (calmCats.includes(c) && !updated.meditation) { updated.meditation = true; changed = true; }
-                if (focusCats.includes(c) && !updated.journal) { updated.journal = true; changed = true; }
-                if (purposeCats.includes(c) && !updated.coach) { updated.coach = true; changed = true; }
-                if (rescueCats.includes(c) && !updated.rescue) { updated.rescue = true; changed = true; }
-              }
+          // If the authenticated user is different from the cached user, isolate immediately
+          if (get().userId && get().userId !== authUserId) {
+            set({
+              userId: authUserId,
+              currentDate: today,
+              todayTasks: {
+                checkin: false,
+                meditation: false,
+                journal: false,
+                coach: false,
+                rescue: false,
+              },
+              totalPoints: 0,
+              history: {},
             });
           }
 
-          // 3. Check authStore for verified daily checkin submission for today
-          try {
-            const { useAuthStore } = require('./auth-store');
-            const authUser = useAuthStore.getState().user;
-            const isCheckinSubmittedToday = authUser?.lastCheckinDate === today;
-            if (isCheckinSubmittedToday && !updated.checkin) {
-              updated.checkin = true;
-              changed = true;
-            }
-          } catch (err) {}
+          // 1. Fetch direct authoritative status from backend (strictly verified for this user only)
+          const statusRes = await missionsApi.getTodayTasksStatus().catch(() => null);
+          if (statusRes && statusRes.tasks) {
+            const authoritativeTasks: DailyTasks = {
+              checkin: Boolean(statusRes.tasks.checkin),
+              meditation: Boolean(statusRes.tasks.meditation),
+              journal: Boolean(statusRes.tasks.journal),
+              coach: Boolean(statusRes.tasks.coach),
+              rescue: Boolean(statusRes.tasks.rescue),
+            };
 
-          if (changed) {
-            set({ todayTasks: updated });
+            set({
+              todayTasks: authoritativeTasks,
+              userId: authUserId,
+            });
           }
 
-          // 4. Fetch verified user history from database and merge into local history state
+          // 2. Fetch verified user history from database and populate local history state
           const historyResponse = await missionsApi.getMissionsHistory(14).catch(() => null);
           if (historyResponse && Array.isArray(historyResponse.days)) {
-            const mergedHistory = { ...get().history };
+            const freshHistory: Record<string, DayRecord> = {};
             historyResponse.days.forEach((d) => {
               if (d.date) {
-                const isToday = d.date === today;
-                if (isToday && d.tasks) {
-                  let todayChanged = false;
-                  if (d.tasks.checkin && !updated.checkin) { updated.checkin = true; todayChanged = true; }
-                  if (d.tasks.meditation && !updated.meditation) { updated.meditation = true; todayChanged = true; }
-                  if (d.tasks.journal && !updated.journal) { updated.journal = true; todayChanged = true; }
-                  if (d.tasks.coach && !updated.coach) { updated.coach = true; todayChanged = true; }
-                  if (d.tasks.rescue && !updated.rescue) { updated.rescue = true; todayChanged = true; }
-                  if (todayChanged) {
-                    set({ todayTasks: updated });
-                  }
-                }
-
-                const tasksObj = isToday
-                  ? updated
-                  : {
-                      checkin: Boolean(d.tasks?.checkin),
-                      meditation: Boolean(d.tasks?.meditation),
-                      journal: Boolean(d.tasks?.journal),
-                      coach: Boolean(d.tasks?.coach),
-                      rescue: Boolean(d.tasks?.rescue),
-                    };
+                const tasksObj: DailyTasks = {
+                  checkin: Boolean(d.tasks?.checkin),
+                  meditation: Boolean(d.tasks?.meditation),
+                  journal: Boolean(d.tasks?.journal),
+                  coach: Boolean(d.tasks?.coach),
+                  rescue: Boolean(d.tasks?.rescue),
+                };
 
                 const completedCount =
                   (tasksObj.checkin ? 1 : 0) +
@@ -313,7 +315,7 @@ export const useDailyMissionStore = create<DailyMissionState>()(
                   (tasksObj.coach ? 1 : 0) +
                   (tasksObj.rescue ? 1 : 0);
 
-                mergedHistory[d.date] = {
+                freshHistory[d.date] = {
                   date: d.date,
                   tasks: tasksObj,
                   allCompleted: completedCount === 5,
@@ -321,21 +323,16 @@ export const useDailyMissionStore = create<DailyMissionState>()(
                 };
               }
             });
-            set({ history: mergedHistory });
-          }
-
-          // 5. Also push any locally completed tasks to backend DB to ensure complete persistence
-          const hasAnyCompleted = Object.values(updated).some(Boolean);
-          if (hasAnyCompleted) {
-            missionsApi.syncMissions(updated).catch(() => {});
+            set({ history: freshHistory });
           }
         } catch (e) {
-          // Silent fallback to local storage state if offline
+          // Silent fallback if offline
         }
       },
 
       resetMissions: () => {
         set({
+          userId: null,
           currentDate: getTodayStr(),
           todayTasks: {
             checkin: false,

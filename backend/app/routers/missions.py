@@ -6,6 +6,8 @@ from app.models.mission import Mission
 from app.models.daily_checkin import DailyCheckin
 from app.models.journal import JournalEntry
 from app.models.meditation_session import MeditationSession
+from app.models.chat_message import ChatMessage
+from app.models.emergency_session import EmergencySession
 from app.schemas.mission import (
     MissionResponse,
     MissionCompleteCategoryRequest,
@@ -44,14 +46,19 @@ async def get_todays_missions(
     today_start = datetime(now.year, now.month, now.day)
     today_end = today_start + timedelta(days=1)
 
-    todays_missions = await Mission.find(
-        Mission.user_id == str(current_user.id),
-        {"$or": [
-            {"date_assigned": {"$gte": today_start, "$lt": today_end}},
-            {"date_completed": {"$gte": today_start, "$lt": today_end}},
-            {"created_at": {"$gte": today_start, "$lt": today_end}},
-        ]}
-    ).sort("-date_assigned").to_list()
+    user_id = str(current_user.id)
+    user_cond = {"$or": [{"user_id": user_id}, {"user_id": current_user.email}]} if current_user.email else {"user_id": user_id}
+
+    todays_missions = await Mission.find({
+        "$and": [
+            user_cond,
+            {"$or": [
+                {"date_assigned": {"$gte": today_start, "$lt": today_end}},
+                {"date_completed": {"$gte": today_start, "$lt": today_end}},
+                {"created_at": {"$gte": today_start, "$lt": today_end}},
+            ]}
+        ]
+    }).sort("-date_assigned").to_list()
 
     return [_to_response(m) for m in todays_missions]
 
@@ -62,7 +69,8 @@ async def get_today_tasks_status(
 ):
     """
     Direct, 100% authoritative endpoint returning the real-time status of the 5 daily rituals.
-    Cross-verifies Missions, DailyCheckin, MeditationSession, and JournalEntry collections.
+    Cross-verifies Missions, DailyCheckin, MeditationSession, JournalEntry, ChatMessage, and EmergencySession collections
+    strictly for the authenticated user only.
     """
     user_id = str(current_user.id)
     user_email = current_user.email
@@ -72,60 +80,88 @@ async def get_today_tasks_status(
     today_str = now.strftime("%Y-%m-%d")
     today_date = now.date()
 
-    # 1. Missions completed today
-    user_query = {"$or": [{"user_id": user_id}, {"user_email": user_email}]} if user_email else {"user_id": user_id}
+    # 1. Missions completed today for THIS USER ONLY
+    user_cond = {"$or": [{"user_id": user_id}, {"user_id": user_email}]} if user_email else {"user_id": user_id}
     mission_query = {
-        **user_query,
-        "$or": [
-            {"date_assigned": {"$gte": today_start, "$lt": today_end}},
-            {"date_completed": {"$gte": today_start, "$lt": today_end}},
-            {"created_at": {"$gte": today_start, "$lt": today_end}},
+        "$and": [
+            user_cond,
+            {"$or": [
+                {"date_assigned": {"$gte": today_start, "$lt": today_end}},
+                {"date_completed": {"$gte": today_start, "$lt": today_end}},
+                {"created_at": {"$gte": today_start, "$lt": today_end}},
+            ]}
         ]
     }
     missions = await Mission.find(mission_query).to_list()
     completed_missions = [m for m in missions if m.is_completed]
     completed_cats = {m.category.lower().strip() for m in completed_missions if m.category}
 
-    # 2. Checkin verification
+    # 2. Checkin verification (THIS USER ONLY)
+    checkin_doc = await DailyCheckin.find_one({
+        "$and": [
+            user_cond,
+            {"date": today_date},
+        ]
+    })
     has_checkin = bool(
         any(c in completed_cats for c in ["checkin", "morning"])
         or (current_user.last_checkin_date == today_str)
-        or await DailyCheckin.find_one(
-            DailyCheckin.user_id == user_id,
-            DailyCheckin.date == today_date,
-        )
+        or checkin_doc
     )
 
-    # 3. Meditation verification
-    has_meditation = bool(
-        any(c in completed_cats for c in ["meditation", "calm", "sleep"])
-        or await MeditationSession.find_one(
-            {"$or": [{"user_id": user_id}, {"user_email": user_email}] if user_email else {"user_id": user_id}},
+    # 3. Meditation verification (THIS USER ONLY)
+    meditation_doc = await MeditationSession.find_one({
+        "$and": [
+            user_cond,
             {"$or": [
                 {"created_at": {"$gte": today_start, "$lt": today_end}},
                 {"completed_at": {"$gte": today_start, "$lt": today_end}},
             ]}
-        )
+        ]
+    })
+    has_meditation = bool(
+        any(c in completed_cats for c in ["meditation", "calm", "sleep"])
+        or meditation_doc
     )
 
-    # 4. Journal verification
+    # 4. Journal verification (THIS USER ONLY)
+    journal_doc = await JournalEntry.find_one({
+        "$and": [
+            user_cond,
+            {"created_at": {"$gte": today_start, "$lt": today_end}},
+        ]
+    })
     has_journal = bool(
         any(c in completed_cats for c in ["journal", "focus", "reflection"])
-        or await JournalEntry.find_one(
-            JournalEntry.user_id == user_id,
-            JournalEntry.created_at >= today_start,
-            JournalEntry.created_at < today_end,
-        )
+        or journal_doc
     )
 
-    # 5. Coach verification
+    # 5. Coach verification (THIS USER ONLY)
+    chat_doc = await ChatMessage.find_one({
+        "$and": [
+            user_cond,
+            {"role": "user"},
+            {"created_at": {"$gte": today_start, "$lt": today_end}},
+        ]
+    })
     has_coach = bool(
         any(c in completed_cats for c in ["coach", "purpose", "connection"])
+        or chat_doc
     )
 
-    # 6. Rescue verification
+    # 6. Rescue verification (THIS USER ONLY)
+    emergency_doc = await EmergencySession.find_one({
+        "$and": [
+            user_cond,
+            {"$or": [
+                {"completed_at": {"$gte": today_start, "$lt": today_end}},
+                {"started_at": {"$gte": today_start, "$lt": today_end}},
+            ]}
+        ]
+    })
     has_rescue = bool(
         any(c in completed_cats for c in ["rescue", "exercise", "emergency"])
+        or emergency_doc
     )
 
     tasks_dict = {

@@ -133,6 +133,7 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
+          useDailyMissionStore.getState().initUser(response.user_id);
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Login failed' });
           throw err;
@@ -184,6 +185,7 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
+          useDailyMissionStore.getState().initUser(response.user_id);
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Invalid or expired OTP code' });
           throw err;
@@ -213,6 +215,7 @@ export const useAuthStore = create<AuthState>()(
             },
             isLoading: false,
           });
+          useDailyMissionStore.getState().initUser(response.user_id);
         } catch (err: any) {
           set({ isLoading: false, error: err.detail || 'Google authentication failed' });
           throw err;
@@ -335,9 +338,11 @@ export const useAuthStore = create<AuthState>()(
       storage: createJSONStorage(() => AsyncStorage),
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
-        if (state?.isAuthenticated) {
-          useDailyMissionStore.getState().syncWithBackend().catch(() => {});
+        if (state?.isAuthenticated && state?.user?.id) {
+          useDailyMissionStore.getState().initUser(state.user.id);
           useHabitStore.getState().syncFromDatabase().catch(() => {});
+        } else if (!state?.isAuthenticated) {
+          useDailyMissionStore.getState().resetMissions();
         }
       },
     }
