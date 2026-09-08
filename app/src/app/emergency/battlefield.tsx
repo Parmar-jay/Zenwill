@@ -55,22 +55,6 @@ const MemoizedBackgroundParticles = React.memo(() => (
 ));
 
 
-// Persistent in-memory & disk cache for seamless 0ms load and no message loss
-const BATTLEFIELD_STORAGE_KEY = '@zenwill_battlefield_cached_messages';
-let memoryBattlefieldMessages: BattleMessageItem[] = [];
-
-AsyncStorage.getItem(BATTLEFIELD_STORAGE_KEY).then((data) => {
-  if (data) {
-    try {
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        memoryBattlefieldMessages = parsed;
-      }
-    } catch {}
-  }
-}).catch(() => {});
-
-
 export default function SpartanBattlefieldScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -87,13 +71,10 @@ export default function SpartanBattlefieldScreen() {
   const currentUserName = user?.name || 'Brother Warrior';
   const currentUserStreak = user?.streak || 0;
 
-  // Local Chat and Presence State: Seeded from memory cache or store for 0ms load
+  // Local Chat and Presence State
   const isExitingRef = useRef<boolean>(false);
   const [inputText, setInputText] = useState<string>('');
   const [messages, setMessages] = useState<BattleMessageItem[]>(() => {
-    if (memoryBattlefieldMessages.length > 0) {
-      return memoryBattlefieldMessages;
-    }
     const active = useSpartanStore.getState().activeBattle?.messages;
     if (active && Array.isArray(active)) {
       const clean = active.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
@@ -101,7 +82,6 @@ export default function SpartanBattlefieldScreen() {
     }
     return [];
   });
-  const [isSending, setIsSending] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isConcludeModalVisible, setIsConcludeModalVisible] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900);
@@ -110,80 +90,74 @@ export default function SpartanBattlefieldScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
 
-let persistTimeout: any = null;
-const schedulePersistMessages = (msgs: BattleMessageItem[]) => {
-  if (persistTimeout) clearTimeout(persistTimeout);
-  persistTimeout = setTimeout(() => {
-    AsyncStorage.setItem(BATTLEFIELD_STORAGE_KEY, JSON.stringify(msgs.slice(-100))).catch(() => {});
-  }, 2000);
-};
+  // ── Synchronize Server Messages (Full Sync vs Single Incremental Message) ──
+  const syncServerMessages = useCallback((incoming: BattleMessageItem[] | BattleMessageItem, isFullSync: boolean = false) => {
+    if (isExitingRef.current) return;
+    const incomingList = Array.isArray(incoming) ? incoming : [incoming];
+    const cleanList = incomingList.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+    if (cleanList.length === 0 && !isFullSync) return;
 
-// ── Merge Server Messages in Strict Chronological Order (Immune to Overwrites) ──
-const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
-  if (isExitingRef.current) return;
-  if (!serverMsgs || !Array.isArray(serverMsgs)) return;
-  const cleanServer = serverMsgs.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+    setMessages((prev) => {
+      const now = Date.now();
+      // Keep optimistic messages younger than 15s that aren't confirmed yet
+      const inFlight = prev.filter((p) => {
+        if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
+        const parts = p.id.split('-');
+        const createdTimestamp = Number(parts[1]) || 0;
+        const isRecent = now - createdTimestamp < 15000;
+        const isAlreadyInServer = cleanList.some(
+          (sm) =>
+            sm.text === p.text &&
+            ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
+             (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
+        );
+        return isRecent && !isAlreadyInServer;
+      });
 
-  setMessages((prev) => {
-    const now = Date.now();
-    const inFlight = prev.filter((p) => {
-      if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
-      const parts = p.id.split('-');
-      const createdTimestamp = Number(parts[1]) || 0;
-      const isRecent = now - createdTimestamp < 15000;
-      const isAlreadyInServer = cleanServer.some(
-        (sm) =>
-          sm.text === p.text &&
-          ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
-           (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
-      );
-      return isRecent && !isAlreadyInServer;
-    });
+      const seen = new Set<string>();
+      const combined: BattleMessageItem[] = [];
 
-    const seen = new Set<string>();
-    const combined: BattleMessageItem[] = [];
-
-    // 1. Preserve existing confirmed messages
-    for (const m of prev) {
-      if (m && typeof m.id === 'string' && !m.id.startsWith('temp-')) {
-        const key = m.id || `${m.user_id}-${m.text}-${m.created_at}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(m);
+      if (!isFullSync) {
+        // Incremental: keep previous confirmed messages
+        for (const m of prev) {
+          if (m && typeof m.id === 'string' && !m.id.startsWith('temp-')) {
+            const key = m.id || `${m.user_id}-${m.text}-${m.created_at}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              combined.push(m);
+            }
+          }
         }
       }
-    }
 
-    // 2. Add incoming server messages
-    for (const sm of cleanServer) {
-      const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        combined.push(sm);
+      // Add clean incoming messages
+      for (const sm of cleanList) {
+        const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(sm);
+        }
       }
-    }
 
-    // 3. Keep in-flight optimistic messages
-    for (const ifm of inFlight) {
-      const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        combined.push(ifm);
+      // Append in-flight optimistic messages
+      for (const ifm of inFlight) {
+        const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(ifm);
+        }
       }
-    }
 
-    // 4. Stable sort by created_at timestamp
-    combined.sort((a, b) => {
-      const tA = new Date(a.created_at || 0).getTime();
-      const tB = new Date(b.created_at || 0).getTime();
-      return tA - tB;
+      // Stable chronological order
+      combined.sort((a, b) => {
+        const tA = new Date(a.created_at || 0).getTime();
+        const tB = new Date(b.created_at || 0).getTime();
+        return tA - tB;
+      });
+
+      return combined;
     });
-
-    memoryBattlefieldMessages = combined;
-    schedulePersistMessages(combined);
-    return combined;
-  });
-}, []);
+  }, []);
 
   // ── 1. Smooth Fluid Keyboard Listeners ──
   useEffect(() => {
@@ -224,26 +198,34 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
       })
       .catch(() => {});
 
-    // 2. Initialize battlefield session with instant join registration
+    // 2. Initialize battlefield session with instant join registration in 1 round-trip
     const initBattlefield = async () => {
       try {
         fetchMyCell().catch(() => {});
-        let battle = await spartanApi.getActiveBattleSession();
-        if (!battle || battle.status !== 'active') {
-          battle = await triggerBattleHorn('Global Sanctum');
-        } else {
-          // Immediately join active session to register presence and broadcast join to brothers
-          battle = await spartanApi.joinBattleSession(battle.id).catch(() => battle);
+
+        // 1. Ensure persistent WebSocket is connected and subscribed to battlefield
+        if (!realtimeClient.isSocketConnected()) {
+          realtimeClient.connect().catch(() => {});
         }
+        realtimeClient.subscribe('battlefield');
+
+        // 2. Immediately join active session in 1 single network round-trip
+        const battle = await spartanApi.joinBattleSession();
         if (isMounted && battle) {
           useSpartanStore.setState({ activeBattle: battle });
-          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 150);
+          if (battle.messages && Array.isArray(battle.messages)) {
+            syncServerMessages(battle.messages, true);
+          }
+          setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 100);
         }
       } catch (err) {
         try {
-          const fallbackBattle = await triggerBattleHorn('Global Sanctum');
+          const fallbackBattle = await spartanApi.getActiveBattleSession();
           if (isMounted && fallbackBattle) {
             useSpartanStore.setState({ activeBattle: fallbackBattle });
+            if (fallbackBattle.messages && Array.isArray(fallbackBattle.messages)) {
+              syncServerMessages(fallbackBattle.messages, true);
+            }
           }
         } catch (_) {}
       }
@@ -255,17 +237,17 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
     const unsubMsg = realtimeClient.on('BATTLE_MESSAGE_RECEIVED', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.message) {
-        mergeServerMessages([data.message]);
+        syncServerMessages(data.message, false);
         requestAnimationFrame(() => scrollViewRef.current?.scrollToEnd({ animated: true }));
       } else if (data.data?.messages) {
-        mergeServerMessages(data.data.messages);
+        syncServerMessages(data.data.messages, true);
       }
     });
 
     const unsubJoined = realtimeClient.on('WARRIOR_JOINED', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.message) {
-        mergeServerMessages([data.message]);
+        syncServerMessages(data.message, false);
       }
       if (data.data) {
         useSpartanStore.setState({ activeBattle: data.data });
@@ -275,7 +257,7 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
     const unsubLeft = realtimeClient.on('WARRIOR_LEFT', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.message) {
-        mergeServerMessages([data.message]);
+        syncServerMessages(data.message, false);
       }
       if (data.data) {
         useSpartanStore.setState({ activeBattle: data.data });
@@ -285,20 +267,23 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
     const unsubUpdated = realtimeClient.on('BATTLE_UPDATED', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.data?.messages) {
-        mergeServerMessages(data.data.messages);
+        syncServerMessages(data.data.messages, true);
       }
       if (data.data) {
         useSpartanStore.setState({ activeBattle: data.data });
       }
     });
 
-    // 4. Lightweight 10s passive liveness keeper (WebSockets handle instant messages & presence)
+    // 4. Fast 3s passive liveness & message sync keeper (guarantees sync even on tunnel/mobile proxy)
     const pollInterval = setInterval(async () => {
       if (!isMounted || isExitingRef.current) return;
       try {
-        await battleHeartbeat();
+        const updated = await battleHeartbeat();
+        if (isMounted && updated?.messages && Array.isArray(updated.messages)) {
+          syncServerMessages(updated.messages, true);
+        }
       } catch (e) {}
-    }, 10000);
+    }, 3000);
 
     // 5. Sound loop keeper
     const soundInterval = setInterval(() => {
@@ -323,7 +308,7 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
         soundManagerRef.current.stopAndUnload().catch(() => {});
       }
     };
-  }, [triggerBattleHorn, battleHeartbeat, fetchMyCell, mergeServerMessages]);
+  }, [triggerBattleHorn, battleHeartbeat, fetchMyCell, syncServerMessages]);
 
   const handleToggleMute = useCallback(() => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
@@ -386,8 +371,6 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
       setSecondsRemaining(rem);
 
       if (rem >= 899) {
-        memoryBattlefieldMessages = [];
-        AsyncStorage.removeItem(BATTLEFIELD_STORAGE_KEY).catch(() => {});
         setMessages([]);
         battleHeartbeat().catch(() => {});
       }
@@ -419,11 +402,11 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
   // Sync with activeBattle in store
   useEffect(() => {
     if (activeBattle?.messages && Array.isArray(activeBattle.messages)) {
-      mergeServerMessages(activeBattle.messages);
+      syncServerMessages(activeBattle.messages, true);
     }
-  }, [activeBattle?.messages, mergeServerMessages]);
+  }, [activeBattle?.messages, syncServerMessages]);
 
-  // ── 6. Send Message (Instant Optimistic + Smooth Multi-User Integration) ──
+  // ── 6. Send Message (Instant Optimistic + 0ms Button Response) ──
   const handleSendMessage = useCallback(async (customText?: string) => {
     const textToSend = (customText || inputText).trim();
     if (!textToSend) return;
@@ -450,21 +433,19 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     });
 
-    try {
-      setIsSending(true);
-      const res = await sendBattleMessage(textToSend);
-      if (res && res.messages && Array.isArray(res.messages)) {
-        mergeServerMessages(res.messages);
-      }
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
+    sendBattleMessage(textToSend)
+      .then((res) => {
+        if (res && res.messages && Array.isArray(res.messages)) {
+          syncServerMessages(res.messages, true);
+        }
+        requestAnimationFrame(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        });
+      })
+      .catch((err) => {
+        console.log('Error dispatching battle message:', err);
       });
-    } catch (err) {
-      console.log('Error dispatching battle message:', err);
-    } finally {
-      setIsSending(false);
-    }
-  }, [inputText, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, mergeServerMessages]);
+  }, [inputText, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, syncServerMessages]);
 
   // ── 7. Real Active Warriors Presence ──
   const activeParticipants: BattleParticipant[] = useMemo(() => {
@@ -761,16 +742,12 @@ const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
                 />
 
                 <TouchableOpacity
-                  style={[styles.sendBtn, (!inputText.trim() || isSending) && styles.sendBtnDisabled]}
+                  style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
                   activeOpacity={0.8}
-                  disabled={!inputText.trim() || isSending}
+                  disabled={!inputText.trim()}
                   onPress={() => handleSendMessage()}
                 >
-                  {isSending ? (
-                    <ActivityIndicator size="small" color="#000000" />
-                  ) : (
-                    <Ionicons name="arrow-up" size={18} color="#000000" />
-                  )}
+                  <Ionicons name="arrow-up" size={18} color="#000000" />
                 </TouchableOpacity>
               </View>
             </View>

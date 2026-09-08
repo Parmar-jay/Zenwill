@@ -201,8 +201,11 @@ export const spartanApi = {
     return api.get<BattleSessionData | null>('/battlefield/active');
   },
 
-  async joinBattleSession(sessionId: string): Promise<BattleSessionData> {
-    return api.post<BattleSessionData>(`/battlefield/join/${sessionId}`);
+  async joinBattleSession(sessionId?: string): Promise<BattleSessionData> {
+    if (sessionId) {
+      return api.post<BattleSessionData>(`/battlefield/join/${sessionId}`);
+    }
+    return api.post<BattleSessionData>('/battlefield/join');
   },
 
   async sendBattleMessage(text: string, sessionId?: string): Promise<BattleSessionData> {

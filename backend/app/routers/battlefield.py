@@ -126,6 +126,18 @@ async def get_or_create_battle_session(current_user: User, auto_join: bool = Tru
         # Create fresh session for this 15-minute epoch
         participant_ids = [user_id_str] if auto_join else []
         participants = [initiator_participant] if auto_join else []
+        initial_messages = []
+        if auto_join:
+            join_msg = {
+                "id": str(uuid.uuid4()),
+                "user_id": "system",
+                "user_name": "⚔️ Spartan Commander",
+                "user_streak": 0,
+                "text": f"🛡️ {user_name} joined the Shield Wall!",
+                "is_system": True,
+                "created_at": now.isoformat() + "Z",
+            }
+            initial_messages.append(join_msg)
 
         session = BattleSession(
             id=str(uuid.uuid4()),
@@ -138,7 +150,7 @@ async def get_or_create_battle_session(current_user: User, auto_join: bool = Tru
             status="active",
             participant_ids=participant_ids,
             participants=participants,
-            messages=[],
+            messages=initial_messages,
             reactions=[],
             honor_points_awarded=25,
             started_at=epoch_start,
@@ -269,13 +281,14 @@ async def trigger_battle_horn_sos(
     return format_battle_response(session, str(current_user.id))
 
 
+@router.post("/join", response_model=BattleSessionResponse)
 @router.post("/join/{session_id}", response_model=BattleSessionResponse)
 async def join_battle_session(
-    session_id: str,
+    session_id: Optional[str] = None,
     current_user: User = Depends(get_current_user),
 ):
-    """Join an active battle session and register as an active warrior."""
-    session = await get_or_create_battle_session(current_user)
+    """Join an active battle session and register as an active warrior immediately."""
+    session = await get_or_create_battle_session(current_user, auto_join=True)
     return format_battle_response(session, str(current_user.id))
 
 
