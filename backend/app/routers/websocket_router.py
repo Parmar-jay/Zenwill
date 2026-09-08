@@ -41,6 +41,26 @@ async def websocket_endpoint(
     await websocket.accept()
     await realtime_bus.connect(websocket, str(user_id))
 
+    # Automatically subscribe socket to public broadcast channels
+    await realtime_bus.subscribe(websocket, "public_cells")
+    await realtime_bus.subscribe(websocket, "battlefield")
+
+    # Automatically look up user's active Spartan Cell in DB and subscribe to cell channel
+    try:
+        from app.models.spartan_cell import SpartanCell
+        user_id_str = str(user_id).strip()
+        user_cell = await SpartanCell.find_one({
+            "$or": [
+                {"member_ids": user_id_str},
+                {"leader_id": user_id_str},
+                {"members.user_id": user_id_str},
+            ]
+        })
+        if user_cell:
+            await realtime_bus.subscribe(websocket, f"cell:{user_cell.id}")
+    except Exception:
+        pass
+
     # Send initial connection acknowledgment
     await websocket.send_text(
         json.dumps({

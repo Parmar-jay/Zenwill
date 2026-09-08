@@ -15,12 +15,33 @@ class RealtimeClient {
   private pingInterval: any = null;
   private isConnecting: boolean = false;
   private listeners: Map<string, Set<EventListener>> = new Map();
-  private subscribedChannels: Set<string> = new Set();
+  private subscribedChannels: Set<string> = new Set(['public_cells', 'battlefield']);
   private isExplicitlyClosed: boolean = false;
+  private debouncedPublicCellsTimer: any = null;
+
+  constructor() {
+    // Dynamically react whenever active squad changes in SpartanStore
+    useSpartanStore.subscribe((state, prevState) => {
+      const currentCellId = state.myCell?.id;
+      const prevCellId = prevState?.myCell?.id;
+      if (currentCellId !== prevCellId) {
+        if (prevCellId) {
+          this.unsubscribe(`cell:${prevCellId}`);
+        }
+        if (currentCellId) {
+          this.subscribe(`cell:${currentCellId}`);
+        }
+      }
+    });
+  }
+
+  public isSocketConnected(): boolean {
+    return Boolean(this.socket && this.socket.readyState === WebSocket.OPEN);
+  }
 
   private getWsUrl(token: string): string {
     const isHttps = BASE_URL.startsWith('https://');
-    const hostAndPath = BASE_URL.replace(/^https?:\/\//, '');
+    const hostAndPath = BASE_URL.replace(/^https?:\/\//, '').replace(/\/+$/, '');
     const protocol = isHttps ? 'wss://' : 'ws://';
     return `${protocol}${hostAndPath}/ws?token=${encodeURIComponent(token)}`;
   }
@@ -49,14 +70,17 @@ class RealtimeClient {
         // Start ping heartbeat every 20s
         this.startHeartbeat();
 
-        // Resubscribe to public_cells and active cell channel
+        // Subscribe to public channels
         this.subscribe('public_cells');
+        this.subscribe('battlefield');
+
+        // Subscribe to current active cell channel if present in store
         const activeCellId = useSpartanStore.getState().myCell?.id;
         if (activeCellId) {
           this.subscribe(`cell:${activeCellId}`);
         }
 
-        // Re-subscribe to any previously subscribed channels
+        // Re-subscribe to all registered channels
         this.subscribedChannels.forEach((ch) => {
           this.send({ action: 'subscribe', channel: ch });
         });
@@ -137,6 +161,14 @@ class RealtimeClient {
     };
   }
 
+  private schedulePublicCellsFetch(): void {
+    if (this.debouncedPublicCellsTimer) return;
+    this.debouncedPublicCellsTimer = setTimeout(() => {
+      this.debouncedPublicCellsTimer = null;
+      useSpartanStore.getState().fetchPublicCells().catch(() => {});
+    }, 400);
+  }
+
   private handleIncomingEvent(data: any): void {
     const type = data?.type;
     if (!type) return;
@@ -156,16 +188,31 @@ class RealtimeClient {
       case 'CELL_UPDATED': {
         if (data.data) {
           const currentCell = useSpartanStore.getState().myCell;
-          if (currentCell && String(currentCell.id) === String(data.cell_id)) {
+          const authUser = useAuthStore.getState().user;
+          const uid = authUser?.id ? String(authUser.id).toLowerCase() : null;
+          const email = authUser?.email ? authUser.email.toLowerCase() : null;
+
+          const isUserInUpdatedCell = Boolean(
+            (currentCell && String(currentCell.id) === String(data.cell_id)) ||
+            (data.data.leader_id && (data.data.leader_id === uid || (email && data.data.leader_id.toLowerCase() === email))) ||
+            (Array.isArray(data.data.members) && data.data.members.some((m: any) => {
+              const mUid = String(m.user_id || '').toLowerCase();
+              const mEmail = String(m.email || '').toLowerCase();
+              return (uid && mUid === uid) || (email && mEmail === email);
+            }))
+          );
+
+          if (isUserInUpdatedCell) {
             useSpartanStore.setState({ myCell: data.data });
           }
+
+          // Seamless in-memory state update for publicCells without hammering the server
           useSpartanStore.setState((state) => ({
             publicCells: state.publicCells.map((c) =>
               String(c.id) === String(data.cell_id) ? { ...c, ...data.data } : c
             ),
           }));
         }
-        useSpartanStore.getState().fetchPublicCells().catch(() => {});
         break;
       }
       case 'JOIN_REQUEST_RECEIVED': {
@@ -195,7 +242,7 @@ class RealtimeClient {
             this.subscribe(`cell:${c.id}`);
           }
         }).catch(() => {});
-        useSpartanStore.getState().fetchPublicCells().catch(() => {});
+        this.schedulePublicCellsFetch();
         useSpartanStore.getState().fetchMyJoinRequests().catch(() => {});
         break;
       }
@@ -224,7 +271,7 @@ class RealtimeClient {
           return { myPendingRequests: nextPending, publicCells: nextPublic };
         });
         useSpartanStore.getState().fetchMyJoinRequests().catch(() => {});
-        useSpartanStore.getState().fetchPublicCells().catch(() => {});
+        this.schedulePublicCellsFetch();
         break;
       }
       case 'MEMBER_KICKED': {
@@ -234,7 +281,7 @@ class RealtimeClient {
           if (currentCell.id) this.unsubscribe(`cell:${currentCell.id}`);
           useSpartanStore.setState({ myCell: null });
         }
-        useSpartanStore.getState().fetchPublicCells().catch(() => {});
+        this.schedulePublicCellsFetch();
         useSpartanStore.getState().fetchMyJoinRequests().catch(() => {});
         break;
       }
@@ -254,11 +301,25 @@ class RealtimeClient {
           if (currentCell?.id) this.unsubscribe(`cell:${currentCell.id}`);
           useSpartanStore.setState({ myCell: null });
         }
-        useSpartanStore.getState().fetchPublicCells().catch(() => {});
+        this.schedulePublicCellsFetch();
         break;
       }
       case 'PUBLIC_CELLS_CHANGED': {
-        useSpartanStore.getState().fetchPublicCells().catch(() => {});
+        this.schedulePublicCellsFetch();
+        break;
+      }
+      case 'BATTLE_UPDATED': {
+        if (data.data) {
+          useSpartanStore.setState({ activeBattle: data.data });
+        }
+        break;
+      }
+      case 'DM_RECEIVED':
+      case 'UNREAD_COUNT_CHANGED': {
+        try {
+          const { useUnreadStore } = require('../store/unread-store');
+          useUnreadStore.getState().fetchUnreadCount().catch(() => {});
+        } catch {}
         break;
       }
     }

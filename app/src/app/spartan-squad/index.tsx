@@ -155,12 +155,15 @@ export default function SpartanSquadIndexScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData(false);
-      // Low-frequency fallback poll (35s) while screen is actively focused to protect free-tier server
+      // Adaptive low-frequency fallback poll: only polls if WebSocket is disconnected; otherwise WebSocket handles live push events
       const fastSyncTimer = setInterval(() => {
         if (!actionLoadingRef.current && !joiningCodeRef.current) {
-          fetchMyCell({ showLoading: false }).catch(() => { });
-          fetchPublicCells().catch(() => { });
-          fetchMyJoinRequests().catch(() => { });
+          const { realtimeClient } = require('../../services/realtime-client');
+          if (!realtimeClient.isSocketConnected()) {
+            fetchMyCell({ showLoading: false }).catch(() => { });
+            fetchPublicCells().catch(() => { });
+            fetchMyJoinRequests().catch(() => { });
+          }
         }
       }, 35000);
 

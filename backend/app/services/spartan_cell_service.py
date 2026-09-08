@@ -303,6 +303,8 @@ async def recalculate_user_cell_streak(user_id_str: str) -> None:
                         "data": _cell_to_summary(updated).model_dump(),
                     }
                 )
+                await realtime_bus.broadcast_to_channel("public_cells", {"type": "PUBLIC_CELLS_CHANGED"})
+                await realtime_bus.broadcast_all({"type": "LEADERBOARD_UPDATED"})
             except Exception:
                 pass
     except Exception as e:

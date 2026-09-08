@@ -13,6 +13,7 @@ import {
   Dimensions,
   LayoutAnimation,
   Animated,
+  RefreshControl,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -143,10 +144,13 @@ export default function SpartanCellScreen() {
     leaveCell,
     deleteCell,
     nudgeMember,
+    sendStrength,
   } = useSpartanStore();
 
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [isLeaving, setIsLeaving] = useState<boolean>(false);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [sendingStrengthTo, setSendingStrengthTo] = useState<string | null>(null);
 
   // Review & member moderation states
   const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
@@ -191,6 +195,13 @@ export default function SpartanCellScreen() {
     ]);
   }, [fetchMyCell, fetchPublicCells, fetchMyJoinRequests]);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    triggerHaptic('light');
+    await loadData(false);
+    setRefreshing(false);
+  }, [loadData, triggerHaptic]);
+
   useEffect(() => {
     loadData(!hasLoadedInitialCell);
   }, []);
@@ -199,12 +210,16 @@ export default function SpartanCellScreen() {
     useCallback(() => {
       // Quiet background refresh on screen focus
       loadData(false);
-      // Low-frequency fallback poll (45s) while screen is actively focused to conserve free-tier server
+      // Adaptive low-frequency fallback poll: checks if WebSocket is actively connected
       const fastSyncTimer = setInterval(() => {
         if (!actionLoadingRef.current && !isLeavingRef.current) {
-          fetchMyCell({ showLoading: false }).catch(() => { });
+          const { realtimeClient } = require('../../services/realtime-client');
+          // If socket is disconnected, poll every 35s to guarantee fresh data; if connected, live push delivers instantly
+          if (!realtimeClient.isSocketConnected()) {
+            fetchMyCell({ showLoading: false }).catch(() => { });
+          }
         }
-      }, 45000);
+      }, 35000);
 
       return () => {
         clearInterval(fastSyncTimer);
@@ -474,14 +489,51 @@ export default function SpartanCellScreen() {
 
   const handleNudge = async (member: CellMemberItem) => {
     triggerHaptic('medium');
-    const reminderText = `🛡️ Streak Reminder: Hey brother, please complete your daily streak check-in today to hold the line for our Squad!`;
     try {
-      // 1. Send backend nudge (creates DM in MongoDB)
-      await nudgeMember(member.user_id, member.name);
-      // 2. Also dispatch via communityApi for instant client sync
-      communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => { });
-    } catch {
-      communityApi.sendDirectMessage(member.user_id, reminderText, 'text').catch(() => { });
+      const msg = await nudgeMember(member.user_id, member.name);
+      triggerHaptic('success');
+      setCustomDialog({
+        visible: true,
+        title: 'Reminder Dispatched! 🛡️',
+        message: msg || `Streak check-in reminder sent to ${member.name}'s DM.`,
+        type: 'success',
+        confirmText: 'Understood',
+      });
+    } catch (err: any) {
+      setCustomDialog({
+        visible: true,
+        title: 'Reminder Sent',
+        message: err?.response?.data?.detail || err?.detail || `Streak reminder delivered to ${member.name}.`,
+        type: 'info',
+        confirmText: 'Understood',
+      });
+    }
+  };
+
+  const handleSendStrength = async (member: CellMemberItem) => {
+    if (sendingStrengthTo) return;
+    setSendingStrengthTo(member.user_id);
+    triggerHaptic('medium');
+    try {
+      const msg = await sendStrength(member.user_id, member.name);
+      triggerHaptic('success');
+      setCustomDialog({
+        visible: true,
+        title: 'Strength Dispatched! ⚡',
+        message: msg || `Brotherhood recovery support sent to ${member.name}. We hold the line together!`,
+        type: 'success',
+        confirmText: 'Keep Holding',
+      });
+    } catch (err: any) {
+      setCustomDialog({
+        visible: true,
+        title: 'Notice',
+        message: err?.response?.data?.detail || err?.detail || 'Could not dispatch strength.',
+        type: 'info',
+        confirmText: 'OK',
+      });
+    } finally {
+      setSendingStrengthTo(null);
     }
   };
 
@@ -580,6 +632,15 @@ export default function SpartanCellScreen() {
           <ScrollView
             style={styles.scrollContent}
             contentContainerStyle={styles.scrollInner}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#00E5FF"
+                colors={['#00E5FF']}
+              />
+            }
           >
             {/* Cell Banner Card */}
             <View style={styles.cellHeroCard}>
@@ -703,6 +764,62 @@ export default function SpartanCellScreen() {
                 </View>
               </View>
             </View>
+
+            {/* Urge Battlefield SOS Horn */}
+            <AnimatedPressable
+              style={styles.battleHornCard}
+              onPress={() => {
+                triggerHaptic('heavy');
+                router.push('/emergency/battlefield' as any);
+              }}
+            >
+              <View style={styles.battleHornIconCircle}>
+                <Ionicons name="flame" size={18} color="#FF3B30" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.battleHornTitle}>SOUND SQUAD BATTLE HORN (SOS)</ThemedText>
+                <ThemedText style={styles.battleHornSub}>
+                  Under acute dopamine urge? Rally your brothers in the live 90s Urge Rescue Room.
+                </ThemedText>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#FF3B30" />
+            </AnimatedPressable>
+
+            {/* Brotherhood Recovery Alert if any member relapsed */}
+            {hasRelapsedMembers && (
+              <View style={styles.brotherhoodAlertCard}>
+                <View style={styles.brotherhoodAlertHeader}>
+                  <View style={styles.brotherhoodAlertIconCircle}>
+                    <Ionicons name="warning" size={16} color="#EF4444" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.brotherhoodAlertTitle}>BROTHERHOOD RECOVERY ALERT</ThemedText>
+                    <ThemedText style={styles.brotherhoodAlertSub}>
+                      {relapsedMembers[0]?.name || 'A brother'} slipped today. In this squad we leave no one behind!
+                    </ThemedText>
+                  </View>
+                </View>
+                {relapsedMembers[0] && (
+                  <TouchableOpacity
+                    style={styles.sendStrengthBannerBtn}
+                    activeOpacity={0.8}
+                    onPress={() => handleSendStrength(relapsedMembers[0])}
+                    disabled={sendingStrengthTo === relapsedMembers[0].user_id}
+                  >
+                    {sendingStrengthTo === relapsedMembers[0].user_id ? (
+                      <ActivityIndicator size="small" color="#000000" />
+                    ) : (
+                      <>
+                        <Ionicons name="flash" size={14} color="#000000" style={{ marginRight: 6 }} />
+                        <ThemedText style={styles.sendStrengthBannerBtnText}>
+                          Send Mental Strength to {relapsedMembers[0].name.split(' ')[0]}
+                        </ThemedText>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
 
 
@@ -915,9 +1032,31 @@ export default function SpartanCellScreen() {
 
                           <View style={styles.statusActionSlot}>
                             {isRelapsed ? (
-                              <View style={styles.relapsedPill}>
-                                <Ionicons name="refresh-circle-outline" size={12} color="#EF4444" />
-                                <ThemedText style={styles.relapsedText}>Relapsed</ThemedText>
+                              <View style={styles.memberStatusCol}>
+                                <View style={styles.relapsedPill}>
+                                  <Ionicons name="refresh-circle-outline" size={12} color="#EF4444" />
+                                  <ThemedText style={styles.relapsedText}>Relapsed</ThemedText>
+                                </View>
+                                {!isCurrentUser && (
+                                  <TouchableOpacity
+                                    style={styles.sendStrengthBtn}
+                                    activeOpacity={0.7}
+                                    onPress={(e) => {
+                                      e.stopPropagation?.();
+                                      handleSendStrength(member);
+                                    }}
+                                    disabled={sendingStrengthTo === member.user_id}
+                                  >
+                                    {sendingStrengthTo === member.user_id ? (
+                                      <ActivityIndicator size="small" color="#000000" />
+                                    ) : (
+                                      <>
+                                        <Ionicons name="flash" size={10} color="#000000" />
+                                        <ThemedText style={styles.sendStrengthBtnText}>Send Strength</ThemedText>
+                                      </>
+                                    )}
+                                  </TouchableOpacity>
+                                )}
                               </View>
                             ) : isRetained ? (
                               <View style={styles.checkedInPill}>
@@ -1827,6 +1966,42 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '800',
     color: '#EF4444',
+  },
+  battleHornCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(236, 72, 153, 0.08)',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(236, 72, 153, 0.35)',
+    marginBottom: 14,
+    gap: 12,
+  },
+  battleHornIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(236, 72, 153, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  battleHornTitle: {
+    fontSize: 11.5,
+    fontWeight: '900',
+    color: '#EC4899',
+    letterSpacing: 0.6,
+  },
+  battleHornSub: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.72)',
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  memberStatusCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   sendStrengthBtn: {
     flexDirection: 'row',
