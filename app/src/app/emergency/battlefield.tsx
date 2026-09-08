@@ -110,52 +110,80 @@ export default function SpartanBattlefieldScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
 
-  // ── Merge Server Messages in Strict Chronological Order ──
-  const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
-    if (isExitingRef.current) return;
-    if (!serverMsgs || !Array.isArray(serverMsgs)) return;
-    const cleanServer = serverMsgs.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+let persistTimeout: any = null;
+const schedulePersistMessages = (msgs: BattleMessageItem[]) => {
+  if (persistTimeout) clearTimeout(persistTimeout);
+  persistTimeout = setTimeout(() => {
+    AsyncStorage.setItem(BATTLEFIELD_STORAGE_KEY, JSON.stringify(msgs.slice(-100))).catch(() => {});
+  }, 2000);
+};
 
-    setMessages((prev) => {
-      const now = Date.now();
-      const inFlight = prev.filter((p) => {
-        if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
-        const parts = p.id.split('-');
-        const createdTimestamp = Number(parts[1]) || 0;
-        const isRecent = now - createdTimestamp < 15000;
-        const isAlreadyInServer = cleanServer.some(
-          (sm) =>
-            sm.text === p.text &&
-            ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
-             (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
-        );
-        return isRecent && !isAlreadyInServer;
-      });
+// ── Merge Server Messages in Strict Chronological Order (Immune to Overwrites) ──
+const mergeServerMessages = useCallback((serverMsgs: BattleMessageItem[]) => {
+  if (isExitingRef.current) return;
+  if (!serverMsgs || !Array.isArray(serverMsgs)) return;
+  const cleanServer = serverMsgs.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
 
-      const seen = new Set<string>();
-      const combined: BattleMessageItem[] = [];
-
-      for (const sm of cleanServer) {
-        const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(sm);
-        }
-      }
-
-      for (const ifm of inFlight) {
-        const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(ifm);
-        }
-      }
-
-      memoryBattlefieldMessages = combined;
-      AsyncStorage.setItem(BATTLEFIELD_STORAGE_KEY, JSON.stringify(combined.slice(-100))).catch(() => {});
-      return combined;
+  setMessages((prev) => {
+    const now = Date.now();
+    const inFlight = prev.filter((p) => {
+      if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
+      const parts = p.id.split('-');
+      const createdTimestamp = Number(parts[1]) || 0;
+      const isRecent = now - createdTimestamp < 15000;
+      const isAlreadyInServer = cleanServer.some(
+        (sm) =>
+          sm.text === p.text &&
+          ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
+           (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
+      );
+      return isRecent && !isAlreadyInServer;
     });
-  }, []);
+
+    const seen = new Set<string>();
+    const combined: BattleMessageItem[] = [];
+
+    // 1. Preserve existing confirmed messages
+    for (const m of prev) {
+      if (m && typeof m.id === 'string' && !m.id.startsWith('temp-')) {
+        const key = m.id || `${m.user_id}-${m.text}-${m.created_at}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          combined.push(m);
+        }
+      }
+    }
+
+    // 2. Add incoming server messages
+    for (const sm of cleanServer) {
+      const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push(sm);
+      }
+    }
+
+    // 3. Keep in-flight optimistic messages
+    for (const ifm of inFlight) {
+      const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push(ifm);
+      }
+    }
+
+    // 4. Stable sort by created_at timestamp
+    combined.sort((a, b) => {
+      const tA = new Date(a.created_at || 0).getTime();
+      const tB = new Date(b.created_at || 0).getTime();
+      return tA - tB;
+    });
+
+    memoryBattlefieldMessages = combined;
+    schedulePersistMessages(combined);
+    return combined;
+  });
+}, []);
 
   // ── 1. Smooth Fluid Keyboard Listeners ──
   useEffect(() => {
@@ -398,7 +426,7 @@ export default function SpartanBattlefieldScreen() {
   // ── 6. Send Message (Instant Optimistic + Smooth Multi-User Integration) ──
   const handleSendMessage = useCallback(async (customText?: string) => {
     const textToSend = (customText || inputText).trim();
-    if (!textToSend || isSending) return;
+    if (!textToSend) return;
 
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     if (!customText) {
@@ -436,7 +464,7 @@ export default function SpartanBattlefieldScreen() {
     } finally {
       setIsSending(false);
     }
-  }, [inputText, isSending, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, mergeServerMessages]);
+  }, [inputText, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, mergeServerMessages]);
 
   // ── 7. Real Active Warriors Presence ──
   const activeParticipants: BattleParticipant[] = useMemo(() => {

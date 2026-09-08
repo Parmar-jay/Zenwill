@@ -322,9 +322,7 @@ class RealtimeClient {
         break;
       }
       case 'BATTLE_MESSAGE_RECEIVED': {
-        if (data.data) {
-          useSpartanStore.setState({ activeBattle: data.data });
-        } else if (data.message) {
+        if (data.message) {
           useSpartanStore.setState((state) => {
             if (!state.activeBattle) return state;
             const currentMsgs = state.activeBattle.messages || [];
@@ -337,6 +335,8 @@ class RealtimeClient {
               },
             };
           });
+        } else if (data.data) {
+          useSpartanStore.setState({ activeBattle: data.data });
         }
         break;
       }
