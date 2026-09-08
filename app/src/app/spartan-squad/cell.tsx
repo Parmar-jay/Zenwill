@@ -826,25 +826,6 @@ export default function SpartanCellScreen() {
               </View>
             </View>
 
-            {/* Urge Battlefield SOS Horn */}
-            <AnimatedPressable
-              style={styles.battleHornCard}
-              onPress={() => {
-                triggerHaptic('heavy');
-                router.push('/emergency/battlefield' as any);
-              }}
-            >
-              <View style={styles.battleHornIconCircle}>
-                <Ionicons name="flame" size={18} color="#FF3B30" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.battleHornTitle}>SOUND SQUAD BATTLE HORN (SOS)</ThemedText>
-                <ThemedText style={styles.battleHornSub}>
-                  Under acute dopamine urge? Rally your brothers in the live 90s Urge Rescue Room.
-                </ThemedText>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color="#FF3B30" />
-            </AnimatedPressable>
 
             {/* Brotherhood Recovery Alert if any member relapsed */}
             {hasRelapsedMembers && (

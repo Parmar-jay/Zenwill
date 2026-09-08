@@ -5,7 +5,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// --- Backend Server URL (Comment line 1 & uncomment line 2 to switch to Localhost) ---
+// --- Backend Server URL (Render Live Deployment / Tunnel) ---
 export const BASE_URL = 'https://zenwill.onrender.com/api/v1';
 // export const BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8000/api/v1' : 'http://localhost:8000/api/v1';
 

@@ -225,16 +225,9 @@ def format_battle_response(session: BattleSession, current_user_id: str) -> Batt
     now = datetime.utcnow()
     time_left = max(0, int((session.expires_at - now).total_seconds()))
 
-    # Filter active participants who checked in within last 75 seconds (heartbeat is every 3s)
-    recent_threshold = (now - timedelta(seconds=75)).isoformat()
-    active_members = []
-    for p in (session.participants or []):
-        last_act = p.get("last_active_at") or p.get("joined_at") or ""
-        if last_act >= recent_threshold:
-            active_members.append(p)
-
+    participants = session.participants or []
     is_joined = current_user_id in (session.participant_ids or []) or any(
-        p.get("user_id") == current_user_id for p in active_members
+        str(p.get("user_id", "")).strip().lower() == current_user_id.lower() for p in participants
     )
 
     return BattleSessionResponse(
@@ -246,8 +239,8 @@ def format_battle_response(session: BattleSession, current_user_id: str) -> Batt
         initiator_location=session.initiator_location,
         duration_seconds=session.duration_seconds or 900,
         status=session.status,
-        participant_count=len(active_members),
-        participants=active_members,
+        participant_count=len(participants),
+        participants=participants,
         messages=session.messages[-100:] if hasattr(session, 'messages') and session.messages else [],
         reactions=session.reactions[-20:] if session.reactions else [],
         started_at=session.started_at,
