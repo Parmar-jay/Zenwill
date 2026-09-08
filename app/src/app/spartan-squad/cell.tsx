@@ -124,6 +124,67 @@ export const getGamifiedRank = (days: number): GamifiedRank => {
   return found || GAMIFIED_RANKS[GAMIFIED_RANKS.length - 1];
 };
 
+interface ReminderButtonProps {
+  onPress: () => void;
+  disabled?: boolean;
+}
+
+const ReminderAnimatedButton: React.FC<ReminderButtonProps> = ({ onPress, disabled }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    let isActive = true;
+    const animateReminder = () => {
+      if (!isActive) return;
+      Animated.sequence([
+        Animated.delay(2200),
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(pulseAnim, { toValue: 1.08, duration: 180, useNativeDriver: true }),
+            Animated.timing(pulseAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+          ]),
+          Animated.sequence([
+            Animated.timing(shakeAnim, { toValue: -5, duration: 75, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: 5, duration: 75, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: -3, duration: 75, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: 0, duration: 75, useNativeDriver: true }),
+          ]),
+        ]),
+      ]).start(() => {
+        if (isActive) animateReminder();
+      });
+    };
+
+    animateReminder();
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const rotate = shakeAnim.interpolate({
+    inputRange: [-5, 5],
+    outputRange: ['-10deg', '10deg'],
+  });
+
+  return (
+    <Animated.View style={{ transform: [{ scale: pulseAnim }, { rotate }] }}>
+      <TouchableOpacity
+        style={styles.nudgeBtn}
+        activeOpacity={0.7}
+        onPress={(e) => {
+          e?.stopPropagation?.();
+          onPress();
+        }}
+        disabled={disabled}
+      >
+        <Ionicons name="notifications-outline" size={11} color="#EF4444" />
+        <ThemedText style={styles.nudgeBtnText}>Remind</ThemedText>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
 export default function SpartanCellScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -1069,18 +1130,10 @@ export default function SpartanCellScreen() {
                                 <ThemedText style={styles.pendingSelfText}>Pending</ThemedText>
                               </View>
                             ) : (
-                              <TouchableOpacity
-                                style={styles.nudgeBtn}
-                                activeOpacity={0.7}
-                                onPress={(e) => {
-                                  e.stopPropagation?.();
-                                  handleNudge(member);
-                                }}
+                              <ReminderAnimatedButton
+                                onPress={() => handleNudge(member)}
                                 disabled={isNudging}
-                              >
-                                <Ionicons name="notifications-outline" size={11} color="#EF4444" />
-                                <ThemedText style={styles.nudgeBtnText}>Remind</ThemedText>
-                              </TouchableOpacity>
+                              />
                             )}
                           </View>
                         </View>

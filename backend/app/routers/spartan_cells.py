@@ -637,6 +637,7 @@ async def respond_join_request(
                 "type": "JOIN_REQUEST_REJECTED",
                 "cell_id": str(cell.id),
                 "cell_name": cell.name,
+                "join_code": cell.join_code,
             }
         )
         if applicant_email:
@@ -646,6 +647,7 @@ async def respond_join_request(
                     "type": "JOIN_REQUEST_REJECTED",
                     "cell_id": str(cell.id),
                     "cell_name": cell.name,
+                    "join_code": cell.join_code,
                 }
             )
 
@@ -1324,13 +1326,6 @@ async def get_my_spartan_cell(
             break
 
     if not active_cell:
-        all_cells = await SpartanCell.find_all().sort("-updated_at").to_list()
-        for c in all_cells:
-            if is_user_in_cell(c):
-                active_cell = c
-                break
-
-    if not active_cell:
         return None
 
     updated_cell = await recalculate_cell_stats(active_cell)
@@ -1555,16 +1550,7 @@ async def get_cell_leaderboard(
 ):
     """Retrieve global Spartan Cell rankings sorted by total streak and collective XP."""
     cells = await SpartanCell.find_all().sort("-total_streak", "-collective_xp").limit(limit).to_list()
-    
-    # Recalculate top 10 on the fly for 100% accurate live streaks
-    results = []
-    for c in cells:
-        await recalculate_cell_stats(c)
-        results.append(_cell_to_summary(c))
-
-    # Re-sort after recalculating
-    results.sort(key=lambda x: (-x.total_streak, -x.collective_xp))
-    return results
+    return [_cell_to_summary(c) for c in cells]
 
 
 @router.post("/nudge")
@@ -1673,7 +1659,7 @@ async def send_strength_to_member(
 
 @router.get("/public-cells", response_model=List[SpartanCellSummary])
 async def get_public_cells(limit: int = 50):
-    """Retrieve open public Spartan Cells with live recalculated streaks and member lists."""
+    """Retrieve open public Spartan Cells with live streaks and member lists."""
     cells = await SpartanCell.find({
         "$or": [
             {"is_public": True},
@@ -1682,11 +1668,7 @@ async def get_public_cells(limit: int = 50):
             {"is_public": None},
         ]
     }).sort("-total_streak").limit(limit).to_list()
-    results = []
-    for c in cells:
-        if c.member_ids:
-            updated = await recalculate_cell_stats(c)
-            results.append(_cell_to_summary(updated))
+    results = [_cell_to_summary(c) for c in cells if c.member_ids]
     results.sort(key=lambda x: (-x.total_streak, -x.collective_xp))
     return results
 

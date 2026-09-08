@@ -230,9 +230,9 @@ class RealtimeClient {
         break;
       }
       case 'JOIN_REQUEST_APPROVED': {
-        // Applicant was approved by leadership! Immediately sync active cell
+        // Applicant was approved by leadership! Immediately sync active cell and mark initial load ready
         if (data.data) {
-          useSpartanStore.setState({ myCell: data.data, myPendingRequests: [] });
+          useSpartanStore.setState({ myCell: data.data, myPendingRequests: [], hasLoadedInitialCell: true });
         }
         if (data.cell_id) {
           this.subscribe(`cell:${data.cell_id}`);
@@ -248,15 +248,27 @@ class RealtimeClient {
       }
       case 'JOIN_REQUEST_REJECTED': {
         const rejectedCellId = data.cell_id ? String(data.cell_id).trim().toLowerCase() : null;
+        const rawCode = data.join_code ? String(data.join_code).trim().toLowerCase() : '';
+        const pureCode = rawCode.replace('sp-', '').replace('sp ', '').replace('sp', '').trim();
+
         useSpartanStore.setState((state) => {
-          const nextPending = rejectedCellId
-            ? state.myPendingRequests.filter((k) => k && k.trim().toLowerCase() !== rejectedCellId)
-            : state.myPendingRequests;
+          const nextPending = state.myPendingRequests.filter((k) => {
+            if (!k) return false;
+            const cleanK = String(k).trim().toLowerCase();
+            if (rejectedCellId && cleanK === rejectedCellId) return false;
+            if (rawCode && (cleanK === rawCode || cleanK === `sp-${pureCode}` || cleanK === pureCode)) return false;
+            if (pureCode && cleanK.includes(pureCode)) return false;
+            return true;
+          });
+
           const authUser = useAuthStore.getState().user;
           const uid = String(authUser?.id || '').toLowerCase();
           const email = String(authUser?.email || '').toLowerCase();
+
           const nextPublic = state.publicCells.map((cell) => {
-            if (rejectedCellId && String(cell.id).toLowerCase() === rejectedCellId) {
+            const matchesId = rejectedCellId && String(cell.id).toLowerCase() === rejectedCellId;
+            const matchesCode = rawCode && String(cell.join_code || '').toLowerCase() === rawCode;
+            if (matchesId || matchesCode) {
               return {
                 ...cell,
                 join_requests: (cell.join_requests || []).filter((req: any) => {
@@ -268,6 +280,7 @@ class RealtimeClient {
             }
             return cell;
           });
+
           return { myPendingRequests: nextPending, publicCells: nextPublic };
         });
         useSpartanStore.getState().fetchMyJoinRequests().catch(() => {});

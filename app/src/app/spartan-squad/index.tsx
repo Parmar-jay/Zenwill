@@ -141,11 +141,14 @@ export default function SpartanSquadIndexScreen() {
   }, []);
 
   const loadData = useCallback(async (showLoading = false) => {
-    await Promise.allSettled([
-      fetchMyCell({ showLoading }),
-      fetchPublicCells(),
-      fetchMyJoinRequests(),
-    ]);
+    fetchMyCell({ showLoading }).then((cell) => {
+      if (cell) {
+        router.replace('/spartan-squad/cell' as any);
+      }
+    }).catch(() => {});
+
+    fetchPublicCells().catch(() => {});
+    fetchMyJoinRequests().catch(() => {});
   }, [fetchMyCell, fetchPublicCells, fetchMyJoinRequests]);
 
   useEffect(() => {
@@ -253,10 +256,10 @@ export default function SpartanSquadIndexScreen() {
 
   // If user is currently enrolled in a squad, seamlessly navigate to dedicated Squad dashboard
   useEffect(() => {
-    if (myCell && hasLoadedInitialCell) {
+    if (myCell) {
       router.replace('/spartan-squad/cell' as any);
     }
-  }, [myCell, hasLoadedInitialCell]);
+  }, [myCell]);
 
   if (myCell) {
     return (
