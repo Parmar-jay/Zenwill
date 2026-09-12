@@ -18,6 +18,8 @@ class RealtimeBus:
         # Reverse mapping for O(1) cleanup
         self.socket_user: Dict[WebSocket, str] = {}
         self.socket_channels: Dict[WebSocket, Set[str]] = {}
+        # Per-socket asyncio lock to serialize concurrent sends and prevent ASGI concurrency exceptions
+        self.socket_locks: Dict[WebSocket, asyncio.Lock] = {}
 
     async def connect(self, websocket: WebSocket, user_id: str):
         """Register a new authenticated WebSocket connection."""
@@ -26,6 +28,7 @@ class RealtimeBus:
         self.user_sockets[user_id].add(websocket)
         self.socket_user[websocket] = user_id
         self.socket_channels[websocket] = set()
+        self.socket_locks[websocket] = asyncio.Lock()
 
         # Automatically subscribe user to their own personal notification channel
         await self.subscribe(websocket, f"user:{user_id}")
@@ -44,6 +47,8 @@ class RealtimeBus:
                 self.channel_subscribers[channel].discard(websocket)
                 if not self.channel_subscribers[channel]:
                     del self.channel_subscribers[channel]
+
+        self.socket_locks.pop(websocket, None)
 
     async def subscribe(self, websocket: WebSocket, channel: str):
         """Subscribe a socket to a specific channel (e.g. 'cell:<cell_id>')."""
@@ -65,9 +70,15 @@ class RealtimeBus:
             self.socket_channels[websocket].discard(channel)
 
     async def _send_safe(self, ws: WebSocket, message_str: str) -> bool:
-        """Send JSON string to socket, discarding silently if disconnected."""
+        """Send JSON string to socket safely with per-socket lock, discarding silently if disconnected."""
+        lock = self.socket_locks.get(ws)
+        if lock is None:
+            lock = asyncio.Lock()
+            self.socket_locks[ws] = lock
+
         try:
-            await ws.send_text(message_str)
+            async with lock:
+                await ws.send_text(message_str)
             return True
         except Exception:
             self.disconnect(ws)

@@ -321,6 +321,24 @@ class RealtimeClient {
         this.schedulePublicCellsFetch();
         break;
       }
+      case 'BATTLE_SESSION_RESET': {
+        if (data.data) {
+          useSpartanStore.setState({ activeBattle: data.data });
+        } else if (data.session_id) {
+          useSpartanStore.setState((state) => {
+            if (!state.activeBattle) return state;
+            return {
+              activeBattle: {
+                ...state.activeBattle,
+                id: data.session_id,
+                session_number: data.session_number,
+                messages: data.message ? [data.message] : [],
+              },
+            };
+          });
+        }
+        break;
+      }
       case 'BATTLE_MESSAGE_RECEIVED': {
         if (data.message) {
           useSpartanStore.setState((state) => {
@@ -331,7 +349,7 @@ class RealtimeClient {
             return {
               activeBattle: {
                 ...state.activeBattle,
-                messages: [...currentMsgs, data.message].slice(-150),
+                messages: [...currentMsgs, data.message].slice(-200),
               },
             };
           });

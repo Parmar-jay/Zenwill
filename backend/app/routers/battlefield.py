@@ -72,11 +72,10 @@ async def purge_old_battlefield_epochs(current_epoch_number: int):
     """
     Purges any expired battle sessions and old messages from previous 15-minute epochs.
     Ensures that every 15 minutes the old chat is wiped cleanly from the database.
-    Throttled to run at most once every 60 seconds to prevent database load under concurrent chat.
     """
     global _last_purge_timestamp
     now_ts = time.time()
-    if now_ts - _last_purge_timestamp < 60.0:
+    if now_ts - _last_purge_timestamp < 30.0:
         return
     _last_purge_timestamp = now_ts
 
@@ -84,6 +83,7 @@ async def purge_old_battlefield_epochs(current_epoch_number: int):
         now = datetime.fromtimestamp(now_ts, tz=timezone.utc).replace(tzinfo=None)
         await BattleSession.find({
             "$or": [
+                {"session_number": {"$lt": current_epoch_number}},
                 {"session_number": {"$ne": current_epoch_number}},
                 {"expires_at": {"$lte": now}},
             ]
@@ -95,7 +95,7 @@ async def purge_old_battlefield_epochs(current_epoch_number: int):
 async def get_or_create_battle_session(current_user: User, auto_join: bool = True) -> BattleSession:
     """
     Finds or provisions the active 15-minute session anchored to the global wall-clock epoch.
-    Wipes old chat history when an epoch expires.
+    Wipes old chat history when an epoch expires and notifies all warriors.
     """
     now = datetime.utcnow()
     user_id_str = str(current_user.id)
@@ -104,7 +104,7 @@ async def get_or_create_battle_session(current_user: User, auto_join: bool = Tru
 
     epoch_number, time_remaining, epoch_start, epoch_expires = get_current_epoch_info()
 
-    # 1. Purge previous 15-minute epoch sessions & messages from DB (throttled to 60s)
+    # 1. Purge previous 15-minute epoch sessions & messages from DB
     await purge_old_battlefield_epochs(epoch_number)
 
     # 2. Find active session for current epoch
@@ -157,6 +157,24 @@ async def get_or_create_battle_session(current_user: User, auto_join: bool = Tru
             expires_at=epoch_expires,
         )
         await session.insert()
+
+        # Broadcast session reset to all connected warriors so their screens wipe out cleanly on time
+        try:
+            from app.services.realtime_bus import realtime_bus
+            formatted_resp = format_battle_response(session, user_id_str)
+            await realtime_bus.broadcast_to_channel(
+                "battlefield",
+                {
+                    "type": "BATTLE_SESSION_RESET",
+                    "session_id": str(session.id),
+                    "session_number": epoch_number,
+                    "message": initial_messages[0] if initial_messages else None,
+                    "data": formatted_resp.model_dump(),
+                }
+            )
+        except Exception as broadcast_err:
+            print(f"[Battlefield WS Error] Failed to broadcast session reset: {broadcast_err}")
+
         return session
 
     # Session already active: add or refresh user presence if auto_join is True
@@ -208,7 +226,7 @@ async def get_or_create_battle_session(current_user: User, auto_join: bool = Tru
         else:
             # Atomic update of last_active_at without full document overwrite
             await BattleSession.get_pymongo_collection().update_one(
-                {"_id": str(session.id), "participants.user_id": user_id_str},
+                {"$or": [{"_id": str(session.id)}, {"id": str(session.id)}], "participants.user_id": user_id_str},
                 {
                     "$set": {
                         "participants.$.last_active_at": now.isoformat(),
@@ -330,7 +348,7 @@ async def send_battle_message(
 
     # 1. Single round-trip atomic update: push message + update active participant state
     res = await BattleSession.get_pymongo_collection().update_one(
-        {"_id": session_id, "participants.user_id": user_id_str},
+        {"$or": [{"_id": session_id}, {"id": session_id}], "participants.user_id": user_id_str},
         {
             "$push": {
                 "messages": {"$each": [msg], "$slice": -200},
@@ -349,7 +367,7 @@ async def send_battle_message(
     # 2. If participant was not yet in array, atomically push both participant & message
     if res.matched_count == 0:
         await BattleSession.get_pymongo_collection().update_one(
-            {"_id": session_id},
+            {"$or": [{"_id": session_id}, {"id": session_id}]},
             {
                 "$push": {
                     "messages": {"$each": [msg], "$slice": -200},
@@ -369,14 +387,22 @@ async def send_battle_message(
             {
                 "type": "BATTLE_MESSAGE_RECEIVED",
                 "session_id": session_id,
+                "session_number": epoch_number,
                 "message": msg,
             }
         )
     except Exception as broadcast_err:
         print(f"[Battlefield WS Error] Failed to broadcast message: {broadcast_err}")
 
-    # 4. Return updated battle state to caller
-    updated_session = await BattleSession.find_one({"_id": session_id}) or session
+    # 4. Return updated battle state to caller, guaranteeing msg is in list
+    updated_session = await BattleSession.find_one({"$or": [{"_id": session_id}, {"id": session_id}]})
+    if not updated_session:
+        session.messages = (session.messages or []) + [msg]
+        updated_session = session
+    else:
+        if not any(m.get("id") == msg["id"] for m in (updated_session.messages or [])):
+            updated_session.messages = (updated_session.messages or []) + [msg]
+
     return format_battle_response(updated_session, user_id_str)
 
 
@@ -402,7 +428,7 @@ async def battle_heartbeat(
 
     # Lightweight atomic update of last_active_at without full document rewrite
     await BattleSession.get_pymongo_collection().update_one(
-        {"_id": str(session.id), "participants.user_id": user_id_str},
+        {"$or": [{"_id": str(session.id)}, {"id": str(session.id)}], "participants.user_id": user_id_str},
         {"$set": {"participants.$.last_active_at": now.isoformat()}}
     )
     for p in (session.participants or []):
@@ -425,6 +451,7 @@ async def send_battle_reaction_rune(
     user_id_str = str(current_user.id)
     user_name = current_user.name or "Brother Warrior"
     user_streak = current_user.streak or 0
+    epoch_number, _, _, _ = get_current_epoch_info()
 
     rune_entry = {
         "user_id": user_id_str,
@@ -445,7 +472,7 @@ async def send_battle_reaction_rune(
 
     # Atomically push reaction rune and chat message in MongoDB without document overwrites
     await BattleSession.get_pymongo_collection().update_one(
-        {"_id": session_id},
+        {"$or": [{"_id": session_id}, {"id": session_id}]},
         {
             "$push": {
                 "reactions": {"$each": [rune_entry], "$slice": -50},
@@ -464,16 +491,20 @@ async def send_battle_reaction_rune(
             {
                 "type": "BATTLE_MESSAGE_RECEIVED",
                 "session_id": session_id,
+                "session_number": epoch_number,
                 "message": msg,
             }
         )
     except Exception as broadcast_err:
         print(f"[Battlefield WS Error] Failed to broadcast reaction: {broadcast_err}")
 
-    updated_session = await BattleSession.find_one({"_id": session_id})
+    updated_session = await BattleSession.find_one({"$or": [{"_id": session_id}, {"id": session_id}]})
     if not updated_session:
         session = await get_or_create_battle_session(current_user)
         return format_battle_response(session, user_id_str)
+
+    if not any(m.get("id") == msg["id"] for m in (updated_session.messages or [])):
+        updated_session.messages = (updated_session.messages or []) + [msg]
 
     return format_battle_response(updated_session, user_id_str)
 

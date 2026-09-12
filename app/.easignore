@@ -53,10 +53,23 @@ ios/build/**
 ios/DerivedData
 ios/DerivedData/**
 
-# IDE & Editor Files
+# IDE, Editor & AI Files
 .idea
+.idea/
 .vscode
+.vscode/
 .claude
+.claude/
+AGENTS.md
+CLAUDE.md
+README.md
+LICENSE
+
+# Local Automation & Utility Scripts
+build_apk.bat
+scripts
+scripts/
+scripts/**
 
 # Logs, Temp Files & Exports
 *.log

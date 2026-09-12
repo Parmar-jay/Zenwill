@@ -12,6 +12,7 @@ from app.routers import auth, profile, mind_profile, checkin, journal, missions,
 
 import asyncio
 from app.services.account_purger import start_expired_accounts_worker
+from app.services.battlefield_worker import start_battlefield_epoch_worker
 
 
 @asynccontextmanager
@@ -23,10 +24,12 @@ async def lifespan(app: FastAPI):
 
     # Start background task to purge accounts that passed 7-day grace period
     worker_task = asyncio.create_task(start_expired_accounts_worker())
+    battlefield_task = asyncio.create_task(start_battlefield_epoch_worker())
 
     yield
     print("[ZenWill] API shutting down")
     worker_task.cancel()
+    battlefield_task.cancel()
 
 
 app = FastAPI(

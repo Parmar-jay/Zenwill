@@ -90,74 +90,109 @@ export default function SpartanBattlefieldScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
 
-  // ── Synchronize Server Messages (Full Sync vs Single Incremental Message) ──
-  const syncServerMessages = useCallback((incoming: BattleMessageItem[] | BattleMessageItem, isFullSync: boolean = false) => {
-    if (isExitingRef.current) return;
-    const incomingList = Array.isArray(incoming) ? incoming : [incoming];
-    const cleanList = incomingList.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
-    if (cleanList.length === 0 && !isFullSync) return;
+  // Session & Epoch tracking to ensure 100% on-time wipe out
+  const currentSessionIdRef = useRef<string | null>(null);
+  const currentSessionNumberRef = useRef<number | null>(null);
+  const lastEpochRef = useRef<number>(Math.floor(Date.now() / (1000 * 900)));
 
-    setMessages((prev) => {
-      const now = Date.now();
-      // Keep optimistic messages younger than 15s that aren't confirmed yet
-      const inFlight = prev.filter((p) => {
-        if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
-        const parts = p.id.split('-');
-        const createdTimestamp = Number(parts[1]) || 0;
-        const isRecent = now - createdTimestamp < 15000;
-        const isAlreadyInServer = cleanList.some(
-          (sm) =>
-            sm.text === p.text &&
-            ((sm.user_id && p.user_id && sm.user_id === p.user_id) ||
-             (sm.user_name && p.user_name && sm.user_name.toLowerCase() === p.user_name.toLowerCase()))
-        );
-        return isRecent && !isAlreadyInServer;
-      });
+  // Format timestamp helper (HH:mm)
+  const formatTime = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      const hours = d.getHours().toString().padStart(2, '0');
+      const mins = d.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${mins}`;
+    } catch {
+      return '';
+    }
+  };
 
-      const seen = new Set<string>();
-      const combined: BattleMessageItem[] = [];
+  // ── Synchronize Server Messages (ID-Keyed Deduplication with Session-Aware Wipe-Out) ──
+  const syncServerMessages = useCallback(
+    (
+      incoming: BattleMessageItem[] | BattleMessageItem,
+      options?: { sessionId?: string; sessionNumber?: number; forceReset?: boolean }
+    ) => {
+      if (isExitingRef.current) return;
+      const incomingList = Array.isArray(incoming) ? incoming : [incoming];
+      const cleanList = incomingList.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
 
-      if (!isFullSync) {
-        // Incremental: keep previous confirmed messages
-        for (const m of prev) {
+      const incomingSessionId = options?.sessionId;
+      const incomingSessionNumber = options?.sessionNumber;
+      const forceReset = Boolean(options?.forceReset);
+
+      // Check if session or epoch changed
+      const sessionChanged = Boolean(
+        forceReset ||
+        (incomingSessionNumber && currentSessionNumberRef.current && incomingSessionNumber > currentSessionNumberRef.current) ||
+        (incomingSessionId && currentSessionIdRef.current && incomingSessionId !== currentSessionIdRef.current)
+      );
+
+      if (incomingSessionId) currentSessionIdRef.current = incomingSessionId;
+      if (incomingSessionNumber) currentSessionNumberRef.current = incomingSessionNumber;
+
+      setMessages((prev) => {
+        // If session changed, old messages are wiped cleanly on time!
+        const baseList = sessionChanged ? [] : prev;
+        const now = Date.now();
+
+        // Keep recent optimistic messages (< 15s) that aren't yet confirmed
+        const inFlight = sessionChanged
+          ? []
+          : baseList.filter((p) => {
+              if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
+              const parts = p.id.split('-');
+              const createdTs = Number(parts[1]) || 0;
+              const isRecent = now - createdTs < 15000;
+              const isConfirmed = cleanList.some(
+                (sm) =>
+                  sm.text === p.text &&
+                  sm.user_id &&
+                  p.user_id &&
+                  sm.user_id.trim().toLowerCase() === p.user_id.trim().toLowerCase()
+              );
+              return isRecent && !isConfirmed;
+            });
+
+        // Use Map to deduplicate by id
+        const msgMap = new Map<string, BattleMessageItem>();
+
+        // 1. Existing confirmed messages from baseList (never deleted within same session!)
+        for (const m of baseList) {
           if (m && typeof m.id === 'string' && !m.id.startsWith('temp-')) {
-            const key = m.id || `${m.user_id}-${m.text}-${m.created_at}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              combined.push(m);
-            }
+            msgMap.set(m.id, m);
           }
         }
-      }
 
-      // Add clean incoming messages
-      for (const sm of cleanList) {
-        const key = sm.id || `${sm.user_id}-${sm.text}-${sm.created_at}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(sm);
+        // 2. Add incoming server messages
+        for (const sm of cleanList) {
+          if (sm && sm.id) {
+            msgMap.set(sm.id, sm);
+          } else if (sm) {
+            const fallbackKey = `${sm.user_id}-${sm.text}-${sm.created_at}`;
+            msgMap.set(fallbackKey, sm);
+          }
         }
-      }
 
-      // Append in-flight optimistic messages
-      for (const ifm of inFlight) {
-        const key = ifm.id || `${ifm.user_id}-${ifm.text}-${ifm.created_at}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(ifm);
+        // 3. Add in-flight messages
+        for (const ifm of inFlight) {
+          msgMap.set(ifm.id, ifm);
         }
-      }
 
-      // Stable chronological order
-      combined.sort((a, b) => {
-        const tA = new Date(a.created_at || 0).getTime();
-        const tB = new Date(b.created_at || 0).getTime();
-        return tA - tB;
+        const combined = Array.from(msgMap.values());
+        combined.sort((a, b) => {
+          const tA = new Date(a.created_at || 0).getTime();
+          const tB = new Date(b.created_at || 0).getTime();
+          return tA - tB;
+        });
+
+        return combined.slice(-200);
       });
-
-      return combined;
-    });
-  }, []);
+    },
+    []
+  );
 
   // ── 1. Smooth Fluid Keyboard Listeners ──
   useEffect(() => {
@@ -213,8 +248,10 @@ export default function SpartanBattlefieldScreen() {
         const battle = await spartanApi.joinBattleSession();
         if (isMounted && battle) {
           useSpartanStore.setState({ activeBattle: battle });
+          currentSessionIdRef.current = battle.id;
+          currentSessionNumberRef.current = battle.session_number || null;
           if (battle.messages && Array.isArray(battle.messages)) {
-            syncServerMessages(battle.messages, true);
+            syncServerMessages(battle.messages, { sessionId: battle.id, sessionNumber: battle.session_number });
           }
           setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: false }), 100);
         }
@@ -223,8 +260,10 @@ export default function SpartanBattlefieldScreen() {
           const fallbackBattle = await spartanApi.getActiveBattleSession();
           if (isMounted && fallbackBattle) {
             useSpartanStore.setState({ activeBattle: fallbackBattle });
+            currentSessionIdRef.current = fallbackBattle.id;
+            currentSessionNumberRef.current = fallbackBattle.session_number || null;
             if (fallbackBattle.messages && Array.isArray(fallbackBattle.messages)) {
-              syncServerMessages(fallbackBattle.messages, true);
+              syncServerMessages(fallbackBattle.messages, { sessionId: fallbackBattle.id, sessionNumber: fallbackBattle.session_number });
             }
           }
         } catch (_) {}
@@ -237,17 +276,34 @@ export default function SpartanBattlefieldScreen() {
     const unsubMsg = realtimeClient.on('BATTLE_MESSAGE_RECEIVED', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.message) {
-        syncServerMessages(data.message, false);
+        syncServerMessages(data.message, { sessionId: data.session_id, sessionNumber: data.session_number });
         requestAnimationFrame(() => scrollViewRef.current?.scrollToEnd({ animated: true }));
       } else if (data.data?.messages) {
-        syncServerMessages(data.data.messages, true);
+        syncServerMessages(data.data.messages, { sessionId: data.data.id, sessionNumber: data.data.session_number });
       }
+    });
+
+    const unsubReset = realtimeClient.on('BATTLE_SESSION_RESET', (data) => {
+      if (!isMounted || isExitingRef.current) return;
+      currentSessionIdRef.current = data.session_id || null;
+      currentSessionNumberRef.current = data.session_number || null;
+      lastEpochRef.current = Math.floor(Date.now() / (1000 * 900));
+      syncServerMessages(data.message ? [data.message] : [], {
+        sessionId: data.session_id,
+        sessionNumber: data.session_number,
+        forceReset: true,
+      });
+      if (data.data) {
+        useSpartanStore.setState({ activeBattle: data.data });
+      }
+      setSecondsRemaining(900);
+      requestAnimationFrame(() => scrollViewRef.current?.scrollToEnd({ animated: true }));
     });
 
     const unsubJoined = realtimeClient.on('WARRIOR_JOINED', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.message) {
-        syncServerMessages(data.message, false);
+        syncServerMessages(data.message, { sessionId: data.session_id });
       }
       if (data.data) {
         useSpartanStore.setState({ activeBattle: data.data });
@@ -257,7 +313,7 @@ export default function SpartanBattlefieldScreen() {
     const unsubLeft = realtimeClient.on('WARRIOR_LEFT', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.message) {
-        syncServerMessages(data.message, false);
+        syncServerMessages(data.message, { sessionId: data.session_id });
       }
       if (data.data) {
         useSpartanStore.setState({ activeBattle: data.data });
@@ -267,7 +323,7 @@ export default function SpartanBattlefieldScreen() {
     const unsubUpdated = realtimeClient.on('BATTLE_UPDATED', (data) => {
       if (!isMounted || isExitingRef.current) return;
       if (data.data?.messages) {
-        syncServerMessages(data.data.messages, true);
+        syncServerMessages(data.data.messages, { sessionId: data.data.id, sessionNumber: data.data.session_number });
       }
       if (data.data) {
         useSpartanStore.setState({ activeBattle: data.data });
@@ -280,7 +336,10 @@ export default function SpartanBattlefieldScreen() {
       try {
         const updated = await battleHeartbeat();
         if (isMounted && updated?.messages && Array.isArray(updated.messages)) {
-          syncServerMessages(updated.messages, true);
+          syncServerMessages(updated.messages, {
+            sessionId: updated.id,
+            sessionNumber: updated.session_number,
+          });
         }
       } catch (e) {}
     }, 3000);
@@ -299,6 +358,7 @@ export default function SpartanBattlefieldScreen() {
     return () => {
       isMounted = false;
       unsubMsg();
+      unsubReset();
       unsubJoined();
       unsubLeft();
       unsubUpdated();
@@ -364,17 +424,24 @@ export default function SpartanBattlefieldScreen() {
   }, []);
 
   useEffect(() => {
-    setSecondsRemaining(calculateGlobalRemaining());
-
-    const countdownInterval = setInterval(() => {
+    const checkEpochAndTick = () => {
       const rem = calculateGlobalRemaining();
       setSecondsRemaining(rem);
 
-      if (rem >= 899) {
+      // Check if global epoch rolled over (every 15 mins on the clock)
+      const currentEpoch = Math.floor(Date.now() / (1000 * 900));
+      if (currentEpoch !== lastEpochRef.current) {
+        lastEpochRef.current = currentEpoch;
+        currentSessionIdRef.current = null;
+        currentSessionNumberRef.current = currentEpoch;
+        // WIPE OUT OLD CHAT MESSAGES ON TIME
         setMessages([]);
         battleHeartbeat().catch(() => {});
       }
-    }, 1000);
+    };
+
+    checkEpochAndTick();
+    const countdownInterval = setInterval(checkEpochAndTick, 1000);
 
     return () => {
       clearInterval(countdownInterval);
@@ -397,14 +464,15 @@ export default function SpartanBattlefieldScreen() {
     setInputText(text);
   };
 
-
-
   // Sync with activeBattle in store
   useEffect(() => {
     if (activeBattle?.messages && Array.isArray(activeBattle.messages)) {
-      syncServerMessages(activeBattle.messages, true);
+      syncServerMessages(activeBattle.messages, {
+        sessionId: activeBattle.id,
+        sessionNumber: activeBattle.session_number,
+      });
     }
-  }, [activeBattle?.messages, syncServerMessages]);
+  }, [activeBattle?.messages, activeBattle?.id, activeBattle?.session_number, syncServerMessages]);
 
   // ── 6. Send Message (Instant Optimistic + 0ms Button Response) ──
   const handleSendMessage = useCallback(async (customText?: string) => {
@@ -436,7 +504,10 @@ export default function SpartanBattlefieldScreen() {
     sendBattleMessage(textToSend)
       .then((res) => {
         if (res && res.messages && Array.isArray(res.messages)) {
-          syncServerMessages(res.messages, true);
+          syncServerMessages(res.messages, {
+            sessionId: res.id,
+            sessionNumber: res.session_number,
+          });
         }
         requestAnimationFrame(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -472,27 +543,19 @@ export default function SpartanBattlefieldScreen() {
     return Array.from(map.values());
   }, [activeBattle?.participants, currentUserId, currentUserName, currentUserStreak]);
 
-  const myUserIdentifiers = useMemo(() => {
-    const ids = new Set<string>();
-    if (user?.id) ids.add(String(user.id).trim().toLowerCase());
-    if (user?.email) ids.add(user.email.trim().toLowerCase());
-    if (user?.name) ids.add(user.name.trim().toLowerCase());
-    return ids;
-  }, [user?.id, user?.email, user?.name]);
-
   const checkIsUser = useCallback(
     (msg: BattleMessageItem): boolean => {
       if (!msg) return false;
       if (typeof msg.id === 'string' && (msg.id.startsWith('temp-') || msg.id.startsWith('local-'))) {
         return true;
       }
-      const uid = (msg.user_id || '').trim().toLowerCase();
-      const uname = (msg.user_name || '').trim().toLowerCase();
-      if (uid && myUserIdentifiers.has(uid)) return true;
-      if (uname && myUserIdentifiers.has(uname)) return true;
+      const msgUid = (msg.user_id || '').trim().toLowerCase();
+      if (msgUid && currentUserId && msgUid === currentUserId) return true;
+      if (msgUid && user?.id && msgUid === String(user.id).trim().toLowerCase()) return true;
+      if (msgUid && user?.email && msgUid === user.email.trim().toLowerCase()) return true;
       return false;
     },
-    [myUserIdentifiers]
+    [currentUserId, user?.id, user?.email]
   );
 
   useEffect(() => {
@@ -665,17 +728,43 @@ export default function SpartanBattlefieldScreen() {
                     );
                   }
 
+                  const authorInitials = (msg.user_name || 'W').substring(0, 2).toUpperCase();
+                  const timeLabel = formatTime(msg.created_at);
+                  const isOptimistic = typeof msg.id === 'string' && msg.id.startsWith('temp-');
+
                   return (
                     <View
                       key={msg.id || index}
                       style={[styles.chatBubbleRow, isUserMsg ? styles.chatBubbleRowUser : styles.chatBubbleRowOther]}
                     >
+                      {/* Avatar for other brothers */}
+                      {!isUserMsg && (
+                        <TouchableOpacity
+                          style={styles.bubbleAvatarCircle}
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+                            router.push({
+                              pathname: '/community/dm',
+                              params: {
+                                user_id: msg.user_id,
+                                user_name: msg.user_name || 'Brother',
+                                username: (msg.user_name || 'brother').toLowerCase().replace(/\s+/g, '_'),
+                              },
+                            });
+                          }}
+                        >
+                          <ThemedText style={styles.bubbleAvatarText}>{authorInitials}</ThemedText>
+                        </TouchableOpacity>
+                      )}
+
                       <View
                         style={[
                           styles.chatBubbleCard,
                           isUserMsg ? styles.userBubbleCard : styles.otherBubbleCard,
                         ]}
                       >
+                        {/* Author Header for other brothers */}
                         {!isUserMsg && (
                           <TouchableOpacity
                             style={styles.chatAuthorHeader}
@@ -692,8 +781,8 @@ export default function SpartanBattlefieldScreen() {
                               });
                             }}
                           >
-                            <ThemedText style={styles.chatAuthorName}>
-                              {msg.user_name || 'Brother'}
+                            <ThemedText style={styles.chatAuthorName} numberOfLines={1}>
+                              {msg.user_name || 'Brother Warrior'}
                             </ThemedText>
                             <View style={styles.streakMedalPill}>
                               <ThemedText style={styles.streakFlameText}>
@@ -702,9 +791,27 @@ export default function SpartanBattlefieldScreen() {
                             </View>
                           </TouchableOpacity>
                         )}
-                        <ThemedText style={[styles.chatMessageText, isUserMsg && styles.userMessageText]}>
+
+                        <ThemedText style={[styles.chatMessageText, isUserMsg ? styles.userMessageText : styles.otherMessageText]}>
                           {msg.text}
                         </ThemedText>
+
+                        {/* Timestamp & Status Footer */}
+                        <View style={[styles.bubbleFooterRow, isUserMsg ? styles.bubbleFooterRowUser : styles.bubbleFooterRowOther]}>
+                          {timeLabel ? (
+                            <ThemedText style={[styles.bubbleTimeText, isUserMsg ? styles.bubbleTimeTextUser : styles.bubbleTimeTextOther]}>
+                              {timeLabel}
+                            </ThemedText>
+                          ) : null}
+                          {isUserMsg && (
+                            <Ionicons
+                              name={isOptimistic ? 'time-outline' : 'checkmark-done'}
+                              size={12}
+                              color={isOptimistic ? 'rgba(255, 255, 255, 0.4)' : '#C084FC'}
+                              style={{ marginLeft: 3 }}
+                            />
+                          )}
+                        </View>
                       </View>
                     </View>
                   );
@@ -1056,26 +1163,44 @@ const styles = StyleSheet.create({
   /* Message Bubbles */
   chatBubbleRow: {
     flexDirection: 'row',
-    marginVertical: 2,
+    marginVertical: 3,
   },
   chatBubbleRowUser: {
     justifyContent: 'flex-end',
   },
   chatBubbleRowOther: {
     justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    gap: 7,
+  },
+  bubbleAvatarCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#2A1448',
+    borderWidth: 1,
+    borderColor: '#A855F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  bubbleAvatarText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#E9D5FF',
   },
   chatBubbleCard: {
     borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    maxWidth: '85%',
-    minWidth: 120,
-    borderWidth: 1,
-    gap: 4,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    maxWidth: '82%',
+    minWidth: 110,
+    borderWidth: 1.2,
+    gap: 3,
   },
   userBubbleCard: {
-    backgroundColor: 'rgba(38, 14, 68, 0.88)',
-    borderColor: 'rgba(168, 85, 247, 0.45)',
+    backgroundColor: 'rgba(56, 18, 98, 0.95)',
+    borderColor: 'rgba(168, 85, 247, 0.55)',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderBottomLeftRadius: 16,
@@ -1083,8 +1208,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   otherBubbleCard: {
-    backgroundColor: 'rgba(15, 8, 28, 0.8)',
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(22, 14, 40, 0.92)',
+    borderColor: 'rgba(168, 85, 247, 0.28)',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     borderBottomRightRadius: 16,
@@ -1099,15 +1224,15 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   chatAuthorName: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11.5,
+    fontWeight: '800',
     color: '#C084FC',
     flexShrink: 1,
   },
   streakMedalPill: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.3)',
@@ -1118,13 +1243,36 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
   },
   chatMessageText: {
-    fontSize: 13.5,
-    color: '#F1F5F9',
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 20,
     textAlign: 'left',
   },
   userMessageText: {
     color: '#FFFFFF',
+  },
+  otherMessageText: {
+    color: '#F8FAFC',
+  },
+  bubbleFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  bubbleFooterRowUser: {
+    justifyContent: 'flex-end',
+  },
+  bubbleFooterRowOther: {
+    justifyContent: 'flex-end',
+  },
+  bubbleTimeText: {
+    fontSize: 9.5,
+    fontVariant: ['tabular-nums'],
+  },
+  bubbleTimeTextUser: {
+    color: 'rgba(255, 255, 255, 0.5)',
+  },
+  bubbleTimeTextOther: {
+    color: 'rgba(255, 255, 255, 0.4)',
   },
 
   /* System Messages */
