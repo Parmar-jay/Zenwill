@@ -667,12 +667,12 @@ export const useSpartanStore = create<SpartanState>((set, get) => ({
 
   sendBattleMessage: async (text: string) => {
     try {
-      const sessionId = get().activeBattle?.id;
-      const updated = await spartanApi.sendBattleMessage(text, sessionId);
+      const updated = await spartanApi.sendBattleMessage(text);
       set({ activeBattle: updated });
       return updated;
     } catch (err) {
-      return null;
+      console.log('[SpartanStore] sendBattleMessage error:', err);
+      throw err;
     }
   },
 

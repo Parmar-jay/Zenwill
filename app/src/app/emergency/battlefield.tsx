@@ -11,6 +11,7 @@ import {
   Dimensions,
   ActivityIndicator,
   Modal,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -75,10 +76,16 @@ export default function SpartanBattlefieldScreen() {
   const isExitingRef = useRef<boolean>(false);
   const [inputText, setInputText] = useState<string>('');
   const [messages, setMessages] = useState<BattleMessageItem[]>(() => {
-    const active = useSpartanStore.getState().activeBattle?.messages;
-    if (active && Array.isArray(active)) {
-      const clean = active.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
-      if (clean.length > 0) return clean;
+    const active = useSpartanStore.getState().activeBattle;
+    if (active) {
+      const currentEpoch = Math.floor(Date.now() / (1000 * 900));
+      if (active.session_number && active.session_number < currentEpoch) {
+        return [];
+      }
+      if (active.messages && Array.isArray(active.messages)) {
+        const clean = active.messages.filter((m) => m && m.text && !m.text.includes('🚨 SESSION #'));
+        if (clean.length > 0) return clean;
+      }
     }
     return [];
   });
@@ -86,6 +93,7 @@ export default function SpartanBattlefieldScreen() {
   const [isConcludeModalVisible, setIsConcludeModalVisible] = useState<boolean>(false);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(900);
   const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+  const [isSending, setIsSending] = useState<boolean>(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const soundManagerRef = useRef<OmSoundManager | null>(null);
@@ -113,7 +121,7 @@ export default function SpartanBattlefieldScreen() {
   const syncServerMessages = useCallback(
     (
       incoming: BattleMessageItem[] | BattleMessageItem,
-      options?: { sessionId?: string; sessionNumber?: number; forceReset?: boolean }
+      options?: { sessionId?: string; sessionNumber?: number; forceReset?: boolean; tempIdToReplace?: string }
     ) => {
       if (isExitingRef.current) return;
       const incomingList = Array.isArray(incoming) ? incoming : [incoming];
@@ -123,7 +131,7 @@ export default function SpartanBattlefieldScreen() {
       const incomingSessionNumber = options?.sessionNumber;
       const forceReset = Boolean(options?.forceReset);
 
-      // Check if session or epoch changed
+      // Check if session or epoch changed -> ERASE DATA ON TIMER END / EPOCH ROLLOVER
       const sessionChanged = Boolean(
         forceReset ||
         (incomingSessionNumber && currentSessionNumberRef.current && incomingSessionNumber > currentSessionNumberRef.current) ||
@@ -134,51 +142,32 @@ export default function SpartanBattlefieldScreen() {
       if (incomingSessionNumber) currentSessionNumberRef.current = incomingSessionNumber;
 
       setMessages((prev) => {
-        // If session changed, old messages are wiped cleanly on time!
-        const baseList = sessionChanged ? [] : prev;
-        const now = Date.now();
-
-        // Keep recent optimistic messages (< 15s) that aren't yet confirmed
-        const inFlight = sessionChanged
-          ? []
-          : baseList.filter((p) => {
-              if (!p || typeof p.id !== 'string' || !p.id.startsWith('temp-')) return false;
-              const parts = p.id.split('-');
-              const createdTs = Number(parts[1]) || 0;
-              const isRecent = now - createdTs < 15000;
-              const isConfirmed = cleanList.some(
-                (sm) =>
-                  sm.text === p.text &&
-                  sm.user_id &&
-                  p.user_id &&
-                  sm.user_id.trim().toLowerCase() === p.user_id.trim().toLowerCase()
-              );
-              return isRecent && !isConfirmed;
-            });
-
-        // Use Map to deduplicate by id
-        const msgMap = new Map<string, BattleMessageItem>();
-
-        // 1. Existing confirmed messages from baseList (never deleted within same session!)
-        for (const m of baseList) {
-          if (m && typeof m.id === 'string' && !m.id.startsWith('temp-')) {
-            msgMap.set(m.id, m);
-          }
+        // If session changed / timer ended, ALL OLD DATA IS ERASED!
+        if (sessionChanged) {
+          return cleanList;
         }
 
-        // 2. Add incoming server messages
+        const msgMap = new Map<string, BattleMessageItem>();
+
+        // 1. Existing confirmed messages from prev
+        for (const m of prev) {
+          if (!m || !m.id) continue;
+          if (options?.tempIdToReplace && m.id === options.tempIdToReplace) continue;
+          if (typeof m.id === 'string' && m.id.startsWith('temp-')) {
+            // Drop temporary message immediately if server has returned matching message
+            const isConfirmed = cleanList.some((sm) => sm && sm.text === m.text);
+            if (isConfirmed) continue;
+          }
+          msgMap.set(m.id, m);
+        }
+
+        // 2. Incoming messages from server / DB
         for (const sm of cleanList) {
           if (sm && sm.id) {
             msgMap.set(sm.id, sm);
           } else if (sm) {
-            const fallbackKey = `${sm.user_id}-${sm.text}-${sm.created_at}`;
-            msgMap.set(fallbackKey, sm);
+            msgMap.set(`${sm.user_id}-${sm.text}-${sm.created_at}`, sm);
           }
-        }
-
-        // 3. Add in-flight messages
-        for (const ifm of inFlight) {
-          msgMap.set(ifm.id, ifm);
         }
 
         const combined = Array.from(msgMap.values());
@@ -288,13 +277,18 @@ export default function SpartanBattlefieldScreen() {
       currentSessionIdRef.current = data.session_id || null;
       currentSessionNumberRef.current = data.session_number || null;
       lastEpochRef.current = Math.floor(Date.now() / (1000 * 900));
-      syncServerMessages(data.message ? [data.message] : [], {
-        sessionId: data.session_id,
-        sessionNumber: data.session_number,
-        forceReset: true,
-      });
+      
+      // Complete wipe out of all messages when session resets / timer expires
+      const resetMessages = data.message ? [data.message] : [];
+      setMessages(resetMessages);
       if (data.data) {
         useSpartanStore.setState({ activeBattle: data.data });
+      } else {
+        useSpartanStore.setState((state) => ({
+          activeBattle: state.activeBattle
+            ? { ...state.activeBattle, messages: resetMessages, session_number: data.session_number }
+            : null,
+        }));
       }
       setSecondsRemaining(900);
       requestAnimationFrame(() => scrollViewRef.current?.scrollToEnd({ animated: true }));
@@ -434,8 +428,13 @@ export default function SpartanBattlefieldScreen() {
         lastEpochRef.current = currentEpoch;
         currentSessionIdRef.current = null;
         currentSessionNumberRef.current = currentEpoch;
-        // WIPE OUT OLD CHAT MESSAGES ON TIME
+        // WIPE OUT OLD CHAT MESSAGES ON TIME IN BOTH STATE AND STORE!
         setMessages([]);
+        useSpartanStore.setState((state) => ({
+          activeBattle: state.activeBattle
+            ? { ...state.activeBattle, messages: [], session_number: currentEpoch }
+            : null,
+        }));
         battleHeartbeat().catch(() => {});
       }
     };
@@ -474,10 +473,10 @@ export default function SpartanBattlefieldScreen() {
     }
   }, [activeBattle?.messages, activeBattle?.id, activeBattle?.session_number, syncServerMessages]);
 
-  // ── 6. Send Message (Instant Optimistic + 0ms Button Response) ──
+  // ── 6. Send Message (Store in DB -> Reflect immediately) ──
   const handleSendMessage = useCallback(async (customText?: string) => {
     const textToSend = (customText || inputText).trim();
-    if (!textToSend) return;
+    if (!textToSend || isSending) return;
 
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     if (!customText) {
@@ -501,22 +500,33 @@ export default function SpartanBattlefieldScreen() {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     });
 
-    sendBattleMessage(textToSend)
-      .then((res) => {
-        if (res && res.messages && Array.isArray(res.messages)) {
-          syncServerMessages(res.messages, {
-            sessionId: res.id,
-            sessionNumber: res.session_number,
-          });
-        }
-        requestAnimationFrame(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
+    try {
+      setIsSending(true);
+      // 1. Store in database first
+      const res = await sendBattleMessage(textToSend);
+      // 2. Reflect from database confirmation
+      if (res && res.messages && Array.isArray(res.messages)) {
+        syncServerMessages(res.messages, {
+          sessionId: res.id,
+          sessionNumber: res.session_number,
+          tempIdToReplace: tempId,
         });
-      })
-      .catch((err) => {
-        console.log('Error dispatching battle message:', err);
+      }
+    } catch (err: any) {
+      console.log('Error dispatching battle message:', err);
+      // Remove temporary message so it never remains stuck with a clock icon!
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      Alert.alert(
+        'Transmission Failed',
+        'Could not save your message to the battlefield database. Please check your connection and try again.'
+      );
+    } finally {
+      setIsSending(false);
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
       });
-  }, [inputText, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, syncServerMessages]);
+    }
+  }, [inputText, isSending, currentUserId, currentUserName, currentUserStreak, sendBattleMessage, syncServerMessages]);
 
   // ── 7. Real Active Warriors Presence ──
   const activeParticipants: BattleParticipant[] = useMemo(() => {
@@ -849,12 +859,16 @@ export default function SpartanBattlefieldScreen() {
                 />
 
                 <TouchableOpacity
-                  style={[styles.sendBtn, !inputText.trim() && styles.sendBtnDisabled]}
+                  style={[styles.sendBtn, (!inputText.trim() || isSending) && styles.sendBtnDisabled]}
                   activeOpacity={0.8}
-                  disabled={!inputText.trim()}
+                  disabled={!inputText.trim() || isSending}
                   onPress={() => handleSendMessage()}
                 >
-                  <Ionicons name="arrow-up" size={18} color="#000000" />
+                  {isSending ? (
+                    <ActivityIndicator size="small" color="#000000" />
+                  ) : (
+                    <Ionicons name="arrow-up" size={18} color="#000000" />
+                  )}
                 </TouchableOpacity>
               </View>
             </View>

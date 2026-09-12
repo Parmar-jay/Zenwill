@@ -208,17 +208,8 @@ export const spartanApi = {
     return api.post<BattleSessionData>('/battlefield/join');
   },
 
-  async sendBattleMessage(text: string, sessionId?: string): Promise<BattleSessionData> {
-    try {
-      return await api.post<BattleSessionData>('/battlefield/message', { text });
-    } catch (err: any) {
-      if (sessionId) {
-        try {
-          return await api.post<BattleSessionData>(`/battlefield/react/${sessionId}`, { rune: text });
-        } catch (_) {}
-      }
-      throw err;
-    }
+  async sendBattleMessage(text: string): Promise<BattleSessionData> {
+    return await api.post<BattleSessionData>('/battlefield/message', { text });
   },
 
   async battleHeartbeat(): Promise<BattleSessionData> {
